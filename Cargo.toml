@@ -1,0 +1,19 @@
+[package]
+name = "filsimrs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bayer = "0.1.5"
+image = "0.25.5"
+ndarray = {version = "0.16.1", features = ["rayon", "matrixmultiply-threading"]}
+png = "0.17.14"
+rawkit = "0.1.0"
+rawler = "0.6.0"
+rawloader = "0.37.1"
+rayon = "1.10.0"
+rustfft = "6.2.0"
+serde = "1.0.210"
+serde_derive = "1.0.210"
+serde_yaml = "0.9.34"
+yaml-rust2 = "0.9.0"

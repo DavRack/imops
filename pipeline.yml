@@ -1,0 +1,64 @@
+input: test.dng
+output: result.ppm
+
+pipeline:
+
+  # # RED
+  # - module: Exposure
+  #   value: 0.2
+  #   channels:
+  #     r: true
+  #     g: false
+  #     b: false
+
+  # # GREEN
+  # - module: Exposure
+  #   value: 0.5
+  #   channels:
+  #     r: false
+  #     g: true
+  #     b: false
+
+  # # BLUE
+  # - module: Exposure
+  #   value: 0.2
+  #   channels:
+  #     r: false
+  #     g: false
+  #     b: true
+
+  - module: Exposure
+    value: 0.1
+    channels:
+      r: true
+      g: true
+      b: true
+
+  # - module: High
+  #   value: 0.4
+  #   channels:
+  #     r: true
+  #     g: true
+  #     b: true
+
+  # - module: Low
+  #   value: 7.5
+  #   channels:
+  #     r: true
+  #     g: true
+  #     b: true
+
+  # - module: Low
+  #   value: 0.7
+  #   channels:
+  #     r: true
+  #     g: true
+  #     b: true
+  #
+
+  - module: Sigmoid
+    value: 10.0
+    channels:
+      r: true
+      g: true
+      b: true

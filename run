@@ -1,0 +1,4 @@
+#!/bin/bash
+# time cargo run --release
+time ./target/release/filsimrs && open result.ppm
+open result.ppm
