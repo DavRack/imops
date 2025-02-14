@@ -1,37 +1,81 @@
 use std::usize;
 
-use ndarray::{Array3, Array1, s};
+use ndarray::{Array3, s};
 
-pub fn exp(ev: f32, data: &mut Array3<f32>) -> Array3<f32>{
-    let value = (2.0 as f32).powf(ev);
-    data.par_mapv_inplace(|v| v*value);
-    return data.clone();
+#[derive(Clone)]
+pub struct FormedImage {
+    pub height: usize,
+    pub width: usize,
+    pub black: f32,
+    pub white: f32,
+    pub data: Array3<f32>,
 }
 
-pub fn sigmoid(c: f32, data: &mut Array3<f32>) -> Array3<f32>{
-    data.par_mapv_inplace(|v| (1.0 / (1.0 + (1.0/(c*v)))).powf(2.0));
-    return data.clone();
+pub trait PipelineModule {
+    fn process(&self, image: &mut FormedImage) -> FormedImage;
 }
 
-pub fn wb(c: f32, data: &mut Array3<f32>) -> Array3<f32>{
-    // let a = Array1::from(vec![1,1,1]);
-    let rv = 1.0;
-    let gv = 0.5;
-    let bv = 1.0;
+pub struct Exp {
+    pub ev: f32
+}
 
-    let r = data.clone();
-    let r1 = r.slice(s![.., ..,0]);
+pub struct Sigmoid {
+    pub c: f32
+}
 
-    let g = data.clone();
-    let g1 = g.slice(s![.., ..,1]);
+pub struct Contrast {
+    pub c: f32
+}
 
-    let b = data.clone();
-    let b1 = b.slice(s![.., ..,2]);
+pub struct Wb {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+}
 
-    data.slice_mut(s![.., ..,0]).assign(&r1.map(|r|r*rv).clone());
-    data.slice_mut(s![.., ..,1]).assign(&g1.map(|g|g*gv).clone());
-    data.slice_mut(s![.., ..,2]).assign(&b1.map(|b|b*bv).clone());
-    return data.clone();
+impl PipelineModule for Exp {
+    fn process(&self, image: &mut FormedImage) -> FormedImage {
+        let value = (2.0 as f32).powf(self.ev);
+        image.data.par_mapv_inplace(|v| v*value);
+        return image.clone();
+    }
+}
+
+impl PipelineModule for Sigmoid {
+    fn process(&self, image: &mut FormedImage) -> FormedImage {
+        image.data.par_mapv_inplace(|v| (1.0 / (1.0 + (1.0/(self.c*v)))).powf(2.0));
+        return image.clone();
+    }
+}
+
+impl PipelineModule for Contrast {
+    fn process(&self, image: &mut FormedImage) -> FormedImage {
+        const MIDDLE_GRAY: f32 = 0.18;
+        image.data.par_mapv_inplace(|v| (MIDDLE_GRAY*(v/MIDDLE_GRAY)).powf(self.c));
+        return image.clone();
+    }
+}
+
+impl PipelineModule for Wb {
+    fn process(&self, image: &mut FormedImage) -> FormedImage {
+        let rv = self.r;
+        let gv = self.g;
+        let bv = self.b;
+
+        let r = image.data.clone();
+        let r1 = r.slice(s![.., ..,0]);
+
+        let g = image.data.clone();
+        let g1 = g.slice(s![.., ..,1]);
+
+        let b = image.data.clone();
+        let b1 = b.slice(s![.., ..,2]);
+
+        image.data.slice_mut(s![.., ..,0]).assign(&r1.map(|r|r*rv).clone());
+        image.data.slice_mut(s![.., ..,1]).assign(&g1.map(|g|g*gv).clone());
+        image.data.slice_mut(s![.., ..,2]).assign(&b1.map(|b|b*bv).clone());
+        return image.clone()
+    }
 }
 
 pub fn get_channel(c: usize, data: &mut Array3<f32>) -> Array3<f32>{
