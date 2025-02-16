@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 bayer = "0.1.5"
+clap = {version="4.5.29", features = ["derive"]}
 image = "0.25.5"
 ndarray = {version = "0.16.1", features = ["rayon", "matrixmultiply-threading"]}
 rawler = "0.6.0"

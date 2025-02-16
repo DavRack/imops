@@ -1,10 +1,55 @@
+mod demosaic;
+mod imops;
+
+use clap::Parser as Clap_parser;
 use imops::FormedImage;
 use ndarray::{s, Array2, Array3};
 use rawler::{self, imgop::xyz::Illuminant};
-use std::time::Instant;
-mod demosaic;
 use std::io::Cursor;
-mod imops;
+use std::time::Instant;
+
+#[derive(Clap_parser, Debug, Clone)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// code query
+    #[arg(name="input path", value_name = "input_path")]
+    input_path: String,
+
+    #[arg(short, name="output path", default_value="result.jpg", value_name = "output_path")]
+    output_path: String,
+
+    // /// code query
+    // #[arg(name="query", value_name = "regex")]
+    // query: String,
+
+    // /// Select the tree sitter node kind
+    // #[arg(long, short, name = "kind", value_name = "regex")]
+    // kind: Option<String>,
+
+    // /// Select the files to search
+    // #[arg(trailing_var_arg = true, name = "files", value_name = "file names")]
+    // files: Option<Vec<String>>,
+
+    // /// Maximun recursive folder find depth
+    // #[arg(long, short, value_name = "Int")]
+    // max_recursive_depth: Option<u8>,
+
+    // /// Config file path
+    // #[arg(long, short, value_name = "String")]
+    // config_file_path: Option<String>,
+
+    // /// Before match context lines
+    // #[arg(long, short, default_value = "5", value_name = "Int")]
+    // before_context: usize,
+
+    // /// After match context lines
+    // #[arg(long, short, default_value = "5", value_name = "Int")]
+    // after_context: usize,
+
+    // /// Show all matches (if false will show the top most node match only)
+    // #[arg(long, short, default_value = "false", value_name = "Int")]
+    // show_all_matches: bool,
+}
 
 fn small(v: Array3<f32>) -> Array3<f32> {
     let f = 1;
@@ -73,6 +118,7 @@ fn debayer(image: &mut rawler::RawImage) -> imops::FormedImage {
     let _ = image.apply_scaling();
     if let rawler::RawImageData::Float(ref im) = image.data {
         let cfa = image.camera.cfa.clone();
+        let cfa = demosaic::get_cfa(cfa, image.crop_area.unwrap());
         let (nim, width, height) =
             demosaic::crop(image.dim(), image.crop_area.unwrap(), im.to_vec());
         debayer_image.data =
@@ -127,12 +173,18 @@ fn run_pixel_pipeline(image: &mut imops::FormedImage) -> FormedImage {
 }
 
 fn main() {
-    let path = "data/test2.RAF";
+    let args = Box::leak(Box::new(Args::parse()));
+    println!("{:?}", args);
+
+    let path = args.input_path.clone();
 
     // // Decode the file to extract the raw pixels and its associated metadata
     // let raw_image = RawImage::decode(&mut file).unwrap();
     let decode = Instant::now();
     let mut raw_image = rawler::decode_file(path).unwrap();
+    let rotation = raw_image.orientation;
+
+    println!("rotation: {:.2?}", rotation);
     println!("decode file: {:.2?}", decode.elapsed());
 
     let now = Instant::now();
@@ -143,7 +195,13 @@ fn main() {
     let now = Instant::now();
     debayer_image = run_pixel_pipeline(&mut debayer_image);
     println!("img size: {:?}", debayer_image.data.shape());
-    let img = image::DynamicImage::ImageRgb8(to_vec(debayer_image.data));
+    let mut img = image::DynamicImage::ImageRgb8(to_vec(debayer_image.data));
+    img = match rotation {
+        rawler::Orientation::Rotate90 => img.rotate90(),
+        rawler::Orientation::Rotate180 => img.rotate180(),
+        rawler::Orientation::Rotate270 => img.rotate270(),
+        _ => img,
+    };
     println!("pixel pipeline time: {:.2?}", now.elapsed());
 
     let now = Instant::now();
@@ -152,7 +210,7 @@ fn main() {
         image::ImageFormat::Jpeg,
     )
     .unwrap();
-    img.save("test.jpg").unwrap();
+    img.save(args.output_path.clone()).unwrap();
     println!("jpeg save: {:.2?}", now.elapsed());
     println!("total time: {:.2?}", decode.elapsed());
 }

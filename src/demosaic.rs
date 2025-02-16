@@ -4,24 +4,18 @@ use rawler::imgop;
 use rawler::imgop::{Dim2, Rect};
 
 pub fn crop(dim: Dim2, crop_rect: Rect, data: Vec<f32>) -> (Vec<f32>, usize, usize) {
-    let nw = crop_rect.d.w - (crop_rect.d.w%6);
-    let nh = crop_rect.d.h - (crop_rect.d.h%6);
-    let ncrop = Rect{
-        p: crop_rect.p,
-        d: Dim2 { w: nw, h: nh }
-    };
-    let nim = imgop::crop(&data, dim, ncrop);
-    return (nim, ncrop.d.w, ncrop.d.h);
+    let nim = imgop::crop(&data, dim, crop_rect);
+    return (nim, crop_rect.d.w, crop_rect.d.h);
+}
+pub fn get_cfa(cfa: rawler::CFA, crop_rect: Rect) -> rawler::CFA {
+    let x = crop_rect.p.x;
+    let y = crop_rect.p.y;
+    let new_cfa = cfa.shift(x, y);
+    return new_cfa;
 }
 
 pub mod demosaic_algorithms{
     use ndarray::{Array2, Array3};
-    pub fn get_cfa(cfa: rawler::CFA) -> rawler::CFA {
-        let x = 6;
-        let y = 13;
-        let new_cfa = cfa.shift(x, y);
-        return new_cfa;
-    }
     pub fn passthough(
         width: usize,
         height: usize,
@@ -63,7 +57,6 @@ pub mod demosaic_algorithms{
         cfa: rawler::CFA,
         data: Vec<f32>,
     ) -> Array3<f32> {
-        let cfa = get_cfa(cfa);
         let w = width;
         let h = height;
         let mut final_image = Array3::<f32>::zeros((h-2, w-2, 3));
