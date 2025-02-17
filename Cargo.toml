@@ -12,3 +12,5 @@ ndarray = {version = "0.16.1", features = ["rayon", "matrixmultiply-threading"]}
 rawler = "0.6.0"
 rayon = "1.10.0"
 rustfft = "6.2.0"
+serde = { version = "1.0.217", features = ["derive"] }
+toml = "0.8.20"

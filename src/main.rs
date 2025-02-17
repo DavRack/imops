@@ -1,5 +1,7 @@
+#![warn(unused_extern_crates)]
 mod demosaic;
 mod imops;
+mod config;
 
 use clap::Parser as Clap_parser;
 use imops::FormedImage;
@@ -17,6 +19,9 @@ struct Args {
 
     #[arg(short, name="output path", default_value="result.jpg", value_name = "output_path")]
     output_path: String,
+
+    #[arg(short, name="config path", default_value="imgconfig.toml", value_name = "config_path")]
+    config_path: String,
 }
 
 fn small(v: Array3<f32>) -> Array3<f32> {
@@ -109,15 +114,8 @@ fn to_vec(data: Array3<f32>) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     return img;
 }
 
-fn run_pixel_pipeline(image: &mut imops::FormedImage) -> FormedImage {
-    let modules: Vec<Box<dyn imops::PipelineModule>> = vec![
-        Box::new(imops::Wb {}),
-        Box::new(imops::CST{color_space: imops::ColorSpaceMatrix::CameraToXYZ}),
-        Box::new(imops::Exp { ev: 5.5 }),
-        Box::new(imops::Contrast { c: 1.1 }),
-        Box::new(imops::Sigmoid { c: 2.0 }),
-        Box::new(imops::CST{color_space: imops::ColorSpaceMatrix::XYZTOsRGB}),
-    ];
+fn run_pixel_pipeline(image: &mut imops::FormedImage, pixel_pipeline: config::PipelineConfig) -> FormedImage {
+    let modules = pixel_pipeline.pipeline_modules;
 
     let mut image = image.clone();
     for module in modules {
@@ -146,7 +144,10 @@ fn main() {
 
     debayer_image.data = small(debayer_image.data);
     let now = Instant::now();
-    debayer_image = run_pixel_pipeline(&mut debayer_image);
+
+    let config = config::parse_config(args.config_path.clone());
+
+    debayer_image = run_pixel_pipeline(&mut debayer_image, config);
     println!("img size: {:?}", debayer_image.data.shape());
     let mut img = image::DynamicImage::ImageRgb8(to_vec(debayer_image.data));
     img = match rotation {

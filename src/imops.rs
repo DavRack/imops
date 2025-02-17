@@ -2,6 +2,7 @@ use std::usize;
 
 use ndarray::{s, Array2, Array3};
 use rawler::{imgop::xyz::Illuminant, RawImage};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct FormedImage {
@@ -13,26 +14,32 @@ pub trait PipelineModule {
     fn process(&self, image: &mut FormedImage) -> FormedImage;
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Exp {
     pub ev: f32
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Sigmoid {
     pub c: f32
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Contrast {
     pub c: f32
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Wb {
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ColorSpaceMatrix {
     CameraToXYZ,
     XYZTOsRGB
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CST {
     pub color_space: ColorSpaceMatrix,
 }

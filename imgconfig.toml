@@ -1,0 +1,41 @@
+# pipeline_modules:
+#   - Wb: {}
+
+#   - CST:
+#     color_space: CameraToXYZ
+
+#   - Exp:
+#     ev: 5
+
+#   - Constrast:
+#     c: 1.1
+
+#   - Sigmoid:
+#     c: 2
+
+#   - CST:
+#     color_space: XYZTOsRGB
+[[pipeline_modules]]
+name = "Wb"
+params = {}
+
+[[pipeline_modules]]
+name = "CST"
+color_space = "CameraToXYZ"
+
+[[pipeline_modules]]
+name = "Exp"
+ev = 5.5
+
+[[pipeline_modules]]
+name = "Contrast"
+c = 1.1
+
+[[pipeline_modules]]
+name = "Sigmoid"
+c = 2.0
+
+[[pipeline_modules]]
+name = "CST"
+color_space = "XYZTOsRGB"
+
