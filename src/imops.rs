@@ -106,9 +106,9 @@ impl PipelineModule for CST {
                         xyz2cam[i][j] = d65[i * 3 + j];
                     }
                 }
-                let cam2xyz = rawler::imgop::matrix::pseudo_inverse(xyz2cam);
-                let cam2xyz_normalized = rawler::imgop::matrix::normalize(cam2xyz);
-                let cam2xyz_matrix = Array2::<f32>::from_shape_vec((3,3), cam2xyz_normalized.to_vec().as_flattened().to_vec()).unwrap();
+                let xyz2cam_normalized = rawler::imgop::matrix::normalize(xyz2cam);
+                let cam2xyz = rawler::imgop::matrix::pseudo_inverse(xyz2cam_normalized);
+                let cam2xyz_matrix = Array2::<f32>::from_shape_vec((3,3), cam2xyz.to_vec().as_flattened().to_vec()).unwrap();
                 cam2xyz_matrix
             },
         };

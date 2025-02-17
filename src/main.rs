@@ -17,38 +17,6 @@ struct Args {
 
     #[arg(short, name="output path", default_value="result.jpg", value_name = "output_path")]
     output_path: String,
-
-    // /// code query
-    // #[arg(name="query", value_name = "regex")]
-    // query: String,
-
-    // /// Select the tree sitter node kind
-    // #[arg(long, short, name = "kind", value_name = "regex")]
-    // kind: Option<String>,
-
-    // /// Select the files to search
-    // #[arg(trailing_var_arg = true, name = "files", value_name = "file names")]
-    // files: Option<Vec<String>>,
-
-    // /// Maximun recursive folder find depth
-    // #[arg(long, short, value_name = "Int")]
-    // max_recursive_depth: Option<u8>,
-
-    // /// Config file path
-    // #[arg(long, short, value_name = "String")]
-    // config_file_path: Option<String>,
-
-    // /// Before match context lines
-    // #[arg(long, short, default_value = "5", value_name = "Int")]
-    // before_context: usize,
-
-    // /// After match context lines
-    // #[arg(long, short, default_value = "5", value_name = "Int")]
-    // after_context: usize,
-
-    // /// Show all matches (if false will show the top most node match only)
-    // #[arg(long, short, default_value = "false", value_name = "Int")]
-    // show_all_matches: bool,
 }
 
 fn small(v: Array3<f32>) -> Array3<f32> {
@@ -118,25 +86,9 @@ fn debayer(image: &mut rawler::RawImage) -> imops::FormedImage {
     if let rawler::RawImageData::Float(ref im) = image.data {
         let cfa = image.camera.cfa.clone();
         let cfa = demosaic::get_cfa(cfa, image.crop_area.unwrap());
-        let (nim, width, height) =
-            demosaic::crop(image.dim(), image.crop_area.unwrap(), im.to_vec());
+        let (nim, width, height) = demosaic::crop(image.dim(), image.crop_area.unwrap(), im.to_vec());
         debayer_image.data = demosaic::demosaic_algorithms::linear_interpolation(width, height, cfa, nim);
 
-        // let d65 = image.camera.color_matrix[&Illuminant::D65].clone();
-        // let m2 = Matrix3::from_vec(d65);
-        // let m2i = m2.pseudo_inverse(0.000000001).unwrap();
-
-        // let mi = Array2::from_shape_vec((3, 3), m2i.as_slice().to_vec()).unwrap();
-        // let im = apply_color_correction(&debayer_image.data, &mi);
-
-        // let matrix = vec![
-        //     3.2404542, -1.5371385, -0.4985314,
-        //     -0.9692660,  1.8760108,  0.0415560,
-        //     0.0556434, -0.2040259,  1.0572252,
-        // ];
-        // let mi = Array2::from_shape_vec((3,3), matrix).unwrap();
-        // let im = apply_color_correction(&im , &mi);
-        // debayer_image.data = im
     } else {
         eprintln!("Don't know how to process non-integer raw files");
     }
@@ -161,9 +113,9 @@ fn run_pixel_pipeline(image: &mut imops::FormedImage) -> FormedImage {
     let modules: Vec<Box<dyn imops::PipelineModule>> = vec![
         Box::new(imops::Wb {}),
         Box::new(imops::CST{color_space: imops::ColorSpaceMatrix::CameraToXYZ}),
-        Box::new(imops::Exp { ev: 3.0 }),
-        Box::new(imops::Contrast { c: 1.2 }),
-        Box::new(imops::Sigmoid { c: 8.0 }),
+        Box::new(imops::Exp { ev: 5.5 }),
+        Box::new(imops::Contrast { c: 1.1 }),
+        Box::new(imops::Sigmoid { c: 2.0 }),
         Box::new(imops::CST{color_space: imops::ColorSpaceMatrix::XYZTOsRGB}),
     ];
 
