@@ -4,7 +4,7 @@ mod imops;
 use clap::Parser as Clap_parser;
 use imops::FormedImage;
 use ndarray::{s, Array2, Array3};
-use rawler::{self, imgop::xyz::Illuminant};
+use rawler::{self};
 use std::io::Cursor;
 use std::time::Instant;
 
@@ -73,6 +73,8 @@ pub fn apply_color_correction(image: &Array3<f32>, color_matrix: &Array2<f32>) -
             color_matrix.shape()
         );
     }
+    // let color_matrix = color_matrix;
+    // let color_matrix = color_matrix.powi(-1);
     // 2. Get the dimensions of the input image
     let (rows, cols, _) = image.dim();
 
@@ -92,15 +94,15 @@ pub fn apply_color_correction(image: &Array3<f32>, color_matrix: &Array2<f32>) -
 
             // 8. No need to convert back to original type, already f32.
             //    Still clamping to 0 to handle potential negative values after correction.
-            let corrected_pixel_typed: ndarray::Array1<f32> = corrected_pixel_f32.mapv(|val| {
-                f32::max(0.0, val) // Clamp negative values to 0.
-                                   // You might need to add upper clamping if your f32 image has a max range like 0-1 or 0-255 (represented as f32).
-            });
+            // let corrected_pixel_typed: ndarray::Array1<f32> = corrected_pixel_f32.mapv(|val| {
+            //     f32::max(0.0, val) // Clamp negative values to 0.
+            //                        // You might need to add upper clamping if your f32 image has a max range like 0-1 or 0-255 (represented as f32).
+            // });
 
             // 9. Assign the corrected pixel values to the corrected image
             corrected_image
                 .slice_mut(s![r, c, ..])
-                .assign(&corrected_pixel_typed);
+                .assign(&corrected_pixel_f32);
         }
     }
 
@@ -109,10 +111,7 @@ pub fn apply_color_correction(image: &Array3<f32>, color_matrix: &Array2<f32>) -
 
 fn debayer(image: &mut rawler::RawImage) -> imops::FormedImage {
     let mut debayer_image = imops::FormedImage {
-        height: image.height,
-        width: image.width,
-        white: 16383.0,
-        black: 1023.0,
+        raw_image: image.clone(),
         data: Array3::zeros((1, 1, 1)),
     };
     let _ = image.apply_scaling();
@@ -121,17 +120,23 @@ fn debayer(image: &mut rawler::RawImage) -> imops::FormedImage {
         let cfa = demosaic::get_cfa(cfa, image.crop_area.unwrap());
         let (nim, width, height) =
             demosaic::crop(image.dim(), image.crop_area.unwrap(), im.to_vec());
-        debayer_image.data =
-            demosaic::demosaic_algorithms::linear_interpolation(width, height, cfa, nim);
-        // let matrix = image.camera.color_matrix[&Illuminant::A].clone();
-        // let matrix2 = image.camera.color_matrix.clone();
-        // println!("{:?}", matrix2);
-        // let m = Array2::from_shape_vec((3, 3), matrix).unwrap();
-        // // let m2 = debayer_image.data;
-        // // println!("{:?}", m2.shape());
-        // // debayer_image.data = m2.clone();
-        // let m = apply_color_correction(&debayer_image.data, &m);
-        // debayer_image.data = m
+        debayer_image.data = demosaic::demosaic_algorithms::linear_interpolation(width, height, cfa, nim);
+
+        // let d65 = image.camera.color_matrix[&Illuminant::D65].clone();
+        // let m2 = Matrix3::from_vec(d65);
+        // let m2i = m2.pseudo_inverse(0.000000001).unwrap();
+
+        // let mi = Array2::from_shape_vec((3, 3), m2i.as_slice().to_vec()).unwrap();
+        // let im = apply_color_correction(&debayer_image.data, &mi);
+
+        // let matrix = vec![
+        //     3.2404542, -1.5371385, -0.4985314,
+        //     -0.9692660,  1.8760108,  0.0415560,
+        //     0.0556434, -0.2040259,  1.0572252,
+        // ];
+        // let mi = Array2::from_shape_vec((3,3), matrix).unwrap();
+        // let im = apply_color_correction(&im , &mi);
+        // debayer_image.data = im
     } else {
         eprintln!("Don't know how to process non-integer raw files");
     }
@@ -154,27 +159,23 @@ fn to_vec(data: Array3<f32>) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
 
 fn run_pixel_pipeline(image: &mut imops::FormedImage) -> FormedImage {
     let modules: Vec<Box<dyn imops::PipelineModule>> = vec![
-        Box::new(imops::Exp { ev: 6.0 }),
-        Box::new(imops::Wb {
-            r: 1.0,
-            g: 0.5,
-            b: 1.0,
-        }),
-        Box::new(imops::Contrast { c: 1.5 }),
-        Box::new(imops::Sigmoid { c: 6.0 }),
+        Box::new(imops::Wb {}),
+        Box::new(imops::CST{color_space: imops::ColorSpaceMatrix::CameraToXYZ}),
+        Box::new(imops::Exp { ev: 3.0 }),
+        Box::new(imops::Contrast { c: 1.2 }),
+        Box::new(imops::Sigmoid { c: 8.0 }),
+        Box::new(imops::CST{color_space: imops::ColorSpaceMatrix::XYZTOsRGB}),
     ];
 
     let mut image = image.clone();
     for module in modules {
         image = module.process(&mut image);
     }
-
     return image;
 }
 
 fn main() {
     let args = Box::leak(Box::new(Args::parse()));
-    println!("{:?}", args);
 
     let path = args.input_path.clone();
 
