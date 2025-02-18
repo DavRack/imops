@@ -16,6 +16,7 @@ pub fn get_cfa(cfa: rawler::CFA, crop_rect: Rect) -> rawler::CFA {
 
 pub mod demosaic_algorithms{
     use ndarray::{Array2, Array3};
+    use rawler::pixarray::RgbF32;
     pub fn passthough(
         width: usize,
         height: usize,
@@ -56,10 +57,10 @@ pub mod demosaic_algorithms{
         height: usize,
         cfa: rawler::CFA,
         data: Vec<f32>,
-    ) -> Array3<f32> {
+    ) -> RgbF32 {
         let w = width;
         let h = height;
-        let mut final_image = Array3::<f32>::zeros((h-2, w-2, 3));
+        let mut final_image = RgbF32::new(w-2, h-2);
         for i in 1..h-1 {
             for j in 1..w-1{
                 let mut pixel_count = [0.0, 0.0, 0.0];
@@ -73,9 +74,11 @@ pub mod demosaic_algorithms{
                         pixel[channel] += data[index];
                     }
                 }
-                final_image[[i-1,j-1,0]] = pixel[0]/pixel_count[0];
-                final_image[[i-1,j-1,1]] = pixel[1]/pixel_count[1];
-                final_image[[i-1,j-1,2]] = pixel[2]/pixel_count[2];
+                final_image.data[((i-1)*final_image.width)+(j-1)] = [
+                    pixel[0]/pixel_count[0],
+                    pixel[1]/pixel_count[1],
+                    pixel[2]/pixel_count[2],
+                ];
             }
         }
         return final_image;

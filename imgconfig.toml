@@ -27,9 +27,33 @@ color_space = "CameraToXYZ"
 name = "Exp"
 ev = 5.5
 
+# [[pipeline_modules]]
+# name = "LS"
+# c = -0.7
+# m = 1.6
+# p = 4
+
 [[pipeline_modules]]
 name = "Contrast"
 c = 1.1
+
+# [[pipeline_modules]]
+# name = "LocalExpousure"
+# c = 0.23
+# m = 0.2
+# p = 0.7
+
+# [[pipeline_modules]]
+# name = "LocalExpousure"
+# c = 0.4
+# m = 0.08
+# p = 0.0
+
+# [[pipeline_modules]]
+# name = "LS"
+# c = 0.2
+# m = -9
+# p = 0.4
 
 [[pipeline_modules]]
 name = "Sigmoid"

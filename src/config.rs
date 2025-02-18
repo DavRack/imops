@@ -29,6 +29,8 @@ pub fn parse_config(config_path: String) -> PipelineConfig{
             "Exp" => Box::new(module.clone().try_into::<imops::Exp>().unwrap()),
             "Contrast" => Box::new(module.clone().try_into::<imops::Contrast>().unwrap()),
             "Sigmoid" => Box::new(module.clone().try_into::<imops::Sigmoid>().unwrap()),
+            "LocalExpousure" => Box::new(module.clone().try_into::<imops::LocalExpousure>().unwrap()),
+            "LS" => Box::new(module.clone().try_into::<imops::LS>().unwrap()),
             v => panic!("wrong pipeline module name {:}", v)
         };
 

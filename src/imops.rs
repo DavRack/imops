@@ -1,13 +1,14 @@
 use std::usize;
 
 use ndarray::{s, Array2, Array3};
-use rawler::{imgop::xyz::Illuminant, RawImage};
+use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
+use rayon::prelude::*;
 
 #[derive(Clone)]
 pub struct FormedImage {
     pub raw_image: RawImage,
-    pub data: Array3<f32>,
+    pub data: RgbF32,
 }
 
 pub trait PipelineModule {
@@ -19,9 +20,26 @@ pub struct Exp {
     pub ev: f32
 }
 
+impl PipelineModule for Exp {
+    fn process(&self, image: &mut FormedImage) -> FormedImage {
+        let value = (2.0 as f32).powf(self.ev);
+        let result = image.data.data.par_iter().map(|p| p.map(|x|x*value));
+        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
+        return image.clone();
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Sigmoid {
     pub c: f32
+}
+
+impl PipelineModule for Sigmoid {
+    fn process(&self, image: &mut FormedImage) -> FormedImage {
+        let result = image.data.data.par_iter().map(|p| p.map(|x| (1.0 / (1.0 + (1.0/(self.c*x)))).powf(2.0)));
+        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
+        return image.clone();
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -29,42 +47,17 @@ pub struct Contrast {
     pub c: f32
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Wb {
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum ColorSpaceMatrix {
-    CameraToXYZ,
-    XYZTOsRGB
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct CST {
-    pub color_space: ColorSpaceMatrix,
-}
-
-impl PipelineModule for Exp {
-    fn process(&self, image: &mut FormedImage) -> FormedImage {
-        let value = (2.0 as f32).powf(self.ev);
-        image.data.par_mapv_inplace(|v| v*value);
-        return image.clone();
-    }
-}
-
-impl PipelineModule for Sigmoid {
-    fn process(&self, image: &mut FormedImage) -> FormedImage {
-        image.data.par_mapv_inplace(|v| (1.0 / (1.0 + (1.0/(self.c*v)))).powf(2.0));
-        return image.clone();
-    }
-}
-
 impl PipelineModule for Contrast {
     fn process(&self, image: &mut FormedImage) -> FormedImage {
         const MIDDLE_GRAY: f32 = 0.18;
-        image.data.par_mapv_inplace(|v| (MIDDLE_GRAY*(v/MIDDLE_GRAY)).powf(self.c));
+        let result = image.data.data.par_iter().map(|p| p.map(|v| (MIDDLE_GRAY*(v/MIDDLE_GRAY)).powf(self.c)));
+        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
         return image.clone();
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Wb {
 }
 
 impl PipelineModule for Wb {
@@ -74,21 +67,69 @@ impl PipelineModule for Wb {
         let bv = image.raw_image.wb_coeffs[2];
         // println!("{:?}", image.raw_image.wb_coeffs);
 
-        let r = image.data.clone();
-        let r1 = r.slice(s![.., ..,0]);
+        // let r = image.data.clone();
+        // let r1 = r.slice(s![.., ..,0]);
 
-        let g = image.data.clone();
-        let g1 = g.slice(s![.., ..,1]);
+        // let g = image.data.clone();
+        // let g1 = g.slice(s![.., ..,1]);
 
-        let b = image.data.clone();
-        let b1 = b.slice(s![.., ..,2]);
+        // let b = image.data.clone();
+        // let b1 = b.slice(s![.., ..,2]);
 
-        image.data.slice_mut(s![.., ..,0]).assign(&r1.map(|r|r*rv).clone());
-        image.data.slice_mut(s![.., ..,1]).assign(&g1.map(|g|g*gv).clone());
-        image.data.slice_mut(s![.., ..,2]).assign(&b1.map(|b|b*bv).clone());
+        // image.data.slice_mut(s![.., ..,0]).assign(&r1.map(|r|r*rv).clone());
+        // image.data.slice_mut(s![.., ..,1]).assign(&g1.map(|g|g*gv).clone());
+        // image.data.slice_mut(s![.., ..,2]).assign(&b1.map(|b|b*bv).clone());
+        let result = image.data.data.par_iter().map(|[r,g,b]| [r*rv, g*gv, b*bv]);
+        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
         return image.clone()
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct LocalExpousure {
+    pub c: f32,
+    pub m: f32,
+    pub p: f32,
+}
+
+impl PipelineModule for LocalExpousure {
+    fn process(&self, image: &mut FormedImage) -> FormedImage {
+        let f = |x: f32| x*((self.c*(2.0_f32.powf(-((x-self.p).powf(2.0)/self.m))))+1.0);
+        let result = image.data.data.par_iter().map(|p|p.map(f));
+        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
+        return image.clone();
+
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct LS {
+    pub c: f32,
+    pub m: f32,
+    pub p: f32,
+}
+
+impl PipelineModule for LS {
+    fn process(&self, image: &mut FormedImage) -> FormedImage {
+        let f = |x: f32| x*((self.c/(1.0+(1.0/(2.0_f32.powf((self.m/self.p)*(x-self.p))))))+1.0);
+        let result = image.data.data.par_iter().map(|p|p.map(f));
+        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
+        return image.clone();
+
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CST {
+    pub color_space: ColorSpaceMatrix,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum ColorSpaceMatrix {
+    CameraToXYZ,
+    XYZTOsRGB
+}
+
 
 impl PipelineModule for CST {
     fn process(&self, image: &mut FormedImage) -> FormedImage {
@@ -120,17 +161,20 @@ impl PipelineModule for CST {
             },
         };
 
-        let (rows, cols, _) = image.data.dim();
-        let mut corrected_image = Array3::<f32>::zeros((rows, cols, 3));
+        let rows = image.data.height;
+        let cols = image.data.width;
+        let mut corrected_image = RgbF32::new(image.data.width, image.data.height);
         for r in 0..rows {
             for c in 0..cols {
-                let pixel = image.data.slice(s![r, c, ..]);
+                let pixel = image.data.at(r, c);
                 let rp = pixel[0];
                 let gp = pixel[1];
                 let bp = pixel[2];
-                corrected_image[[r, c, 0]] = foward_matrix[[0, 0]] * rp + foward_matrix[[0, 1]] * gp + foward_matrix[[0, 2]] * bp;
-                corrected_image[[r, c, 1]] = foward_matrix[[1, 0]] * rp + foward_matrix[[1, 1]] * gp + foward_matrix[[1, 2]] * bp;
-                corrected_image[[r, c, 2]] = foward_matrix[[2, 0]] * rp + foward_matrix[[2, 1]] * gp + foward_matrix[[2, 2]] * bp;
+                corrected_image.data[(r*image.data.width)+c] = [
+                    foward_matrix[[0, 0]] * rp + foward_matrix[[0, 1]] * gp + foward_matrix[[0, 2]] * bp,
+                    foward_matrix[[1, 0]] * rp + foward_matrix[[1, 1]] * gp + foward_matrix[[1, 2]] * bp,
+                    foward_matrix[[2, 0]] * rp + foward_matrix[[2, 1]] * gp + foward_matrix[[2, 2]] * bp,
+                ]
             }
         }
         image.data = corrected_image;
