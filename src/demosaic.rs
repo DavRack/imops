@@ -52,7 +52,6 @@ pub mod demosaic_algorithms{
         }
         return final_image;
     }
-
     pub fn linear_interpolation(
         width: usize,
         height: usize,
