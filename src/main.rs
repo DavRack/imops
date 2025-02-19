@@ -1,14 +1,15 @@
 #![warn(unused_extern_crates)]
+mod config;
 mod demosaic;
 mod imops;
-mod config;
 
 use clap::Parser as Clap_parser;
+use core::panic;
+use std::any;
 use imops::FormedImage;
 use ndarray::{s, Array2, Array3};
 use rawler::pixarray::RgbF32;
 use rawler::{self};
-use core::panic;
 use std::io::Cursor;
 use std::time::Instant;
 
@@ -16,13 +17,23 @@ use std::time::Instant;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// code query
-    #[arg(name="input path", value_name = "input_path")]
+    #[arg(name = "input path", value_name = "input_path")]
     input_path: String,
 
-    #[arg(short, name="output path", default_value="result.jpg", value_name = "output_path")]
+    #[arg(
+        short,
+        name = "output path",
+        default_value = "result.jpg",
+        value_name = "output_path"
+    )]
     output_path: String,
 
-    #[arg(short, name="config path", default_value="imgconfig.toml", value_name = "config_path")]
+    #[arg(
+        short,
+        name = "config path",
+        default_value = "imgconfig.toml",
+        value_name = "config_path"
+    )]
     config_path: String,
 }
 
@@ -46,15 +57,14 @@ fn debayer(image: &mut rawler::RawImage) -> imops::FormedImage {
     if let rawler::RawImageData::Float(ref im) = image.data {
         let cfa = image.camera.cfa.clone();
         let cfa = demosaic::get_cfa(cfa, image.crop_area.unwrap());
-        let (nim, width, height) = demosaic::crop(image.dim(), image.crop_area.unwrap(), im.to_vec());
+        let (nim, width, height) =
+            demosaic::crop(image.dim(), image.crop_area.unwrap(), im.to_vec());
 
-
-        debayer_image = imops::FormedImage{
+        debayer_image = imops::FormedImage {
             raw_image: image.clone(),
             data: demosaic::demosaic_algorithms::linear_interpolation(width, height, cfa, nim),
         };
         return debayer_image;
-
     } else {
         panic!("Don't know how to process non-integer raw files");
     }
@@ -64,23 +74,25 @@ fn to_vec(data: RgbF32) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     let height = data.height;
     let width = data.width;
     let data2 = data.flatten().iter().map(|x| (x * 255.0) as u8).collect();
-    let img = image::RgbImage::from_vec(
-        width as u32,
-        height as u32,
-        data2,
-    )
-    .unwrap();
+    let img = image::RgbImage::from_vec(width as u32, height as u32, data2).unwrap();
     return img;
 }
 
-fn run_pixel_pipeline(image: &mut imops::FormedImage, pixel_pipeline: config::PipelineConfig) -> FormedImage {
+fn run_pixel_pipeline(
+    mut image: imops::FormedImage,
+    pixel_pipeline: config::PipelineConfig,
+) -> FormedImage {
     let modules = pixel_pipeline.pipeline_modules;
 
-    let mut image = image.clone();
+    println!("\n");
     for module in modules {
-        image = module.process(&mut image);
+        let now = Instant::now();
+        
+        image = module.process(image);
+        println!("{:} execution time: {:.2?}",module.get_name(), now.elapsed());
     }
-    return image;
+    println!("\n");
+    return image.clone();
 }
 
 fn main() {
@@ -106,7 +118,7 @@ fn main() {
 
     let config = config::parse_config(args.config_path.clone());
 
-    debayer_image = run_pixel_pipeline(&mut debayer_image, config);
+    debayer_image = run_pixel_pipeline(debayer_image, config);
     // println!("img size: {:?}", debayer_image.data.shape());
     let mut img = image::DynamicImage::ImageRgb8(to_vec(debayer_image.data));
     img = match rotation {

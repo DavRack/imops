@@ -62,9 +62,12 @@ pub mod demosaic_algorithms{
         let w = width;
         let h = height;
         let mut final_image = RgbF32::new(w-2, h-2);
-        let f = |(index, _)| {
-            let j: usize = (index%final_image.width) + 1;
-            let i: usize = ((index-j)/final_image.width) + 1;
+        let f = |(indx, _)| {
+            let mut j: usize = indx%final_image.width;
+            let mut i: usize = (indx-j)/final_image.width;
+            j+=1;
+            i+=1;
+
             let mut pixel_count = [0.0, 0.0, 0.0];
             let mut pixel = [0.0, 0.0, 0.0];
 
@@ -83,28 +86,8 @@ pub mod demosaic_algorithms{
             ]
 
         };
-        let result = final_image.data.par_iter().enumerate().map(f);
+        let result = final_image.data.par_iter().with_min_len(final_image.width).enumerate().map(f);
         final_image = RgbF32::new_with(result.collect(), final_image.width, final_image.height);
-        // for i in 1..h-1 {
-        //     for j in 1..w-1{
-        //         let mut pixel_count = [0.0, 0.0, 0.0];
-        //         let mut pixel = [0.0, 0.0, 0.0];
-
-        //         for i2 in 0..3{
-        //             for j2 in 0..3{
-        //                 let index = ((i+i2-1)*width)+(j+j2-1);
-        //                 let channel = cfa.color_at((i+i2)-1, (j+j2)-1);
-        //                 pixel_count[channel] += 1.0;
-        //                 pixel[channel] += data[index];
-        //             }
-        //         }
-        //         final_image.data[((i-1)*final_image.width)+(j-1)] = [
-        //             pixel[0]/pixel_count[0],
-        //             pixel[1]/pixel_count[1],
-        //             pixel[2]/pixel_count[2],
-        //         ];
-        //     }
-        // }
         return final_image;
     }
 

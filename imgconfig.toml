@@ -16,7 +16,7 @@
 #   - CST:
 #     color_space: XYZTOsRGB
 [[pipeline_modules]]
-name = "Wb"
+name = "CFACoeffs"
 params = {}
 
 [[pipeline_modules]]
@@ -27,11 +27,11 @@ color_space = "CameraToXYZ"
 name = "Exp"
 ev = 5.5
 
-# [[pipeline_modules]]
-# name = "LS"
-# c = -0.7
-# m = 1.6
-# p = 4
+[[pipeline_modules]]
+name = "LS"
+c = -0.7
+m = 1.6
+p = 4
 
 [[pipeline_modules]]
 name = "Contrast"

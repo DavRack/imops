@@ -3,6 +3,9 @@ name = "filsimrs"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+opt-level = 3
+
 [dependencies]
 bayer = "0.1.5"
 clap = {version="4.5.29", features = ["derive"]}

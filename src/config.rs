@@ -24,7 +24,7 @@ pub fn parse_config(config_path: String) -> PipelineConfig{
 
     for module in data.pipeline_modules {
         let pipeline_module: Box<dyn imops::PipelineModule> = match module["name"].as_str().unwrap() {
-            "Wb" => Box::new(module.clone().try_into::<imops::Wb>().unwrap()),
+            "CFACoeffs" => Box::new(module.clone().try_into::<imops::CFACoeffs>().unwrap()),
             "CST" => Box::new(module.clone().try_into::<imops::CST>().unwrap()),
             "Exp" => Box::new(module.clone().try_into::<imops::Exp>().unwrap()),
             "Contrast" => Box::new(module.clone().try_into::<imops::Contrast>().unwrap()),
