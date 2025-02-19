@@ -86,8 +86,7 @@ pub mod demosaic_algorithms{
             ]
 
         };
-        let result = final_image.data.par_iter().with_min_len(final_image.width).enumerate().map(f);
-        final_image = RgbF32::new_with(result.collect(), final_image.width, final_image.height);
+        final_image.data = final_image.data.par_iter().with_min_len(final_image.width).enumerate().map(f).collect();
         return final_image;
     }
 
