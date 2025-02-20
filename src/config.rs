@@ -2,7 +2,7 @@ use core::panic;
 
 use serde::{Deserialize, Serialize};
 
-use crate::imops::{self, PipelineModule};
+use crate::imops;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
@@ -31,6 +31,8 @@ pub fn parse_config(config_path: String) -> PipelineConfig{
             "Sigmoid" => Box::new(module.clone().try_into::<imops::Sigmoid>().unwrap()),
             "LocalExpousure" => Box::new(module.clone().try_into::<imops::LocalExpousure>().unwrap()),
             "LS" => Box::new(module.clone().try_into::<imops::LS>().unwrap()),
+            "LCH" => Box::new(module.clone().try_into::<imops::LCH>().unwrap()),
+            "ChromaDenoise" => Box::new(module.clone().try_into::<imops::ChromaDenoise>().unwrap()),
             v => panic!("wrong pipeline module name {:}", v)
         };
 

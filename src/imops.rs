@@ -1,19 +1,89 @@
 use std::usize;
 
-use ndarray::{s, Array3};
+use color::{ColorSpace, Lch, Oklch, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
 
+use crate::denoise;
+
 #[derive(Clone)]
 pub struct FormedImage {
     pub raw_image: RawImage,
+    pub max_raw_value: f32,
     pub data: RgbF32,
 }
 
 pub trait PipelineModule {
     fn process(&self, image: FormedImage) -> FormedImage;
     fn get_name(&self) -> String;
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct  LCH{
+    pub lc: f32,
+    pub cc: f32,
+    pub hc: f32,
+}
+
+impl PipelineModule for LCH {
+    fn process(&self, mut image: FormedImage) -> FormedImage {
+        image.data.data = image.data.data.par_iter().map(
+            |p| {
+                let [l, c, h] = XyzD65::convert::<Oklch>(*p);
+                let xyz = Oklch::convert::<XyzD65>([l*self.lc, c*self.cc, h*self.hc]);
+                xyz
+            }
+        ).collect();
+        return image
+    }
+
+    fn get_name(&self) -> String{
+        return "LCH".to_string()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ChromaDenoise {
+}
+
+impl PipelineModule for ChromaDenoise {
+    fn process(&self, mut image: FormedImage) -> FormedImage {
+        let lch_data = image.data.data.par_iter().map(|p|{
+            XyzD65::convert::<Oklch>(*p)
+        });
+        let lambda = 0.00189442719;
+        let convergence_threshold = 10_f64.powi(-10);
+        let max_iter = 100;
+        let tau: f64 = 1.0 / 2_f64.sqrt();
+        let sigma: f64 = 1_f64 / (8.0 * tau);
+        let gamma: f64 = 0.35 * lambda;
+
+        let c_data: Vec<f32> = lch_data.clone().map(|[_, c, _]| c).collect();
+
+        let data = denoise::denoise_vec(
+            c_data.clone(),
+            image.data.width,
+            image.data.height,
+            lambda,
+            tau,
+            sigma,
+            gamma,
+            max_iter,
+            convergence_threshold
+        );
+        // let data = data.par_iter().zip(lch_data).map(|(new_c, [l, c, h])|{
+        //     let new_lch = [l,c,h];
+        //     Oklch::convert::<XyzD65>(new_lch)
+        // }).collect();
+        let data = data.par_iter().map(|c| [*c, *c, *c]).collect();
+        image.data.data = data;
+        return image;
+    }
+
+    fn get_name(&self) -> String{
+        return "ChromaDenoise".to_string()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -41,7 +111,11 @@ pub struct Sigmoid {
 
 impl PipelineModule for Sigmoid {
     fn process(&self, mut image: FormedImage) -> FormedImage {
-        let result = image.data.data.par_iter().map(|p| p.map(|x| (1.0 / (1.0 + (1.0/(self.c*x)))).powf(2.0)));
+        let max_current_value = image.data.data.as_flattened().iter().cloned().reduce(f32::max).unwrap();
+        let scaled_one = (1.0/image.max_raw_value)*max_current_value;
+        let c = 1.0 + (1.0/scaled_one).powf(2.0);
+        println!("scaled one {:}", scaled_one);
+        let result = image.data.data.par_iter().map(|p| p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powf(2.0)));
         image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
         return image
     }
@@ -111,15 +185,32 @@ impl PipelineModule for LocalExpousure {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LS {
-    pub c: f32,
-    pub m: f32,
-    pub p: f32,
+    pub transition_width: f32,
+    pub shadows_exp: f32,
+    pub highlits_exp: f32,
+    pub pivot: f32, //ev
 }
 
 impl PipelineModule for LS {
     fn process(&self, mut image: FormedImage) -> FormedImage {
-        let f = |x: f32| x*((self.c/(1.0+(1.0/(2.0_f32.powf((self.m/self.p)*(x-self.p))))))+1.0);
-        let result = image.data.data.par_iter().map(|p|p.map(f));
+        let p: f32 = self.pivot;
+        let d: f32 = self.transition_width;
+        let f2 = |x: f32, m: f32| p*(x/p).powf(m);
+        let f = |x: f32, pf: f32| 1.0/(1.0+(1.0/(2.0_f32.powf(d*(x-(p*pf))))));
+
+        // shadows
+        let ms: f32 = 1.0/self.shadows_exp;
+        let pfs: f32 = 0.8;
+        // let result = image.data.data.par_iter().map(|p|p.map(|x| (f2(x, ms)*(1.0-f(x, pf)))+f(x, pf)*x));
+        //
+        //// heights
+        let mh: f32 = self.highlits_exp;
+        let pfh: f32 = 1.2;
+
+        let complete_f = |x| (((f2(x, ms)*(1.0-f(x, pfs)))+f(x, pfs)*x)+((f2(x, mh)*f(x, pfh))+((1.0-f(x, pfh))*x)))/2.0;
+
+        let result = image.data.data.par_iter().map(|p|p.map(|x| complete_f(x)));
+
         image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
         return image
 
@@ -184,33 +275,47 @@ impl PipelineModule for CST {
     }
 }
 
-pub fn get_channel(c: usize, data: &mut Array3<f32>) -> Array3<f32>{
-    let shape = data.shape();
+// pub fn get_channel(c: usize, data: &mut Array3<f32>) -> Array3<f32>{
+//     let shape = data.shape();
 
-    let mut final_image = Array3::<f32>::zeros((shape[0], shape[1], 3));
-    final_image.slice_mut(s![.., ..,c]).assign(&data.slice(s![.., .., c]));
-    return final_image
-}
+//     let mut final_image = Array3::<f32>::zeros((shape[0], shape[1], 3));
+//     final_image.slice_mut(s![.., ..,c]).assign(&data.slice(s![.., .., c]));
+//     return final_image
+// }
 
-pub fn film_curve(p: f64, d: f64, a: f64, b: f64, p2: f64, data: &mut Array3<f32>) -> Array3<f32> {
-    let f1 = |x: f64| d*(x-p)+p;
+// pub fn film_curve(p: f64, d: f64, a: f64, b: f64, p2: f64, data: &mut Array3<f32>) -> Array3<f32> {
+//     let f1 = |x: f64| d*(x-p)+p;
 
-    let c2 = (d*a)/f1(a);
-    let c1 = (d*a)/(c2*(a.powf(c2)));
-    let c4 = (-d*(p2-b))/(f1(b)-1.0);
-    let c3 = (-d)/(c4*(p2-b).powf(c4-1.0));
+//     let c2 = (d*a)/f1(a);
+//     let c1 = (d*a)/(c2*(a.powf(c2)));
+//     let c4 = (-d*(p2-b))/(f1(b)-1.0);
+//     let c3 = (-d)/(c4*(p2-b).powf(c4-1.0));
     
-    let f2 = |x: f64| c1*(x.powf(c2));
-    let f3 = |x: f64| c3*(-x+p2).powf(c4)+1.0;
+//     let f2 = |x: f64| c1*(x.powf(c2));
+//     let f3 = |x: f64| c3*(-x+p2).powf(c4)+1.0;
 
-    let f = |x: f64| 
-        if x > p2 { 1.0 }
-        else if b < x && x <= p2 { f3(x) }
-        else if a < x && x <= b { f1(x) }
-        else if 0.0 <= x && x <= a { f2(x) }
-        else {0.0}
-    ;
+//     let f = |x: f64| 
+//         if x > p2 { 1.0 }
+//         else if b < x && x <= p2 { f3(x) }
+//         else if a < x && x <= b { f1(x) }
+//         else if 0.0 <= x && x <= a { f2(x) }
+//         else {0.0}
+//     ;
 
-    data.par_mapv_inplace(|x| f(x as f64) as f32);
-    return data.clone();
-}
+//     data.par_mapv_inplace(|x| f(x as f64) as f32);
+//     return data.clone();
+// }
+
+// fn small(v: Array3<f32>) -> Array3<f32> {
+//     let f = 1;
+//     let s = v.shape();
+//     let mut nv = Array3::zeros(((s[0] / f) + 1, (s[1] / f) + 1, s[2]));
+//     for i in (0..s[0]).step_by(f) {
+//         for j in (0..s[1]).step_by(f) {
+//             for x in 0..3 {
+//                 nv[[i / f, j / f, x]] = v[[i, j, x]];
+//             }
+//         }
+//     }
+//     return nv;
+// }

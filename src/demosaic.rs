@@ -2,6 +2,9 @@ use std::usize;
 
 use rawler::imgop;
 use rawler::imgop::{Dim2, Rect};
+use ndarray::{Array2, Array3};
+use rawler::pixarray::RgbF32;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 pub fn crop(dim: Dim2, crop_rect: Rect, data: Vec<f32>) -> (Vec<f32>, usize, usize) {
     let nim = imgop::crop(&data, dim, crop_rect);
@@ -13,12 +16,10 @@ pub fn get_cfa(cfa: rawler::CFA, crop_rect: Rect) -> rawler::CFA {
     let new_cfa = cfa.shift(x, y);
     return new_cfa;
 }
+pub struct DemosaicAlgorithms{}
 
-pub mod demosaic_algorithms{
-    use ndarray::{Array2, Array3};
-    use rawler::pixarray::RgbF32;
-    use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-    pub fn passthough(
+impl DemosaicAlgorithms{
+    fn passthough(
         width: usize,
         height: usize,
         black: f32,
@@ -34,7 +35,7 @@ pub mod demosaic_algorithms{
         }
         return final_image
     }
-    pub fn photosite(
+    fn photosite(
         width: usize,
         height: usize,
         cfa: rawler::CFA,
@@ -89,14 +90,14 @@ pub mod demosaic_algorithms{
         return final_image;
     }
 
-    pub fn pass(
+    fn pass(
         width: usize,
         height: usize,
         black: f32,
         white: f32,
         data: Vec<u16>,
     ) -> Array3<f32> {
-        let pt = passthough(width, height, black, white, data);
+        let pt = DemosaicAlgorithms::passthough(width, height, black, white, data);
         let w = width;
         let h = height;
         let mut final_image = Array3::<f32>::zeros((h, w, 3));

@@ -9,6 +9,7 @@ opt-level = 3
 [dependencies]
 bayer = "0.1.5"
 clap = {version="4.5.29", features = ["derive"]}
+color = "0.2.3"
 image = "0.25.5"
 nalgebra = "0.33.2"
 ndarray = {version = "0.16.1", features = ["rayon", "matrixmultiply-threading"]}

@@ -2,12 +2,11 @@
 mod config;
 mod demosaic;
 mod imops;
+mod denoise;
 
 use clap::Parser as Clap_parser;
 use core::panic;
-use std::any;
 use imops::FormedImage;
-use ndarray::{s, Array2, Array3};
 use rawler::pixarray::RgbF32;
 use rawler::{self};
 use std::io::Cursor;
@@ -37,32 +36,21 @@ struct Args {
     config_path: String,
 }
 
-fn small(v: Array3<f32>) -> Array3<f32> {
-    let f = 1;
-    let s = v.shape();
-    let mut nv = Array3::zeros(((s[0] / f) + 1, (s[1] / f) + 1, s[2]));
-    for i in (0..s[0]).step_by(f) {
-        for j in (0..s[1]).step_by(f) {
-            for x in 0..3 {
-                nv[[i / f, j / f, x]] = v[[i, j, x]];
-            }
-        }
-    }
-    return nv;
-}
 
-fn debayer(image: &mut rawler::RawImage) -> imops::FormedImage {
+fn demosaic(image: &mut rawler::RawImage) -> imops::FormedImage {
     let debayer_image: imops::FormedImage;
     let _ = image.apply_scaling();
     if let rawler::RawImageData::Float(ref im) = image.data {
         let cfa = image.camera.cfa.clone();
+        let max_raw_value = im.into_iter().cloned().reduce(|a, b| f32::max(a,b)).unwrap();
         let cfa = demosaic::get_cfa(cfa, image.crop_area.unwrap());
         let (nim, width, height) =
             demosaic::crop(image.dim(), image.crop_area.unwrap(), im.to_vec());
 
         debayer_image = imops::FormedImage {
             raw_image: image.clone(),
-            data: demosaic::demosaic_algorithms::linear_interpolation(width, height, cfa, nim),
+            max_raw_value: max_raw_value.to_owned(),
+            data: demosaic::DemosaicAlgorithms::linear_interpolation(width, height, cfa, nim),
         };
         return debayer_image;
     } else {
@@ -110,7 +98,7 @@ fn main() {
     println!("decode file: {:.2?}", decode.elapsed());
 
     let now = Instant::now();
-    let mut debayer_image = debayer(&mut raw_image);
+    let mut debayer_image = demosaic(&mut raw_image);
     println!("debayer: {:.2?}", now.elapsed());
 
     // debayer_image.data = small(debayer_image.data);
