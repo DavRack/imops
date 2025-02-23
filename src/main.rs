@@ -50,7 +50,8 @@ fn demosaic(image: &mut rawler::RawImage) -> imops::FormedImage {
         debayer_image = imops::FormedImage {
             raw_image: image.clone(),
             max_raw_value: max_raw_value.to_owned(),
-            data: demosaic::DemosaicAlgorithms::linear_interpolation(width, height, cfa, nim),
+            // data: demosaic::DemosaicAlgorithms::linear_interpolation(width, height, cfa, nim),
+            data: demosaic::DemosaicAlgorithms::markesteijn(width, height, cfa, nim),
         };
         return debayer_image;
     } else {

@@ -19,7 +19,7 @@ pub fn get_cfa(cfa: rawler::CFA, crop_rect: Rect) -> rawler::CFA {
 pub struct DemosaicAlgorithms{}
 
 impl DemosaicAlgorithms{
-    fn passthough(
+    pub fn passthough(
         width: usize,
         height: usize,
         black: f32,
@@ -35,7 +35,7 @@ impl DemosaicAlgorithms{
         }
         return final_image
     }
-    fn photosite(
+    pub fn photosite(
         width: usize,
         height: usize,
         cfa: rawler::CFA,
@@ -90,7 +90,7 @@ impl DemosaicAlgorithms{
         return final_image;
     }
 
-    fn pass(
+    pub fn pass(
         width: usize,
         height: usize,
         black: f32,
@@ -109,5 +109,135 @@ impl DemosaicAlgorithms{
             }
         }
         return final_image
+    }
+    pub fn markesteijn(
+        width: usize,
+        height: usize,
+        cfa: rawler::CFA,
+        input: Vec<f32>,
+    ) -> RgbF32 {
+        // Initialize RGB buffers
+        let mut rgb = vec![[0.0f32; 3]; width * height];
+        for row in 0..height {
+            for col in 0..width {
+                let idx = row * width + col;
+                let color = cfa.color_at(row, col);
+                rgb[idx][color] = input[idx];
+            }
+        }
+
+        // Green interpolation for non-green pixels
+        for row in 0..height {
+            for col in 0..width {
+                let idx = row * width + col;
+                if rgb[idx][1] != 0.0 {
+                    continue; // Already green
+                }
+
+                // Collect surrounding green values
+                let mut greens = Vec::new();
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let y = row as isize + dy;
+                        let x = col as isize + dx;
+                        if y < 0 || y >= height as isize || x < 0 || x >= width as isize {
+                            continue;
+                        }
+                        let y = y as usize;
+                        let x = x as usize;
+                        let neighbor_idx = y * width + x;
+                        if cfa.color_at(y, x) == 1 {
+                            greens.push(rgb[neighbor_idx][1]);
+                        }
+                    }
+                }
+
+                // Average the green values
+                if !greens.is_empty() {
+                    let sum: f32 = greens.iter().sum();
+                    rgb[idx][1] = sum / greens.len() as f32;
+                }
+            }
+        }
+
+        // Red and Blue interpolation using the green values
+        for row in 0..height {
+            for col in 0..width {
+                let idx = row * width + col;
+                let color = cfa.color_at(row, col);
+                if color == 1 {
+                    // Green pixel, interpolate Red and Blue
+                    let mut reds = Vec::new();
+                    let mut blues = Vec::new();
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            let y = row as isize + dy;
+                            let x = col as isize + dx;
+                            if y < 0 || y >= height as isize || x < 0 || x >= width as isize {
+                                continue;
+                            }
+                            let y = y as usize;
+                            let x = x as usize;
+                            let neighbor_idx = y * width + x;
+                            let neighbor_color = cfa.color_at(y, x);
+                            if neighbor_color == 0 {
+                                reds.push(rgb[neighbor_idx][0]);
+                            } else if neighbor_color == 2 {
+                                blues.push(rgb[neighbor_idx][2]);
+                            }
+                        }
+                    }
+                    if !reds.is_empty() {
+                        rgb[idx][0] = reds.iter().sum::<f32>() / reds.len() as f32;
+                    }
+                    if !blues.is_empty() {
+                        rgb[idx][2] = blues.iter().sum::<f32>() / blues.len() as f32;
+                    }
+                } else {
+                    // Non-green pixel, interpolate the missing color
+                    let target_color = if color == 0 { 2 } else { 0 };
+                    let mut samples = Vec::new();
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            let y = row as isize + dy;
+                            let x = col as isize + dx;
+                            if y < 0 || y >= height as isize || x < 0 || x >= width as isize {
+                                continue;
+                            }
+                            let y = y as usize;
+                            let x = x as usize;
+                            let neighbor_idx = y * width + x;
+                            if cfa.color_at(y, x) == target_color {
+                                samples.push(rgb[neighbor_idx][target_color]);
+                            }
+                        }
+                    }
+                    if !samples.is_empty() {
+                        rgb[idx][target_color] = samples.iter().sum::<f32>() / samples.len() as f32;
+                    }
+                }
+            }
+        }
+
+        // Convert to YPbPr and compute homogeneity (simplified)
+        let mut yuv = vec![[0.0f32; 3]; width * height];
+        for idx in 0..width * height {
+            let r = rgb[idx][0];
+            let g = rgb[idx][1];
+            let b = rgb[idx][2];
+            // Convert to YPbPr (BT.2020)
+            yuv[idx][0] = 0.2627 * r + 0.6780 * g + 0.0593 * b;
+            yuv[idx][1] = (b - yuv[idx][0]) * 0.56433;
+            yuv[idx][2] = (r - yuv[idx][0]) * 0.67815;
+        }
+
+        // Final averaging based on homogeneity (simplified)
+        // let mut output = vec![[0.0f32; 3]; width * height];
+        let mut output = RgbF32::new(width, height);
+        for idx in 0..width * height {
+            output.data[idx] = rgb[idx];
+        }
+
+        output
     }
 }

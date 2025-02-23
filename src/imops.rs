@@ -49,9 +49,9 @@ pub struct ChromaDenoise {
 
 impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
-        let lch_data = image.data.data.par_iter().map(|p|{
-            XyzD65::convert::<Oklch>(*p)
-        });
+        // let lch_data = image.data.data.par_iter().map(|p|{
+        //     XyzD65::convert::<Oklch>(*p)
+        // });
         // let lambda = 0.00189442719;
         // let convergence_threshold = 10_f64.powi(-10);
         // let max_iter = 100;
@@ -60,13 +60,23 @@ impl PipelineModule for ChromaDenoise {
         // let gamma: f64 = 0.35 * lambda;
 
         // let c_data: Vec<f32> = lch_data.clone().map(|[_, c, _]| c).collect();
-        let mut c_data = image.data.clone();
-        c_data.data = lch_data.clone().map(|[_,c,_]| [c as f32, c as f32, c as f32]).collect();
+        // let mut c_data = image.data.clone();
+        // c_data.data = lch_data.clone().map(|[_,c,_]| [c as f32, c as f32, c as f32]).collect();
+        let iters = 3;
 
-        let denoised_c = denoise::denoise(c_data.data, image.data.height, image.data.width);
-        image.data.data = denoised_c;
-        // let denoise_image = lch_data.zip(denoised_c.data).map(|([l,_,h], [_, c, _])| [l, c, h]);
-        // image.data.data = denoise_image.map(|p|Oklch::convert::<XyzD65>(p)).collect();
+        for _ in 0..iters{
+            let denoised_c = denoise::denoise(image.data.data.clone(), image.data.height, image.data.width);
+            let lch_data = image.data.data.par_iter().map(|p|{
+                XyzD65::convert::<Oklch>(*p)
+            });
+            let lch_data_d = denoised_c.par_iter().map(|p|{
+                XyzD65::convert::<Oklch>(*p)
+            });
+            let reconstructed = lch_data.zip(lch_data_d).map(|([l,_,_], [_,c,h])| [l, c, h]);
+
+            // let denoise_image = lch_data.zip(denoised_c.data).map(|([l,_,h], [_, c, _])| [l, c, h]);
+            image.data.data = reconstructed.map(|p|Oklch::convert::<XyzD65>(p)).collect();
+        }
         // let denoise_image = lch_data.zip(denoised_c.data).map(|([l,_,h], [_, c, _])| [c, c, c]).collect();
         // image.data.data = denoise_image;
         return image;
