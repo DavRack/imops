@@ -62,7 +62,7 @@ impl PipelineModule for ChromaDenoise {
         // let c_data: Vec<f32> = lch_data.clone().map(|[_, c, _]| c).collect();
         // let mut c_data = image.data.clone();
         // c_data.data = lch_data.clone().map(|[_,c,_]| [c as f32, c as f32, c as f32]).collect();
-        let iters = 3;
+        let iters = 1;
 
         for _ in 0..iters{
             let denoised_c = denoise::denoise(image.data.data.clone(), image.data.height, image.data.width);
@@ -115,7 +115,6 @@ impl PipelineModule for Sigmoid {
         let max_current_value = image.data.data.as_flattened().iter().cloned().reduce(f32::max).unwrap();
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/scaled_one).powf(2.0);
-        println!("scaled one {:}", scaled_one);
         let result = image.data.data.par_iter().map(|p| p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powf(2.0)));
         image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
         return image

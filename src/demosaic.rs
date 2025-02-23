@@ -118,21 +118,23 @@ impl DemosaicAlgorithms{
     ) -> RgbF32 {
         // Initialize RGB buffers
         let mut rgb = vec![[0.0f32; 3]; width * height];
-        for row in 0..height {
-            for col in 0..width {
-                let idx = row * width + col;
-                let color = cfa.color_at(row, col);
-                rgb[idx][color] = input[idx];
-            }
-        }
+        rgb = rgb.par_iter().enumerate().map(|(idx, _)|{
+            let col = idx % width;
+            let row = (idx - col)/width;
+            let idx = row * width + col;
+            let color = cfa.color_at(row, col);
+            let mut pix = rgb[idx];
+            pix[color] = input[idx];
+            pix
+        }).collect();
 
         // Green interpolation for non-green pixels
-        for row in 0..height {
-            for col in 0..width {
-                let idx = row * width + col;
-                if rgb[idx][1] != 0.0 {
-                    continue; // Already green
-                }
+        rgb = rgb.par_iter().enumerate().map(|(idx, _)|{
+            let col = idx % width;
+            let row = (idx - col)/width;
+            if rgb[idx][1] != 0.0 {
+                rgb[idx]
+            }else{
 
                 // Collect surrounding green values
                 let mut greens = Vec::new();
@@ -153,16 +155,20 @@ impl DemosaicAlgorithms{
                 }
 
                 // Average the green values
-                if !greens.is_empty() {
-                    let sum: f32 = greens.iter().sum();
-                    rgb[idx][1] = sum / greens.len() as f32;
-                }
+                let sum: f32 = greens.iter().sum();
+                [
+                    rgb[idx][0],
+                    sum / greens.len() as f32,
+                    rgb[idx][2],
+                ]
             }
-        }
+        }).collect();
 
         // Red and Blue interpolation using the green values
-        for row in 0..height {
-            for col in 0..width {
+        rgb = rgb.par_iter().enumerate().map(|(idx, _)|{
+                let col = idx % width;
+                let row = (idx - col)/width;
+
                 let idx = row * width + col;
                 let color = cfa.color_at(row, col);
                 if color == 1 {
@@ -187,12 +193,11 @@ impl DemosaicAlgorithms{
                             }
                         }
                     }
-                    if !reds.is_empty() {
-                        rgb[idx][0] = reds.iter().sum::<f32>() / reds.len() as f32;
-                    }
-                    if !blues.is_empty() {
-                        rgb[idx][2] = blues.iter().sum::<f32>() / blues.len() as f32;
-                    }
+                [
+                    reds.iter().sum::<f32>() / reds.len() as f32,
+                    rgb[idx][1],
+                    blues.iter().sum::<f32>() / blues.len() as f32,
+                ]
                 } else {
                     // Non-green pixel, interpolate the missing color
                     let target_color = if color == 0 { 2 } else { 0 };
@@ -212,31 +217,14 @@ impl DemosaicAlgorithms{
                             }
                         }
                     }
-                    if !samples.is_empty() {
-                        rgb[idx][target_color] = samples.iter().sum::<f32>() / samples.len() as f32;
-                    }
+                    let mut pix = rgb[idx];
+                    pix[target_color] = samples.iter().sum::<f32>() / samples.len() as f32;
+                    pix
                 }
-            }
-        }
+            }).collect();
 
-        // // Convert to YPbPr and compute homogeneity (simplified)
-        // let mut yuv = vec![[0.0f32; 3]; width * height];
-        // for idx in 0..width * height {
-        //     let r = rgb[idx][0];
-        //     let g = rgb[idx][1];
-        //     let b = rgb[idx][2];
-        //     // Convert to YPbPr (BT.2020)
-        //     yuv[idx][0] = 0.2627 * r + 0.6780 * g + 0.0593 * b;
-        //     yuv[idx][1] = (b - yuv[idx][0]) * 0.56433;
-        //     yuv[idx][2] = (r - yuv[idx][0]) * 0.67815;
-        // }
-
-        // Final averaging based on homogeneity (simplified)
-        // let mut output = vec![[0.0f32; 3]; width * height];
         let mut output = RgbF32::new(width, height);
-        for idx in 0..width * height {
-            output.data[idx] = rgb[idx];
-        }
+        output.data = rgb;
 
         output
     }
