@@ -1,6 +1,6 @@
 use std::usize;
 
-use color::{ColorSpace, Lch, Oklch, XyzD65};
+use color::{ColorSpace, Oklch, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
@@ -52,32 +52,23 @@ impl PipelineModule for ChromaDenoise {
         let lch_data = image.data.data.par_iter().map(|p|{
             XyzD65::convert::<Oklch>(*p)
         });
-        let lambda = 0.00189442719;
-        let convergence_threshold = 10_f64.powi(-10);
-        let max_iter = 100;
-        let tau: f64 = 1.0 / 2_f64.sqrt();
-        let sigma: f64 = 1_f64 / (8.0 * tau);
-        let gamma: f64 = 0.35 * lambda;
+        // let lambda = 0.00189442719;
+        // let convergence_threshold = 10_f64.powi(-10);
+        // let max_iter = 100;
+        // let tau: f64 = 1.0 / 2_f64.sqrt();
+        // let sigma: f64 = 1_f64 / (8.0 * tau);
+        // let gamma: f64 = 0.35 * lambda;
 
-        let c_data: Vec<f32> = lch_data.clone().map(|[_, c, _]| c).collect();
+        // let c_data: Vec<f32> = lch_data.clone().map(|[_, c, _]| c).collect();
+        let mut c_data = image.data.clone();
+        c_data.data = lch_data.clone().map(|[_,c,_]| [c as f32, c as f32, c as f32]).collect();
 
-        let data = denoise::denoise_vec(
-            c_data.clone(),
-            image.data.width,
-            image.data.height,
-            lambda,
-            tau,
-            sigma,
-            gamma,
-            max_iter,
-            convergence_threshold
-        );
-        // let data = data.par_iter().zip(lch_data).map(|(new_c, [l, c, h])|{
-        //     let new_lch = [l,c,h];
-        //     Oklch::convert::<XyzD65>(new_lch)
-        // }).collect();
-        let data = data.par_iter().map(|c| [*c, *c, *c]).collect();
-        image.data.data = data;
+        let denoised_c = denoise::denoise(c_data.data, image.data.height, image.data.width);
+        image.data.data = denoised_c;
+        // let denoise_image = lch_data.zip(denoised_c.data).map(|([l,_,h], [_, c, _])| [l, c, h]);
+        // image.data.data = denoise_image.map(|p|Oklch::convert::<XyzD65>(p)).collect();
+        // let denoise_image = lch_data.zip(denoised_c.data).map(|([l,_,h], [_, c, _])| [c, c, c]).collect();
+        // image.data.data = denoise_image;
         return image;
     }
 

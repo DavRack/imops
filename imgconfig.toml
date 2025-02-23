@@ -5,33 +5,37 @@ name = "CFACoeffs"
 name = "CST"
 color_space = "CameraToXYZ"
 
-[[pipeline_modules]]
-name = "Exp"
-ev = 5
 
 [[pipeline_modules]]
-name = "LS"
-transition_width = 3
-shadows_exp = 4
-highlits_exp = 0.3
-pivot = 2
+name = "ChromaDenoise"
 
-[[pipeline_modules]]
-name = "Contrast"
-c = 2
+# [[pipeline_modules]]
+# name = "Exp"
+# ev = 5
 
-[[pipeline_modules]]
-name = "LS"
-transition_width = 3
-shadows_exp = 1
-highlits_exp = 0.5
-pivot = 2.5
+# [[pipeline_modules]]
+# name = "LS"
+# transition_width = 3
+# shadows_exp = 4
+# highlits_exp = 0.3
+# pivot = 2
 
-[[pipeline_modules]]
-name = "LCH"
-lc = 1.0
-cc = 1.1
-hc = 1
+# [[pipeline_modules]]
+# name = "Contrast"
+# c = 2
+
+# [[pipeline_modules]]
+# name = "LS"
+# transition_width = 3
+# shadows_exp = 1
+# highlits_exp = 0.5
+# pivot = 2.5
+
+# [[pipeline_modules]]
+# name = "LCH"
+# lc = 1.0
+# cc = 1.1
+# hc = 1
 
 [[pipeline_modules]]
 name = "Sigmoid"
