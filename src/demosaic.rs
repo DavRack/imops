@@ -219,17 +219,17 @@ impl DemosaicAlgorithms{
             }
         }
 
-        // Convert to YPbPr and compute homogeneity (simplified)
-        let mut yuv = vec![[0.0f32; 3]; width * height];
-        for idx in 0..width * height {
-            let r = rgb[idx][0];
-            let g = rgb[idx][1];
-            let b = rgb[idx][2];
-            // Convert to YPbPr (BT.2020)
-            yuv[idx][0] = 0.2627 * r + 0.6780 * g + 0.0593 * b;
-            yuv[idx][1] = (b - yuv[idx][0]) * 0.56433;
-            yuv[idx][2] = (r - yuv[idx][0]) * 0.67815;
-        }
+        // // Convert to YPbPr and compute homogeneity (simplified)
+        // let mut yuv = vec![[0.0f32; 3]; width * height];
+        // for idx in 0..width * height {
+        //     let r = rgb[idx][0];
+        //     let g = rgb[idx][1];
+        //     let b = rgb[idx][2];
+        //     // Convert to YPbPr (BT.2020)
+        //     yuv[idx][0] = 0.2627 * r + 0.6780 * g + 0.0593 * b;
+        //     yuv[idx][1] = (b - yuv[idx][0]) * 0.56433;
+        //     yuv[idx][2] = (r - yuv[idx][0]) * 0.67815;
+        // }
 
         // Final averaging based on homogeneity (simplified)
         // let mut output = vec![[0.0f32; 3]; width * height];
