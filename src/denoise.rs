@@ -287,10 +287,9 @@ pub fn denoise(img: Vec<[f32; 3]>, height: usize, width: usize) -> Vec<[f32; 3]>
     let sigma_spatial_squared = spatial_sigma.powi(2);
     let sigma_color_squared = color_sigma.powi(2);
 
-    let denoised_img = img.clone().par_iter().enumerate().map(|(index, _)|{
+    let denoised_img = img.par_iter().enumerate().map(|(index, center_pixel)|{
         let x = index % width;
         let y = (index-x)/width;
-        let center_pixel = img[y * width + x];
 
         let mut weights_and_values = Vec::with_capacity(radius.pow(2) as usize);
         for wy in -radius..=radius {
