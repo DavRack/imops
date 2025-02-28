@@ -8,10 +8,13 @@ color_space = "CameraToXYZ"
 
 [[pipeline_modules]]
 name = "ChromaDenoise"
+a = 1
+b = 1
+strength = 1
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 6
+ev = 7
 
 # [[pipeline_modules]]
 # name = "LS"

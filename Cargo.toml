@@ -10,7 +10,8 @@ opt-level = 3
 clap = {version="4.5.29", features = ["derive"]}
 color = "0.2.3"
 image = "0.25.5"
-ndarray = {version = "0.16.1", features = ["rayon", "matrixmultiply-threading"]}
+image-dwt = { git="https://github.com/DavRack/image-dwt.git" }
+ndarray = {version = "0.15.6", features = ["rayon", "matrixmultiply-threading"]}
 rawler = "0.6.0"
 rayon = "1.10.0"
 serde = { version = "1.0.217", features = ["derive"] }

@@ -1,6 +1,8 @@
 use std::usize;
 
 use color::{ColorSpace, Oklch, XyzD65};
+use image_dwt::{layer::WaveletLayer, recompose, transform::{self, ATrousTransformInput}, ATrousTransform, RecomposableWaveletLayers};
+use ndarray::Array2;
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
@@ -45,40 +47,93 @@ impl PipelineModule for LCH {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ChromaDenoise {
+	  a: f32,
+    b: f32,
+    strength: f32
 }
 
 impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
-        // let lch_data = image.data.data.par_iter().map(|p|{
-        //     XyzD65::convert::<Oklch>(*p)
+
+        let data_lch = image.data.data.par_iter().map(|p|{
+            let lch: [f32; 3] = XyzD65::convert::<Oklch>(*p);
+            lch
+        });
+
+        // let noisy_image: Vec<f32> = data_lch.map(|[_,c,_]| c).collect();
+        // let denoised = noisy_image.clone();
+
+        // let denoiser = denoise::BM3D::new(8, 16, 0.15, image.data.width, image.data.height);
+        // let denoised = denoiser.denoise(noisy_image);
+
+        // image.data.data = denoised.par_iter().map(|v| [*v, *v, *v]).collect();
+        // return image;
+        let gray_image = Array2::from_shape_vec(
+            (image.data.height, image.data.width),
+            data_lch.clone().map(|[_,v,_]| v).collect()
+        ).unwrap();
+        let recomposed = denoise::apply_wavelet_denoising( gray_image , 3);
+
+
+        // let gray_image = ATrousTransformInput::Grayscale { data: gray_image };
+        // let levels = 10;
+        // let transform = ATrousTransform{
+        //     input: gray_image,
+        //     levels,
+        //     kernel: image_dwt::Kernel::B3SplineKernel,
+        //     current_level: 0,
+
+        // };
+
+        // let recomposed: Vec<WaveletLayer> = transform
+        //     .into_iter()
+        //     .skip(1)
+        //     .filter(|item| item.pixel_scale.is_some_and(|scale| scale < 5)).collect();
+        // let recomposed = recomposed.into_iter()
+        //     .recompose_into_vec(image.data.width as usize, image.data.height as usize, image_dwt::recompose::OutputLayer::Grayscale);
+
+        // let recomposed = recomposed.as_raw();
+        // let recomposed: Vec<f32> =             data_lch.map(|[v,_,_]| v).collect();
+
+        // image.data.data = recomposed
+        //     .par_iter()
+        //     .zip(data_lch).map(|(c,[l,_,h])|Oklch::convert::<XyzD65>([l,*c,h])).collect();
+
+        // let gray_image_lch: Vec<[f32; 3]> = recomposed.par_iter().map(|v| [0.0, *v, 0.0]).collect();
+        // let data_xyz = gray_image_lch.par_iter().map(|p|{
+        //     let lch: [f32; 3] = Oklch::convert::<XyzD65>(*p);
+        //     lch
         // });
-        // let lambda = 0.00189442719;
-        // let convergence_threshold = 10_f64.powi(-10);
-        // let max_iter = 100;
-        // let tau: f64 = 1.0 / 2_f64.sqrt();
-        // let sigma: f64 = 1_f64 / (8.0 * tau);
-        // let gamma: f64 = 0.35 * lambda;
+        image.data.data = recomposed.par_iter().map(|v| [*v, *v, *v]).collect();
+        // image.data.data = data_xyz.collect();
 
-        // let c_data: Vec<f32> = lch_data.clone().map(|[_, c, _]| c).collect();
-        // let mut c_data = image.data.clone();
-        // c_data.data = lch_data.clone().map(|[_,c,_]| [c as f32, c as f32, c as f32]).collect();
-        let iters = 1;
+        // let data_lch = image.data.data.par_iter().map(|p|{
+        //     let lch: [f32; 3] = XyzD65::convert::<Oklch>(*p);
+        //     lch
+        // });
+        // let denoised_c = denoise::denoise_w(
+        //     data_lch.clone().map(|[_,c,_]|c).collect(),
+        //     image.data.width,
+        //     image.data.height,
+        //     self.a,
+        //     self.b,
+        //     self.strength*10.0
+        // );
 
-        for _ in 0..iters{
-            let denoised_c = denoise::denoise(image.data.data.clone(), image.data.height, image.data.width);
-            let lch_data = image.data.data.par_iter().map(|p|{
-                XyzD65::convert::<Oklch>(*p)
-            });
-            let lch_data_d = denoised_c.par_iter().map(|p|{
-                XyzD65::convert::<Oklch>(*p)
-            });
-            let reconstructed = lch_data.zip(lch_data_d).map(|([l,_,_], [_,c,h])| [l, c, h]);
+        // // let denoised_h = denoise::denoise_w(
+        // //     data_lch.clone().map(|[_,_,h]|h).collect(),
+        // //     image.data.width,
+        // //     image.data.height,
+        // //     self.a,
+        // //     self.b,
+        // //     self.strength
+        // // );
+        // let denoised_h: Vec<f32> = data_lch.clone().map(|[_,_,h]|h).collect();
 
-            // let denoise_image = lch_data.zip(denoised_c.data).map(|([l,_,h], [_, c, _])| [l, c, h]);
-            image.data.data = reconstructed.map(|p|Oklch::convert::<XyzD65>(p)).collect();
-        }
-        // let denoise_image = lch_data.zip(denoised_c.data).map(|([l,_,h], [_, c, _])| [c, c, c]).collect();
-        // image.data.data = denoise_image;
+        // image.data.data = denoised_c
+        //     .par_iter()
+        //     .zip(denoised_h.par_iter()).map(|(c,h)|[c,h])
+        //     .zip(data_lch).map(|([c,h],[l,_,_])|Oklch::convert::<XyzD65>([l,*c,*h])).collect();
         return image;
     }
 

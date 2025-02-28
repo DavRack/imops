@@ -1,297 +1,18 @@
+use core::panic;
 use std::usize;
 
-use rawler::pixarray::RgbF32;
+use image_dwt::RecomposableWaveletLayers;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-
-
-// Helper function to calculate positive gradient along x-axis (axis 1)
-fn positive_gradient_x(data: &[f32], width: usize, height: usize) -> Vec<f32> {
-    let mut gradient = vec![0.0; width * height];
-    for y in 0..height {
-        for x in 0..width {
-            let current_index = y * width + x;
-            let next_x = x + 1;
-            if next_x < width {
-                let next_index = y * width + next_x;
-                gradient[current_index] = data[next_index] - data[current_index];
-            } // else gradient is 0 at the boundary (implicit zero padding)
-        }
-    }
-    gradient
-}
-
-// Helper function to calculate positive gradient along y-axis (axis 0)
-fn positive_gradient_y(data: &[f32], width: usize, height: usize) -> Vec<f32> {
-    let mut gradient = vec![0.0; width * height];
-    for y in 0..height {
-        for x in 0..width {
-            let current_index = y * width + x;
-            let next_y = y + 1;
-            if next_y < height {
-                let next_index = next_y * width + x;
-                gradient[current_index] = data[next_index] - data[current_index];
-            } // else gradient is 0 at the boundary (implicit zero padding)
-        }
-    }
-    gradient
-}
-
-// Helper function to calculate negative gradient along x-axis (axis 1)
-fn negative_gradient_x(data: &[f32], width: usize, height: usize) -> Vec<f32> {
-    let mut gradient = vec![0.0; width * height];
-    for y in 0..height {
-        for x in 0..width {
-            let current_index = y * width + x;
-            let prev_x = x as isize - 1;
-            if prev_x >= 0 {
-                let prev_index = y * width + prev_x as usize;
-                gradient[current_index] = data[current_index] - data[prev_index];
-            } // else gradient is 0 at the boundary (implicit zero padding)
-        }
-    }
-    gradient
-}
-
-// Helper function to calculate negative gradient along y-axis (axis 0)
-fn negative_gradient_y(data: &[f32], width: usize, height: usize) -> Vec<f32> {
-    let mut gradient = vec![0.0; width * height];
-    for y in 0..height {
-        for x in 0..width {
-            let current_index = y * width + x;
-            let prev_y = y as isize - 1;
-            if prev_y >= 0 {
-                let prev_index = prev_y as usize * width + x;
-                gradient[current_index] = data[current_index] - data[prev_index];
-            } // else gradient is 0 at the boundary (implicit zero padding)
-        }
-    }
-    gradient
-}
-
-// Helper function for vector length at each pixel (assuming dual_a and dual_b are the x and y components)
-fn vector_len(dual_a: &[f32], dual_b: &[f32]) -> Vec<f32> {
-    dual_a
-        .iter()
-        .zip(dual_b.iter())
-        .map(|(&da, &db)| (da * da + db * db).sqrt().max(1.0)) // max(1, sqrt(da^2 + db^2)) as in original code's logic
-        .collect()
-}
-
-// Helper function for weighted average (simplified to linear interpolation with lambda)
-fn weighted_average(current: &[f32], original: &[f32], lambda: f64) -> Vec<f32> {
-    current
-        .iter()
-        .zip(original.iter())
-        .map(|(&c, &o)| c + lambda as f32 * (o - c)) // Simplified to current + lambda * (original - current) which can be interpreted as moving towards original
-        .collect()
-}
-
-// Helper function to calculate norm of a vector
-fn norm(data: &[f32]) -> f64 {
-    data.iter().map(|&x| (x as f64) * (x as f64)).sum::<f64>().sqrt()
-}
-
-// pub fn denoise_vec(
-//     mut image: FormedImage
-// ) -> FormedImage {
-//     for _ in 0..10{
-//         for _ in 0..40{
-//             image.data = filter3x3(image.clone(), &[0.0967, 0.1176, 0.0967, 0.1176, 0.143, 0.1176, 0.0967, 0.1176, 0.0967].clone());
-//         }
-//         image.data = filter3x3(image.clone(), &[0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0].clone());
-//     }
-//     for _ in 0..5{
-//         image.data = filter3x3(image.clone(), &[0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0].clone());
-//     }
-//     // image.data = filter3x3(image.clone(), &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0].clone());
-//     return image
-// }
-pub fn filter3x3(image: RgbF32, kernel: &[f32]) -> RgbF32{ // Specify FormedImage<RgbF32>
-
-    let height = image.height;
-    let width = image.width;
-
-    let mut out_data = image.clone();
-
-    if kernel.len() != 9 {
-        panic!("Kernel must be of size 9 for a 3x3 filter.");
-    }
-
-
-    for y in 1..(height - 1) {
-        for x in 1..(width - 1) {
-            let mut sum_r = 0.0;
-            let mut sum_g = 0.0;
-            let mut sum_b = 0.0;
-
-            for ky in 0..3 {
-                for kx in 0..3 {
-                    let kernel_val = kernel[ky * 3 + kx]; // Kernel index: row-major order
-                    let sample_x = (x as i32 - 1 + kx as i32) as usize;
-                    let sample_y = (y as i32 - 1 + ky as i32) as usize;
-
-                    let sample_pixel = image.at(sample_y, sample_x);
-
-                    sum_r += sample_pixel[0] * kernel_val;
-                    sum_g += sample_pixel[1] * kernel_val;
-                    sum_b += sample_pixel[2] * kernel_val;
-                }
-            }
-
-            // Calculate index into the flat buffer for pixel (x, y)
-            let base_index = y as usize * width as usize + x as usize; // * 3 for RGB
-
-            out_data.data[base_index][0] = sum_r; // R channel
-            out_data.data[base_index][1] = sum_g; // G channel
-            out_data.data[base_index][2] = sum_b; // B channel
-        }
-    }
-
-    out_data
-}
-
-pub fn denoise_poly(image: RgbF32) -> RgbF32 {
-    let height = image.height as i32;
-    let width = image.width as i32;
-
-    let mut out_data = image.clone();
-    let mix_value = 0.8;
-
-    for y in 2..(height - 2) {
-        for x in 2..(width - 2) {
-            let v = |i1: i32, i2: i32| {
-                let ny = y + i1;
-                let nx = x + i2;
-
-                if ny >= 0 && ny < height && nx >= 0 && nx < width {
-                    image.at(ny as usize, nx as usize)[0]
-                } else {
-                    0.0 // Handle out-of-bounds access
-                }
-            };
-
-            let dx = |a: f32, b: f32| {
-                let x2mx1 = b-a;
-
-                if x2mx1 != 0.0 {
-                    -1.0/x2mx1
-                }else{
-                    0.0
-                }
-            };
-
-            let ds = [
-                [dx(v(-2, -2), v(-1, -1)), dx(v(1, 1), v(2, 2)), v(-1, -1), v(1, 1)],
-                [dx(v(0, -2),  v(0, -1)),  dx(v(0, 1), v(0, 2)), v(0, -1),  v(0, 1)],
-                [dx(v(-2, -2), v(-1, -1)), dx(v(1, 1), v(2, 2)), v(-1, -1), v(1, 1)],
-                [dx(v(-2, -2), v(-1, -1)), dx(v(1, 1), v(2, 2)), v(-1, -1), v(1, 1)],
-            ];
-
-            let xs = [
-                [3.0, -2.0,  1.0, 0.0],
-                [3.0,  2.0,  1.0, 0.0],
-                [-1.0, 1.0, -1.0, 1.0],
-                [1.0,  1.0,  1.0, 1.0],
-            ];
-            
-
-            let interpolated_value: f32 = ds.iter().map(|val| {
-                let sol = match solve_linear_system(&xs, val) {
-                    Some(solution) => solution[3],
-                    _ => v(0, 0), // Use center pixel if solve fails
-                };
-                if sol < 0.0{0.0}else{sol / 4.0}
-            }).sum();
-
-            let new_value = (v(0,0)*mix_value) + ((1.0-mix_value)*interpolated_value);
-            // let new_value = interpolated_value;
-
-            let base_index = (y * width + x) as usize;
-            out_data.data[base_index][0] = new_value;
-            out_data.data[base_index][1] = new_value;
-            out_data.data[base_index][2] = new_value;
-        }
-    }
-
-    out_data
-}
-fn solve_linear_system(matrix: &[[f32; 4]; 4], vector: &[f32; 4]) -> Option<[f32; 4]> {
-    let n = 4;
-    let mut augmented_matrix: [[f32; 5]; 4] = [[0.0; 5]; 4];
-
-    // Create augmented matrix [matrix | vector]
-    for i in 0..n {
-        for j in 0..n {
-            augmented_matrix[i][j] = matrix[i][j];
-        }
-        augmented_matrix[i][n] = vector[i];
-    }
-
-    // Gaussian elimination with partial pivoting
-    for i in 0..n {
-        // Find pivot row
-        let mut max_row = i;
-        for k in i + 1..n {
-            if augmented_matrix[k][i].abs() > augmented_matrix[max_row][i].abs() {
-                max_row = k;
-            }
-        }
-
-        // Swap rows
-        if max_row != i {
-            augmented_matrix.swap(i, max_row);
-        }
-
-        // If pivot is zero, continue to next column (or return None if needed for singular matrix detection)
-        if augmented_matrix[i][i].abs() < 1e-6 { // Using a small epsilon for float comparison
-            if augmented_matrix[i][n].abs() > 1e-6 { // Check for inconsistency if pivot is near zero and RHS is not
-                return None; // No solution (or singular and inconsistent)
-            }
-            continue; // Singular or dependent system, but let's continue for possible solutions if they exist
-        }
-
-        // Eliminate below current row
-        for j in i + 1..n {
-            let factor = augmented_matrix[j][i] / augmented_matrix[i][i];
-            for k in i..n + 1 {
-                augmented_matrix[j][k] -= factor * augmented_matrix[i][k];
-            }
-        }
-    }
-
-    // Back substitution
-    let mut solution = [0.0; 4];
-    for i in (0..n).rev() {
-        let mut sum = 0.0;
-        for j in i + 1..n {
-            sum += augmented_matrix[i][j] * solution[j];
-        }
-        if augmented_matrix[i][i].abs() < 1e-6 {
-            if augmented_matrix[i][n].abs() > 1e-6 {
-                return None; // No solution (inconsistent)
-            } else {
-                // System may be singular or have infinite solutions. For simplicity, returning None for non-unique solution cases.
-                return None;
-            }
-        }
-        solution[i] = (augmented_matrix[i][n] - sum) / augmented_matrix[i][i];
-    }
-
-    Some(solution)
-}
-
 pub fn denoise(img: Vec<[f32; 3]>, height: usize, width: usize) -> Vec<[f32; 3]> {
-    let radius: i32 = 3; // Radius of the kernel
+    let radius: i32 = 2; // Radius of the kernel
     let spatial_sigma:f32 = 10.0; // Spatial sigma
-    let color_sigma:f32 = 10.0; // Color sigma
     let sigma_spatial_squared = spatial_sigma.powi(2);
-    let sigma_color_squared = color_sigma.powi(2);
 
-    let denoised_img = img.par_iter().enumerate().map(|(index, center_pixel)|{
+    let denoised_img = img.par_iter().enumerate().map(|(index, _)|{
         let x = index % width;
         let y = (index-x)/width;
 
-        let mut weights_and_values = Vec::with_capacity(radius.pow(2) as usize);
+        let mut weights_and_values = Vec::with_capacity((radius*2).pow(2) as usize);
         for wy in -radius..=radius {
             for wx in -radius..=radius {
                 let neighbor_y = (y as i32 + wy).clamp(0, (height - 1) as i32) as usize;
@@ -300,17 +21,9 @@ pub fn denoise(img: Vec<[f32; 3]>, height: usize, width: usize) -> Vec<[f32; 3]>
 
                 // Calculate spatial distance
                 let spatial_distance_squared = (wx as f32).powi(2) + (wy as f32).powi(2);
-                let spatial_weight = gaussian_weight(spatial_distance_squared, sigma_spatial_squared);
+                let spatial_weight = (spatial_distance_squared*-0.5 / sigma_spatial_squared).exp();
 
-                // Calculate color distance
-                let euclidean_color_distance_squared = center_pixel.iter()
-                    .zip(neighbor_pixel.iter())
-                    .map(|(c1, c2)| (c1 - c2).powi(2))
-                    .sum::<f32>();
-                let color_weight = gaussian_weight(euclidean_color_distance_squared, sigma_color_squared);
-
-                let weight = spatial_weight * color_weight;
-                weights_and_values.push((weight, neighbor_pixel));
+                weights_and_values.push((spatial_weight, neighbor_pixel));
             }
         }
         let denoised_pixel = weighted_average_vec(weights_and_values.into_iter());
@@ -334,22 +47,256 @@ fn weighted_average_vec(weights_and_values: impl Iterator<Item = (f32, [f32; 3])
         return [0.0, 0.0, 0.0]; // Avoid division by zero if weights_sum is zero
     }
 
-    let mut channel_averages = [0.0, 0.0, 0.0];
-    for i in 0..3 {
-        channel_averages[i] = weighted_channel_sums[i] / weights_sum;
-    }
+    let channel_averages = weighted_channel_sums.map(|x| x/weights_sum);
     channel_averages
 }
 
-/// Un-normalized Gaussian Weight
-fn gaussian_weight(x_squared: f32, sigma_squared: f32) -> f32 {
-    if sigma_squared == 0.0 {
-        if x_squared == 0.0 {
-            1.0
-        } else {
-            0.0
-        }
-    } else {
-        (-0.5 * x_squared / sigma_squared).exp()
+pub fn denoise_w(
+    image: Vec<f32>,
+    width: usize,
+    height: usize,
+    a: f32,
+    b: f32,
+    strength: f32,
+) -> Vec<f32> {
+    // Apply Variance Stabilizing Transform (VST)
+    let precond: Vec<f32> = image
+        .iter()
+        .map(|&x| 2.0 * ((x + b) / a).sqrt())
+        .collect();
+
+    let max_scale = 4; // Number of wavelet scales
+
+    // Decompose the image into wavelet details
+    let mut current = precond.clone();
+    let mut details = Vec::with_capacity(max_scale);
+
+    for s in 0..max_scale {
+        let stride = 1 << s; // 2^s
+        let next = atrous_convolve(&current, width, height, stride);
+        let detail: Vec<f32> = current
+            .iter()
+            .zip(&next)
+            .map(|(c, n)| c - n)
+            .collect();
+        details.push(detail);
+        current = next;
     }
+
+    // Apply thresholding to each detail layer
+    for detail in details.iter_mut() {
+        let var = compute_variance(detail);
+        let sigma = var.sqrt();
+        let threshold = strength * sigma;
+
+        for coeff in detail.iter_mut() {
+            let abs_coeff = coeff.abs();
+            if abs_coeff > threshold {
+                *coeff = coeff.signum() * (abs_coeff - threshold);
+            } else {
+                *coeff = 0.0;
+            }
+        }
+    }
+
+    // Reconstruct the image from the wavelet details
+    let mut denoised = current;
+    for s in (0..max_scale).rev() {
+        let stride = 1 << s;
+        let upsampled = atrous_convolve(&denoised, width, height, stride);
+        denoised = upsampled
+            .iter()
+            .zip(&details[s])
+            .map(|(u, d)| u + d)
+            .collect();
+    }
+
+    // Apply inverse VST
+    denoised
+        .into_iter()
+        .map(|x| {
+            let val = (x / 2.0).powi(2) * a - b;
+            val.max(0.0)
+        })
+        .collect()
+}
+
+// Helper function to compute the à-trous convolution
+fn atrous_convolve(image: &[f32], width: usize, height: usize, stride: usize) -> Vec<f32> {
+    let temp = convolve_horizontal(image, width, height, stride);
+    convolve_vertical(&temp, width, height, stride)
+}
+
+// Horizontal convolution with symmetric padding
+fn convolve_horizontal(image: &[f32], width: usize, height: usize, stride: usize) -> Vec<f32> {
+    let kernel = [0.0625, 0.25, 0.375, 0.25, 0.0625];
+    let mut result = vec![0.0; width * height];
+
+    for y in 0..height {
+        for x in 0..width {
+            let mut sum = 0.0;
+
+            for (i, &k) in kernel.iter().enumerate() {
+                let offset = i as isize - 2;
+                let pos = x as isize + offset * stride as isize;
+                let pos = if pos < 0 {
+                    (-pos - 1) as usize
+                } else if pos >= width as isize {
+                    (2 * (width as isize) - pos - 1) as usize
+                } else {
+                    pos as usize
+                };
+
+                sum += image[y * width + pos] * k;
+            }
+
+            result[y * width + x] = sum;
+        }
+    }
+
+    result
+}
+
+// Vertical convolution with symmetric padding
+fn convolve_vertical(image: &[f32], width: usize, height: usize, stride: usize) -> Vec<f32> {
+    let kernel = [0.0625, 0.25, 0.375, 0.25, 0.0625];
+    let mut result = vec![0.0; width * height];
+
+    for y in 0..height {
+        for x in 0..width {
+            let mut sum = 0.0;
+
+            for (i, &k) in kernel.iter().enumerate() {
+                let offset = i as isize - 2;
+                let pos = y as isize + offset * stride as isize;
+                let pos = if pos < 0 {
+                    (-pos - 1) as usize
+                } else if pos >= height as isize {
+                    (2 * (height as isize) - pos - 1) as usize
+                } else {
+                    pos as usize
+                };
+
+                sum += image[pos * width + x] * k;
+            }
+
+            result[y * width + x] = sum;
+        }
+    }
+
+    result
+}
+
+// Compute the variance of a slice of f32 values
+fn compute_variance(data: &[f32]) -> f32 {
+    let mean = data.iter().sum::<f32>() / data.len() as f32;
+    data.iter()
+        .map(|&x| (x - mean).powi(2))
+        .sum::<f32>()
+        / data.len() as f32
+}
+use ndarray::Array2;
+use image_dwt::{
+    layer::WaveletLayer, recompose::{self, OutputLayer}, transform::ATrousTransformInput, ATrousTransform, Kernel
+    // Kernel, // Assuming Kernel is re-exported or available
+};
+
+pub fn apply_wavelet_denoising(
+    mut image: Array2<f32>,
+    levels: usize
+) -> Vec<f32>{
+    let gray_image_input = ATrousTransformInput::Grayscale { data: image.clone() }; // Clone here
+    let transform = ATrousTransform{
+        input: gray_image_input,
+        levels,
+        kernel: Kernel::B3SplineKernel,
+        current_level: 0,
+    };
+
+    // Collect wavelet coefficients into a Vec to modify them
+    let mut wavelet_items: Vec<WaveletLayer> = transform.clone()
+        .into_iter()
+        .skip(1) // Skip level 0 (original image) to process detail levels
+        .collect();
+
+    // Noise Thresholding (Soft Thresholding) - Apply to each detail level
+    let sigma_est = estimate_sigma_atrous(&wavelet_items); // Estimate noise from wavelet coefficients
+    // Corrected line: use image.len() to get total number of elements
+    let universal_threshold = sigma_est * (2.0 * (image.len() as f32).ln()).sqrt(); // Universal threshold
+
+    for item in wavelet_items.iter_mut() {
+        // Access the coefficient Array2<f32> directly as item.data
+        let detail_array = match &mut item.buffer {
+            image_dwt::layer::WaveletLayerBuffer::Grayscale{data} => data,
+            _ => panic!(""),
+        }; // Get a mutable reference to the Array2
+
+        detail_array.par_map_inplace(|coeff| {
+            *coeff = soft_threshold(*coeff, universal_threshold);
+        });
+    }
+
+    let [height, width] = image.shape() else {panic!("")}; // Corrected variable name to width
+    let recomposed: Vec<WaveletLayer> = transform
+        .into_iter()
+        .skip(1) // Skip level 0 (original image) to process detail levels
+        .map(|mut item: WaveletLayer| { // Use map to modify WaveletLayer in place
+            let detail_array = match &mut item.buffer {
+                image_dwt::layer::WaveletLayerBuffer::Grayscale{data} => data,
+                _ => panic!(""),
+            }; // Get a mutable reference to the Array2
+
+            detail_array.par_map_inplace(|coeff| {
+                *coeff = soft_threshold(*coeff, universal_threshold);
+            });
+            item // Return the modified WaveletLayer
+        }).collect();
+    let recomposed = recomposed.into_iter()
+        .recompose_into_vec(*height as usize, *width as usize, OutputLayer::Grayscale); // Corrected width/height order
+
+
+    // Corrected line: return recomposed directly as it's already Vec<f32>
+    recomposed // Return directly as Vec<f32>
+}
+
+
+// Soft thresholding function (same as before)
+fn soft_threshold(coefficient: f32, threshold: f32) -> f32 {
+    if coefficient > threshold {
+        coefficient - threshold
+    } else if coefficient < -threshold {
+        coefficient + threshold
+    } else {
+        0.0
+    }
+}
+
+// Estimate noise standard deviation (sigma) for ATrous transform
+// Here, we estimate from the coefficients of all detail levels combined for simplicity
+fn estimate_sigma_atrous(wavelet_items: &Vec<WaveletLayer>) -> f32 {
+    let mut all_detail_coeffs: Vec<f32> = Vec::new();
+    for item in wavelet_items.iter() {
+        // Access coefficients as item.data.as_slice().unwrap()
+        all_detail_coeffs.extend(
+            match &item.buffer {
+                image_dwt::layer::WaveletLayerBuffer::Grayscale{data} => data,
+                _ => panic!(""),
+            } // Get a mutable reference to the Array2
+        ); // Flatten detail array
+    }
+
+    if all_detail_coeffs.is_empty() {
+        return 1.0; // Fallback if no detail coefficients found
+    }
+
+    let mut abs_coeffs: Vec<f32> = all_detail_coeffs.iter().map(|coeff| coeff.abs()).collect();
+    abs_coeffs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let median_abs_coeffs = if abs_coeffs.len() % 2 == 0 {
+        (abs_coeffs[abs_coeffs.len() / 2 - 1] + abs_coeffs[abs_coeffs.len() / 2]) / 2.0
+    } else {
+        abs_coeffs[abs_coeffs.len() / 2]
+    };
+
+    median_abs_coeffs / 0.6745 // Robust MAD estimator
 }
