@@ -237,26 +237,12 @@ pub fn apply_wavelet_denoising(
     }
 
     let [height, width] = image.shape() else {panic!("")}; // Corrected variable name to width
-    let recomposed: Vec<WaveletLayer> = transform
-        .into_iter()
-        .skip(1) // Skip level 0 (original image) to process detail levels
-        .map(|mut item: WaveletLayer| { // Use map to modify WaveletLayer in place
-            let detail_array = match &mut item.buffer {
-                image_dwt::layer::WaveletLayerBuffer::Grayscale{data} => data,
-                _ => panic!(""),
-            }; // Get a mutable reference to the Array2
-
-            detail_array.par_map_inplace(|coeff| {
-                *coeff = soft_threshold(*coeff, universal_threshold);
-            });
-            item // Return the modified WaveletLayer
-        }).collect();
-    let recomposed = recomposed.into_iter()
+    let recomposed_image_data: Vec<f32> = wavelet_items.into_iter()
         .recompose_into_vec(*height as usize, *width as usize, OutputLayer::Grayscale); // Corrected width/height order
 
 
     // Corrected line: return recomposed directly as it's already Vec<f32>
-    recomposed // Return directly as Vec<f32>
+    recomposed_image_data // Return directly as Vec<f32>
 }
 
 
