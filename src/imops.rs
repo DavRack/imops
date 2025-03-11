@@ -3,9 +3,12 @@ use std::usize;
 use color::{ColorSpace, Oklch, XyzD65};
 use image_dwt::{layer::WaveletLayer, recompose, transform::{self, ATrousTransformInput}, ATrousTransform, RecomposableWaveletLayers};
 use ndarray::Array2;
-use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
+use rawler::{imgop::xyz::Illuminant, pixarray::{PixF32, RgbF32}, RawImage};
 use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
+use crate::{chroma_nr, helpers, nl_means::{self}};
+use crate::helpers::*;
+use crate::helpers::Stats;
 
 use crate::denoise;
 
@@ -46,6 +49,68 @@ impl PipelineModule for LCH {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct HighlightReconstruction {
+}
+fn get_pixel_clip_values(image: &FormedImage, pixel: [f32; 3]) -> [f32; 3]{
+    let [rv, gv, bv, _] = image.raw_image.wb_coeffs;
+    let [r, g, b] = pixel;
+    let scaled_pixel_values = [r*rv, g*gv, b*bv];
+
+    // normalize
+    let max_pixel_value = helpers::Stats::max(scaled_pixel_values.iter());
+    let normalized_values = scaled_pixel_values.map(|v| v/max_pixel_value);
+    return scaled_pixel_values
+}
+
+fn get_cliped_channels(image: &FormedImage, pixel: [f32; 3]) -> [bool; 3]{
+    let [clip_r, clip_g, clip_b, _] = image.raw_image.wb_coeffs;
+    let [r, g, b] = pixel;
+    // println!("{:}, {:}, {:}", clip_r, clip_g, clip_b);
+    // println!("{:}, {:}, {:}\n", r, g, b);
+    let cliped_channels = [
+        r >= clip_r,
+        g >= clip_g,
+        b >= clip_b,
+    ];
+    return cliped_channels
+}
+
+impl PipelineModule for HighlightReconstruction {
+
+    fn process(&self, mut image: FormedImage) -> FormedImage {
+        let corrected_pixels= image.data.data.par_iter().enumerate().map(|(idx, pixel)|{
+            let clipped_channesl = get_cliped_channels(&image, *pixel);
+            let tail = image.data.get_tail(1, idx);
+            let sorrounding_pixels = tail.iter().map(|(_, px)| *px);
+            let reconstructed_pixel: Vec<f32> = clipped_channesl.iter().enumerate().map(|(channel, clipped)|{
+                if *clipped {
+                    let other_channels = [
+                        (channel + 1) % 3,
+                        (channel + 2) % 3
+                    ];
+
+                    let new_channel_value = other_channels.iter().map(|channel| {
+                        sorrounding_pixels.clone().map(|px| px[*channel]).collect::<Vec<f32>>().iter().mean()
+                    }).collect::<Vec<f32>>().iter().mean();
+                    new_channel_value
+                }else{
+                    let r = pixel[channel];
+                    r
+                }
+            }).collect();
+
+            [reconstructed_pixel[0], reconstructed_pixel[1],reconstructed_pixel[2],]
+        });
+        image.data = RgbF32::new_with(corrected_pixels.collect(), image.data.width, image.data.height);
+        return image
+    }
+
+    fn get_name(&self) -> String{
+        return "HighlightReconstruction".to_string()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ChromaDenoise {
 	  a: f32,
     b: f32,
@@ -54,13 +119,52 @@ pub struct ChromaDenoise {
 
 impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
+        return image;
 
         let data_lch = image.data.data.par_iter().map(|p|{
             let lch: [f32; 3] = XyzD65::convert::<Oklch>(*p);
             lch
         });
 
-        // let noisy_image: Vec<f32> = data_lch.map(|[_,c,_]| c).collect();
+
+        let noisy_image_data_l = data_lch.clone().map(|[l,_,_]| l);
+        // let noisy_image_data_c: Vec<[f32; 3]> = data_lch.clone().map(|[_,c,_]| [c, c, c]).collect();
+        // let chromac = chroma_nr::ChromaDenoise{
+        //     image: &RgbF32::new_with(noisy_image_data_c, image.data.width, image.data.height),
+        //     tail_radious: 10
+        // };
+        // let noisy_image_data_h: Vec<[f32; 3]> = data_lch.map(|[_,_,h]| [h, h, h]).collect();
+
+        // let chromah = chroma_nr::ChromaDenoise{
+        //     image: &RgbF32::new_with(noisy_image_data_h, image.data.width, image.data.height),
+        //     tail_radious: 1
+        // };
+
+        // let noisy_image_data = denoise::bayesian_wavelet_denoising(noisy_image_data, image.data.width, image.data.height);
+        // let noisy_image_data = denoise::bayesian_wavelet_denoising(noisy_image_data, image.data.width, image.data.height);
+        // let noisy_image_data = denoise::bayesian_wavelet_denoising(noisy_image_data, image.data.width, image.data.height);
+        // let noisy_image_data = denoise::bayesian_wavelet_denoising(noisy_image_data, image.data.width, image.data.height);
+        // let denoised_image = denoise::bayesian_wavelet_denoising(noisy_image_data, image.data.width, image.data.height, 10, 1.0);
+        // let c = chroma_nr::denoise(&noisy_image_data_c, image.data.width, image.data.height,4, 1.0);
+        // let h = chroma_nr::denoise(&noisy_image_data_h, image.data.width, image.data.height,0, 1.0);
+        // let h: Vec<f32> = chromah.denoise_image().iter().map(|[v,_,_]|*v).collect();
+        // let c: Vec<f32> = chromac.denoise_image().iter().map(|[v,_,_]|*v).collect();
+
+        image.data.data = noisy_image_data_l
+            .map(|h| {
+            Oklch::convert::<XyzD65>([h,h,h])
+        }).collect();
+
+        // let mut noisy_image = PixF32::new_with(noisy_image_data, image.data.width, image.data.height);
+        // let nlmens = nl_means::Nlmeans{
+        //     h: 2.0,
+        //     tail_size: 5,
+        //     image: &noisy_image,
+        // };
+        // let d_image = nlmens.denoise_image();
+        // image.data.data = d_image.data.iter().map(|v|[*v,*v,*v]).collect();
+        // image.data.height = d_image.height;
+        // image.data.width = d_image.width;
         // let denoised = noisy_image.clone();
 
         // let denoiser = denoise::BM3D::new(8, 16, 0.15, image.data.width, image.data.height);
@@ -68,11 +172,14 @@ impl PipelineModule for ChromaDenoise {
 
         // image.data.data = denoised.par_iter().map(|v| [*v, *v, *v]).collect();
         // return image;
-        let gray_image = Array2::from_shape_vec(
-            (image.data.height, image.data.width),
-            data_lch.clone().map(|[_,v,_]| v).collect()
-        ).unwrap();
-        let recomposed = denoise::apply_wavelet_denoising( gray_image , 3);
+        // let gray_image = Array2::from_shape_vec(
+        //     (image.data.height, image.data.width),
+        //     data_lch.clone().map(|[_,v,_]| v).collect()
+        // ).unwrap();
+        // let recomposed = denoise::extract_wavelet_noise( gray_image , 10);
+        // let recomposed = denoise::estimate_noise(
+        //     data_lch.clone().map(|[_,v,_]| v).collect()
+        //     , image.data.width, image.data.height);
 
 
         // let gray_image = ATrousTransformInput::Grayscale { data: gray_image };
@@ -104,7 +211,7 @@ impl PipelineModule for ChromaDenoise {
         //     let lch: [f32; 3] = Oklch::convert::<XyzD65>(*p);
         //     lch
         // });
-        image.data.data = recomposed.par_iter().map(|v| [*v, *v, *v]).collect();
+        // image.data.data = recomposed.par_iter().map(|v| [*v, *v, *v]).collect();
         // image.data.data = data_xyz.collect();
 
         // let data_lch = image.data.data.par_iter().map(|p|{
@@ -150,8 +257,9 @@ pub struct Exp {
 impl PipelineModule for Exp {
     fn process(&self, mut image: FormedImage) -> FormedImage {
         let value = (2.0 as f32).powf(self.ev);
-        let result = image.data.data.par_iter().map(|p| p.map(|x|x*value));
-        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
+        let result = image.data.data.par_iter().map(|p| p.map(|x| x*value));
+        // image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
+        image.data.data = result.collect();
         return image;
     }
 
@@ -171,7 +279,7 @@ impl PipelineModule for Sigmoid {
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/scaled_one).powf(2.0);
         let result = image.data.data.par_iter().map(|p| p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powf(2.0)));
-        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
+        image.data.data = result.collect();
         return image
     }
 

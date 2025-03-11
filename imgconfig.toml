@@ -1,20 +1,38 @@
+#### Pixel Pipeline ####
+
 [[pipeline_modules]]
 name = "CFACoeffs"
+
+[[pipeline_modules]]
+name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "CST"
 color_space = "CameraToXYZ"
 
+# [[pipeline_modules]]
+# name = "ChromaDenoise"
+# a = 1
+# b = 1
+# strength = 2
 
-[[pipeline_modules]]
-name = "ChromaDenoise"
-a = 1
-b = 1
-strength = 1
+
+# [[pipeline_modules]]
+# name = "ChromaDenoise"
+# a = 1
+# b = 1
+# strength = 2
+
+
+# [[pipeline_modules]]
+# name = "ChromaDenoise"
+# a = 1
+# b = 1
+# strength = 2
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 7
+ev = 5
 
 # [[pipeline_modules]]
 # name = "LS"

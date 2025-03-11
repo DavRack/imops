@@ -1,0 +1,211 @@
+use std::usize;
+
+use rawler::pixarray::PixF32;
+use rawler::pixarray::RgbF32;
+
+
+pub trait PixelTail<T> {
+   fn get_tail(&self, tail_size: usize, center: usize) -> Vec<(usize, T)>;
+}
+
+
+impl PixelTail<f32> for PixF32 {
+    fn get_tail(&self, tail_radious: usize, center: usize) -> Vec<(usize, f32)>{
+        let col: i32 = (center % self.width) as i32;
+        let row: i32 = (center as i32 - col)/self.width as i32;
+
+        let tail_side = (2*tail_radious) + 1;
+
+        let mut tail = vec![(0, 0.0); tail_side.pow(2) as usize];
+        let mut tail_index = 0;
+        for i in -(tail_radious as i32)..(tail_radious+1) as i32{
+            for j in -(tail_radious as i32)..(tail_radious+1) as i32{
+
+                let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+                tail[tail_index] = (
+                    image_index,
+                    self.data[image_index]
+                );
+                 tail_index += 1;
+            }
+        }
+        return tail
+    }
+}
+
+impl PixelTail<[f32; 3]> for RgbF32 {
+    fn get_tail(&self, tail_radious: usize, center: usize) -> Vec<(usize, [f32; 3])>{
+        let col: i32 = (center % self.width) as i32;
+        let row: i32 = (center as i32 - col)/self.width as i32;
+
+        let tail_side = (2*tail_radious) + 1;
+
+        let mut tail = vec![(0, [0.0, 0.0, 0.0]); tail_side.pow(2) as usize];
+        let mut tail_index = 0;
+        for i in -(tail_radious as i32)..(tail_radious+1) as i32{
+            for j in -(tail_radious as i32)..(tail_radious+1) as i32{
+
+                let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+                tail[tail_index] = (
+                    image_index,
+                    self.data[image_index]
+                );
+                 tail_index += 1;
+            }
+        }
+        return tail
+    }
+}
+
+pub trait Stats {
+    fn mean(self) -> f32;
+    fn sd(self) -> f32;
+    fn variance(self) -> f32;
+    fn max(self) -> f32;
+    fn min(self) -> f32;
+}
+
+impl Stats for std::slice::Iter<'_, f32>{
+    fn mean(self) -> f32{
+        let lenght = self.len();
+        if lenght == 0{
+            return 0.0
+        }
+        let sum: f32 = self.sum();
+        return sum/lenght as f32
+    }
+
+    fn variance(self) -> f32{
+        let len = self.len();
+        let mean = self.clone().mean();
+        let variance = self.map(|v| (mean-v).powi(2)).sum::<f32>()/(len as f32 - 1.0);
+        variance
+    }
+
+    fn sd(self) -> f32{
+        self.variance().powf(0.5)
+    }
+
+    fn max(self) -> f32{
+        let r = self.min_by(|a, b| a.total_cmp(b)).unwrap();
+        *r
+    }
+
+    fn min(self) -> f32{
+        let r = self.max_by(|a, b| a.total_cmp(b)).unwrap();
+        *r
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mean_f32(){
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+
+        assert_eq!(data.iter().mean(), 3.5)
+    }
+
+    #[test]
+    fn test_sd_f32(){
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+
+        assert_eq!(data.iter().sd(), 1.8708287)
+    }
+
+    #[test]
+    fn test_variance_f32(){
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+
+        assert_eq!(data.iter().variance(), 3.5)
+    }
+
+    #[test]
+    fn test_make_tiles_f32(){
+        let width = 9;
+        let height = 9;
+        let og_image = PixF32::new_with(
+            vec![
+                0.0, 1.0, 2.0,   1.0, 1.0, 1.0,  2.0, 2.0, 2.0,
+                3.0, 4.0, 5.0,   1.0, 1.0, 1.0,  2.0, 2.0, 2.0,
+                6.0, 7.0, 8.0,   1.0, 1.0, 1.0,  2.0, 2.0, 2.0,
+                                                
+                3.0, 3.0, 3.0,   4.0, 4.0, 4.0,  5.0, 5.0, 5.0,
+                3.0, 3.0, 3.0,   4.0, 4.0, 4.0,  5.0, 5.0, 5.0,
+                3.0, 3.0, 3.0,   4.0, 4.0, 4.0,  5.0, 5.0, 5.0,
+                                                
+                6.0, 6.0, 6.0,   7.0, 7.0, 7.0,  8.0, 8.0, 8.0,
+                6.0, 6.0, 6.0,   7.0, 7.0, 7.0,  8.0, 8.0, 8.0,
+                6.0, 6.0, 6.0,   7.0, 7.0, 7.0,  8.0, 8.0, 8.0,
+            ],
+            width,
+            height
+        );
+
+        // expected tile for center pixel "4.0"
+        let expected_tile = vec![
+            (30, 4.0), (31, 4.0), (32, 4.0),
+            (39, 4.0), (40, 4.0), (41, 4.0),
+            (48, 4.0), (49, 4.0), (50, 4.0),
+        ];
+
+        let calculated_tile = og_image.get_tail(1, 40);
+
+        assert_eq!(expected_tile, calculated_tile);
+
+        let expected_tile = vec![
+            (0, 0.0), (0, 0.0), (1, 1.0),
+            (0, 0.0), (0, 0.0), (1, 1.0),
+            (9, 3.0), (9, 3.0), (10,4.0),
+        ];
+
+        let calculated_tile = og_image.get_tail(1, 0);
+        assert_eq!(expected_tile, calculated_tile);
+
+        let expected_tile = vec![
+            (0, 0.0), (1, 1.0), (2, 2.0),
+            (0, 0.0), (1, 1.0), (2, 2.0),
+            (9, 3.0), (10,4.0), (11,5.0),
+        ];
+
+        let calculated_tile = og_image.get_tail(1, 1);
+        assert_eq!(expected_tile, calculated_tile);
+    }
+
+    #[test]
+    fn test_make_tiles_rgb(){
+        let width = 9;
+        let height = 9;
+        let og_image = RgbF32::new_with(
+            vec![
+                [0.0,0.0,0.0], [0.0,0.0,0.0], [0.0,0.0,0.0],   [1.0,1.0,1.0], [1.0,1.0,1.0], [1.0,1.0,1.0],  [2.0,2.0,2.0], [2.0,2.0,2.0], [2.0,2.0,2.0],
+                [0.0,0.0,0.0], [0.0,0.0,0.0], [0.0,0.0,0.0],   [1.0,1.0,1.0], [1.0,1.0,1.0], [1.0,1.0,1.0],  [2.0,2.0,2.0], [2.0,2.0,2.0], [2.0,2.0,2.0],
+                [0.0,0.0,0.0], [0.0,0.0,0.0], [0.0,0.0,0.0],   [1.0,1.0,1.0], [1.0,1.0,1.0], [1.0,1.0,1.0],  [2.0,2.0,2.0], [2.0,2.0,2.0], [2.0,2.0,2.0],
+                                                
+                [3.0,3.0,3.0], [3.0,3.0,3.0], [3.0,3.0,3.0],   [4.0,4.0,4.0], [4.0,4.0,4.0], [4.0,4.0,4.0],  [5.0,5.0,5.0], [5.0,5.0,5.0], [5.0,5.0,5.0],
+                [3.0,3.0,3.0], [3.0,3.0,3.0], [3.0,3.0,3.0],   [4.0,4.0,4.0], [4.0,4.0,4.0], [4.0,4.0,4.0],  [5.0,5.0,5.0], [5.0,5.0,5.0], [5.0,5.0,5.0],
+                [3.0,3.0,3.0], [3.0,3.0,3.0], [3.0,3.0,3.0],   [4.0,4.0,4.0], [4.0,4.0,4.0], [4.0,4.0,4.0],  [5.0,5.0,5.0], [5.0,5.0,5.0], [5.0,5.0,5.0],
+                                                
+                [6.0,6.0,6.0], [6.0,6.0,6.0], [6.0,6.0,6.0],   [7.0,7.0,7.0], [7.0,7.0,7.0], [7.0,7.0,7.0],  [8.0,8.0,8.0], [8.0,8.0,8.0], [8.0,8.0,8.0],
+                [6.0,6.0,6.0], [6.0,6.0,6.0], [6.0,6.0,6.0],   [7.0,7.0,7.0], [7.0,7.0,7.0], [7.0,7.0,7.0],  [8.0,8.0,8.0], [8.0,8.0,8.0], [8.0,8.0,8.0],
+                [6.0,6.0,6.0], [6.0,6.0,6.0], [6.0,6.0,6.0],   [7.0,7.0,7.0], [7.0,7.0,7.0], [7.0,7.0,7.0],  [8.0,8.0,8.0], [8.0,8.0,8.0], [8.0,8.0,8.0],
+            ],
+            width,
+            height
+        );
+
+        // expected tile for center pixel "4.0"
+        let expected_tile = vec![
+            (30, [4.0, 4.0, 4.0]), (31, [4.0, 4.0, 4.0]), (32, [4.0, 4.0, 4.0] ),
+            (39, [4.0, 4.0, 4.0]), (40, [4.0, 4.0, 4.0]), (41, [4.0, 4.0, 4.0] ),
+            (48, [4.0, 4.0, 4.0]), (49, [4.0, 4.0, 4.0]), (50, [4.0, 4.0, 4.0] ),
+        ];
+
+        let calculated_tile = og_image.get_tail(1, 40);
+
+        assert_eq!(expected_tile, calculated_tile)
+    }
+}

@@ -3,6 +3,9 @@ mod config;
 mod demosaic;
 mod imops;
 mod denoise;
+mod nl_means;
+mod chroma_nr;
+mod helpers;
 
 use clap::Parser as Clap_parser;
 use core::panic;
@@ -117,6 +120,7 @@ fn main() {
         _ => img,
     };
     println!("pixel pipeline time: {:.2?}", now.elapsed());
+    println!("pixel pipeline fps: {:.2?}", 1.0/now.elapsed().as_secs_f32());
 
     let now = Instant::now();
     img.write_to(
