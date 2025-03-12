@@ -6,53 +6,65 @@ use rawler::pixarray::RgbF32;
 
 pub trait PixelTail<T> {
    fn get_tail(&self, tail_size: usize, center: usize) -> Vec<(usize, T)>;
+   fn get_px_tail(&self, tail_size: usize, center: usize) -> Vec<T>;
 }
 
 
 impl PixelTail<f32> for PixF32 {
     fn get_tail(&self, tail_radious: usize, center: usize) -> Vec<(usize, f32)>{
+        let tail_radious = tail_radious as i32;
         let col: i32 = (center % self.width) as i32;
         let row: i32 = (center as i32 - col)/self.width as i32;
 
-        let tail_side = (2*tail_radious) + 1;
+        let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
+            let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+            (
+                image_index,
+                self.data[image_index]
+            )
+        }).collect();
+        return tail
+    }
+    fn get_px_tail(&self, tail_radious: usize, center: usize) -> Vec<f32>{
+        let tail_radious = tail_radious as i32;
+        let col: i32 = (center % self.width) as i32;
+        let row: i32 = (center as i32 - col)/self.width as i32;
 
-        let mut tail = vec![(0, 0.0); tail_side.pow(2) as usize];
-        let mut tail_index = 0;
-        for i in -(tail_radious as i32)..(tail_radious+1) as i32{
-            for j in -(tail_radious as i32)..(tail_radious+1) as i32{
-
-                let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
-                tail[tail_index] = (
-                    image_index,
-                    self.data[image_index]
-                );
-                 tail_index += 1;
-            }
-        }
+        let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
+            let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+            self.data[image_index]
+        }).collect();
         return tail
     }
 }
 
 impl PixelTail<[f32; 3]> for RgbF32 {
+    #[inline]
     fn get_tail(&self, tail_radious: usize, center: usize) -> Vec<(usize, [f32; 3])>{
+        let tail_radious = tail_radious as i32;
         let col: i32 = (center % self.width) as i32;
         let row: i32 = (center as i32 - col)/self.width as i32;
 
-        let tail_side = (2*tail_radious) + 1;
+        let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
+            let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+            (
+                image_index,
+                self.data[image_index]
+            )
+        }).collect();
+        return tail
+    }
 
-        let mut tail = vec![(0, [0.0, 0.0, 0.0]); tail_side.pow(2) as usize];
-        let mut tail_index = 0;
-        for i in -(tail_radious as i32)..(tail_radious+1) as i32{
-            for j in -(tail_radious as i32)..(tail_radious+1) as i32{
+    #[inline]
+    fn get_px_tail(&self, tail_radious: usize, center: usize) -> Vec<[f32; 3]>{
+        let tail_radious = tail_radious as i32;
+        let col: i32 = (center % self.width) as i32;
+        let row: i32 = (center as i32 - col)/self.width as i32;
 
-                let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
-                tail[tail_index] = (
-                    image_index,
-                    self.data[image_index]
-                );
-                 tail_index += 1;
-            }
-        }
+        let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
+            let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+            self.data[image_index]
+        }).collect();
         return tail
     }
 }

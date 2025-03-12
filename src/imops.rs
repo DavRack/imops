@@ -51,57 +51,55 @@ impl PipelineModule for LCH {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct HighlightReconstruction {
 }
-fn get_pixel_clip_values(image: &FormedImage, pixel: [f32; 3]) -> [f32; 3]{
-    let [rv, gv, bv, _] = image.raw_image.wb_coeffs;
-    let [r, g, b] = pixel;
-    let scaled_pixel_values = [r*rv, g*gv, b*bv];
-
-    // normalize
-    let max_pixel_value = helpers::Stats::max(scaled_pixel_values.iter());
-    let normalized_values = scaled_pixel_values.map(|v| v/max_pixel_value);
-    return scaled_pixel_values
-}
 
 fn get_cliped_channels(image: &FormedImage, pixel: [f32; 3]) -> [bool; 3]{
     let [clip_r, clip_g, clip_b, _] = image.raw_image.wb_coeffs;
     let [r, g, b] = pixel;
-    // println!("{:}, {:}, {:}", clip_r, clip_g, clip_b);
-    // println!("{:}, {:}, {:}\n", r, g, b);
-    let cliped_channels = [
+    [
         r >= clip_r,
         g >= clip_g,
         b >= clip_b,
-    ];
-    return cliped_channels
+    ]
+}
+
+fn reconstruct_pixel<I>(sorrounding_pixels: &I, channel: usize) -> f32
+where 
+    I: Iterator<Item = [f32; 3]> + Clone + ExactSizeIterator + Sync,
+{
+
+    let other_channels = (
+        (channel + 1) % 3,
+        (channel + 2) % 3
+        );
+
+    let len = sorrounding_pixels.len() as f32;
+
+    let px = sorrounding_pixels.clone().reduce(|[ar, ag, ab], [r, g, b]| [ar + r, ag + g, ab + b]).unwrap();
+    (px[other_channels.0]+px[other_channels.1])/(2.0*len)
 }
 
 impl PipelineModule for HighlightReconstruction {
 
     fn process(&self, mut image: FormedImage) -> FormedImage {
         let corrected_pixels= image.data.data.par_iter().enumerate().map(|(idx, pixel)|{
-            let clipped_channesl = get_cliped_channels(&image, *pixel);
-            let tail = image.data.get_tail(1, idx);
-            let sorrounding_pixels = tail.iter().map(|(_, px)| *px);
-            let reconstructed_pixel: Vec<f32> = clipped_channesl.iter().enumerate().map(|(channel, clipped)|{
-                if *clipped {
-                    let other_channels = [
-                        (channel + 1) % 3,
-                        (channel + 2) % 3
-                    ];
+            let sorrounding_pixels = image.data.get_px_tail(1, idx).into_iter();
+            let mut reconstructed_pixel: [f32; 3] = *pixel;
+            let [cliped_r, cliped_g, cliped_b] = get_cliped_channels(&image, *pixel);
 
-                    let new_channel_value = other_channels.iter().map(|channel| {
-                        sorrounding_pixels.clone().map(|px| px[*channel]).collect::<Vec<f32>>().iter().mean()
-                    }).collect::<Vec<f32>>().iter().mean();
-                    new_channel_value
-                }else{
-                    let r = pixel[channel];
-                    r
-                }
-            }).collect();
+            if cliped_r {
+                    reconstructed_pixel[0] = reconstruct_pixel(&sorrounding_pixels, 0);
+            }
 
-            [reconstructed_pixel[0], reconstructed_pixel[1],reconstructed_pixel[2],]
+            if cliped_g {
+                    reconstructed_pixel[1] = reconstruct_pixel(&sorrounding_pixels, 1);
+            }
+
+            if cliped_b {
+                    reconstructed_pixel[2] = reconstruct_pixel(&sorrounding_pixels, 2);
+            }
+            reconstructed_pixel
         });
-        image.data = RgbF32::new_with(corrected_pixels.collect(), image.data.width, image.data.height);
+        image.data.data = corrected_pixels.collect();
         return image
     }
 
