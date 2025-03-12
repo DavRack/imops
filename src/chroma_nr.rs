@@ -107,30 +107,26 @@ pub fn denoise(
     let recomposed = transform
         .into_iter()
         // Skip pixel scale 0 layer for noise removal
-        .skip(v)
+        .skip(0)
         // Only take layers where pixel scale is less than 2
         // .filter(|item| item.pixel_scale.is_some_and(|scale| scale == 0))
         .map(|item|{
             if let Some(scale) = item.pixel_scale {
-                if scale == 0 {
+                if scale < v {
                     let data = match item.buffer {
                         WaveletLayerBuffer::Grayscale { data } => data,
                         _ => panic!(),
                     };
 
                     let new_data: Vec<f32> = data.clone().into_raw_vec().into_par_iter().map(|v|{
-                        if v.abs() <= threshold[scale] {
-                            0.0
-                        } else {
-                            v
-                        }
+                        v*0.25
                     }).collect();
 
-                    let len = new_data.len();
-                    let new_data = PixF32::new_with(new_data, width, height);
-                    let new_data = (0..len).into_par_iter().map(|idx| {
-                        new_data.get_px_tail(2, idx).iter().median()
-                    }).collect();
+                    // let len = new_data.len();
+                    // let new_data = PixF32::new_with(new_data, width, height);
+                    // let new_data = (0..len).into_par_iter().map(|idx| {
+                    //     new_data.get_px_tail(2, idx).iter().median()
+                    // }).collect();
 
                     // let new_data = PixF32::new_with(new_data, width, height);
                     // let new_data = (0..len).into_par_iter().map(|idx| new_data.get_px_tail(2, idx).iter().mean()).collect();
