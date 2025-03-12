@@ -96,9 +96,9 @@ pub fn denoise(
     };
 
     let threshold = [
-        0.5,
-        0.0,
-        0.0,
+        0.1,
+        0.2,
+        0.3,
         0.0,
         0.0,
         0.0,
@@ -119,13 +119,13 @@ pub fn denoise(
                     };
 
                     let new_data: Vec<f32> = data.clone().into_raw_vec().into_par_iter().map(|v|{
-                        v*0.25
+                        v*threshold[scale]
                     }).collect();
 
                     // let len = new_data.len();
                     // let new_data = PixF32::new_with(new_data, width, height);
                     // let new_data = (0..len).into_par_iter().map(|idx| {
-                    //     new_data.get_px_tail(2, idx).iter().median()
+                    //     new_data.get_px_tail(1, idx).iter().median()
                     // }).collect();
 
                     // let new_data = PixF32::new_with(new_data, width, height);
