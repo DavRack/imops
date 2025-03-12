@@ -4,7 +4,7 @@ use color::{ColorSpace, Oklch, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
-use crate::helpers::*;
+use crate::{chroma_nr, helpers::*};
 
 #[derive(Clone)]
 pub struct FormedImage {
@@ -111,6 +111,36 @@ pub struct ChromaDenoise {
 
 impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
+        let data_lch = image.data.data.par_iter().map(|p|{
+            let lch: [f32; 3] = XyzD65::convert::<Oklch>(*p);
+            lch
+        });
+        let r = image.data.data.par_iter().map(|[r, g, b]|*r).collect();
+        let r = chroma_nr::denoise(r, image.data.width, image.data.height, 6, 3);
+
+        let g = image.data.data.par_iter().map(|[r, g, b]|*g).collect();
+        let g = chroma_nr::denoise(g, image.data.width, image.data.height, 6, 3);
+
+        let b = image.data.data.par_iter().map(|[r, g, b]|*b).collect();
+        let b = chroma_nr::denoise(b, image.data.width, image.data.height, 6, 3);
+
+        let denoised_rgb: Vec<[f32; 3]> = r.into_par_iter().zip(g).zip(b).map(|((r,g), b)|[r,g,b]).collect();
+        let denoised_lch = denoised_rgb.par_iter().map(|p|{
+            let lch: [f32; 3] = XyzD65::convert::<Oklch>(*p);
+            lch
+        });
+
+        let denoised = data_lch.zip(denoised_lch).map(|([l,_c,_h], [_l, c, h])|{
+            let lch: [f32; 3] = Oklch::convert::<XyzD65>([l, c, h]);
+            lch
+        });
+        image.data.data = denoised.collect();
+
+
+        // let l = data_lch.map(|[l, _c, _h]| l);
+        // image.data.data = c.into_par_iter().zip(h).zip(data_lch).map(|((c, h), [l,_c, _h])|{
+        //     Oklch::convert::<XyzD65>([l, c, h])
+        // }).collect();
         return image;
 
         let data_lch = image.data.data.par_iter().map(|p|{

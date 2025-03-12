@@ -10,11 +10,11 @@ name = "HighlightReconstruction"
 name = "CST"
 color_space = "CameraToXYZ"
 
-# [[pipeline_modules]]
-# name = "ChromaDenoise"
-# a = 1
-# b = 1
-# strength = 2
+[[pipeline_modules]]
+name = "ChromaDenoise"
+a = 1
+b = 1
+strength = 2
 
 
 # [[pipeline_modules]]
@@ -32,7 +32,7 @@ color_space = "CameraToXYZ"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 5
+ev = 6
 
 # [[pipeline_modules]]
 # name = "LS"

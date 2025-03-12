@@ -16,25 +16,40 @@ impl PixelTail<f32> for PixF32 {
         let col: i32 = (center % self.width) as i32;
         let row: i32 = (center as i32 - col)/self.width as i32;
 
-        let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
-            let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
-            (
-                image_index,
-                self.data[image_index]
-            )
-        }).collect();
+        let tail_side = (2*tail_radious as usize)+1;
+        let mut tail = Vec::with_capacity(tail_side*tail_side);
+
+        for i in -(tail_radious)..(tail_radious+1) {
+            for j in -(tail_radious)..(tail_radious+1) {
+                let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+                tail.push(
+                    (
+                        image_index,
+                        self.data[image_index]
+                    )
+                );
+            }
+        }
+        // let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
+        //     let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+        //     (
+        //         image_index,
+        //         self.data[image_index]
+        //     )
+        // }).collect();
         return tail
     }
     fn get_px_tail(&self, tail_radious: usize, center: usize) -> Vec<f32>{
-        let tail_radious = tail_radious as i32;
-        let col: i32 = (center % self.width) as i32;
-        let row: i32 = (center as i32 - col)/self.width as i32;
+        self.get_tail(tail_radious, center).into_iter().map(|(_, tail)| tail).collect()
+        // let tail_radious = tail_radious as i32;
+        // let col: i32 = (center % self.width) as i32;
+        // let row: i32 = (center as i32 - col)/self.width as i32;
 
-        let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
-            let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
-            self.data[image_index]
-        }).collect();
-        return tail
+        // let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
+        //     let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+        //     self.data[image_index]
+        // }).collect();
+        // return tail
     }
 }
 
@@ -45,13 +60,20 @@ impl PixelTail<[f32; 3]> for RgbF32 {
         let col: i32 = (center % self.width) as i32;
         let row: i32 = (center as i32 - col)/self.width as i32;
 
-        let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
-            let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
-            (
-                image_index,
-                self.data[image_index]
-            )
-        }).collect();
+        let tail_side = (2*tail_radious as usize)+1;
+        let mut tail = Vec::with_capacity(tail_side*tail_side);
+
+        for i in -(tail_radious)..(tail_radious+1) {
+            for j in -(tail_radious)..(tail_radious+1) {
+                let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+                tail.push(
+                    (
+                        image_index,
+                        self.data[image_index]
+                    )
+                );
+            }
+        }
         return tail
     }
 
@@ -71,6 +93,7 @@ impl PixelTail<[f32; 3]> for RgbF32 {
 
 pub trait Stats {
     fn mean(self) -> f32;
+    fn median(self) -> f32;
     fn sd(self) -> f32;
     fn variance(self) -> f32;
     fn max(self) -> f32;
@@ -107,6 +130,13 @@ impl Stats for std::slice::Iter<'_, f32>{
         let r = self.max_by(|a, b| a.total_cmp(b)).unwrap();
         *r
     }
+
+    fn median(self) -> f32{
+        let mut sorted_values: Vec<f32> = self.map(|x|*x).collect();
+        sorted_values.sort_by(f32::total_cmp);
+        let middle_idx = sorted_values.len()/2;
+        sorted_values[middle_idx]
+    }
 }
 
 
@@ -133,6 +163,13 @@ mod tests {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
 
         assert_eq!(data.iter().variance(), 3.5)
+    }
+
+    #[test]
+    fn test_median_f32(){
+        let data = vec![7.0, 4.0, 3.0, 2.0, 5.0, 6.0, 1.0];
+
+        assert_eq!(data.iter().median(), 4.0)
     }
 
     #[test]

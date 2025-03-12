@@ -4,8 +4,9 @@ use image::buffer;
 use rand::seq::IndexedRandom;
 use rawler::pixarray::{PixF32, RgbF32};
 use rayon::prelude::*;
+use rustfft::{num_complex::ComplexFloat, num_traits::real::Real};
 
-use crate::helpers::{PixelTail, Stats};
+use crate::helpers::{self, PixelTail, Stats};
 
 #[derive(Clone, Copy)]
 pub struct ChromaDenoise<'a> {
@@ -55,75 +56,103 @@ impl <'a> ChromaDenoise<'a> {
     }
 }
 
-use ndarray::{Array2, s, Axis};
-use rustfft::{FftPlanner, num_complex::Complex, FftDirection};
-use image_dwt::{self, transform::ATrousTransformInput, ATrousTransform};
-use image_dwt::decompose::WaveletDecompose;
-use image_dwt::RecomposableWaveletLayers;
-// use ndarray::{Array2, s};
+use ndarray::Array2;
+use image_dwt::{
+    self, layer::{WaveletLayer, WaveletLayerBuffer}, recompose::OutputLayer, transform::ATrousTransformInput, ATrousTransform, RecomposableWaveletLayers, Rescale
+};
 
 pub fn denoise(
-    image: &[f32],
+    image: Vec<f32>,
     width: usize,
     height: usize,
     num_scales: usize,
-    strength: f32,
+    v: usize,
 ) -> Vec<f32> {
-    return image.to_vec()
-    // let img_array = Array2::from_shape_vec((height, width), image.to_vec())
-    //     .expect("Invalid image dimensions");
+    let grayscale_image = ATrousTransformInput::Grayscale {
+        data: Array2::from_shape_vec((height, width), image).unwrap()
+    };
 
-    // // Step 1: Perform à trous wavelet decomposition
-    //     let gray_image = ATrousTransformInput::Grayscale { data: Array2::from_shape_vec((width, height), image.to_vec()).unwrap() };
-    //     let levels = 10;
-    //     let wavelet = ATrousTransform{
-    //         input: gray_image,
-    //         levels,
-    //         kernel: image_dwt::Kernel::B3SplineKernel,
-    //         current_level: 0,
-    //     };
-    // // let data = match wavelet {
-    // //     image_dwt::layer::WaveletLayerBuffer::Grayscale { data } => data,
-    // //     _ => panic!()
-        
-    // // };
-    // // wavelet.recompose_into_vec(width, height, image_dwt::recompose::OutputLayer::Grayscale);
-
-    // let mut im = Array2::from_shape_vec((height, width), image.to_vec()).unwrap();
-    // let buffer = im.wavelet_decompose(image_dwt::Kernel::B3SplineKernel, num_scales);
-    
-    // let buffer_data = match buffer {
-    //     image_dwt::layer::WaveletLayerBuffer::Grayscale { data } => data,
-    //     _ => panic!()
+    // let transform = ATrousTransform{
+    //     input: grayscale_image.clone(),
+    //     kernel: image_dwt::Kernel::B3SplineKernel,
+    //     levels: num_scales,
+    //     current_level: 0,
     // };
-    // let raw_data = buffer_data.into_raw_vec();
 
-    // return image.iter().zip(raw_data).map(|(og, d)| *og-d).collect()
+    // for item in transform.into_iter(){
+    //     let data = match item.buffer {
+    //         WaveletLayerBuffer::Grayscale { data } => data,
+    //         _ => panic!(),
+    //     };
+    //     println!("{:?}", data);
+    //     println!("{:?}", item.pixel_scale);
+    // }
 
-    // // let data = wavelet.recompose_into_vec(width, height, image_dwt::recompose::OutputLayer::Grayscale);
+    let transform = ATrousTransform{
+        input: grayscale_image,
+        kernel: image_dwt::Kernel::B3SplineKernel,
+        levels: num_scales,
+        current_level: 0,
+    };
 
-    // // let wavelet = ATrousTransform::new(num_scales, Padding::Symmetric);
-    // // let (approx, mut details) = wavelet.decompose(&img_array);
+    let threshold = [
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ];
 
-    // // Step 2: Noise estimation from finest detail coefficients
-    // // println!("{:}", wavelet);
-    // // let noise_sigma = estimate_noise(wavelet.) * strength;
+    let recomposed = transform
+        .into_iter()
+        // Skip pixel scale 0 layer for noise removal
+        .skip(v)
+        // Only take layers where pixel scale is less than 2
+        // .filter(|item| item.pixel_scale.is_some_and(|scale| scale == 0))
+        .map(|item|{
+            if let Some(scale) = item.pixel_scale {
+                if scale == 0 {
+                    let data = match item.buffer {
+                        WaveletLayerBuffer::Grayscale { data } => data,
+                        _ => panic!(),
+                    };
 
-    // // // Step 3: Bayesian shrinkage for each scale
-    // // for (scale, detail) in details.iter_mut().enumerate() {
-    // //     let scale_factor = 1.0 / (1 << scale) as f32;
-    // //     let threshold = noise_sigma * scale_factor * ((2.0 * (detail.len() as f32).ln()) as f32 ).powf(0.5);
-        
-    // //     // Apply adaptive thresholding
-    // //     detail.mapv_inplace(|x| {
-    // //         let sign = x.signum();
-    // //         let abs_val = x.abs();
-    // //         sign * (abs_val - threshold).max(0.0)
-    // //     });
-    // // }
+                    let new_data: Vec<f32> = data.clone().into_raw_vec().into_par_iter().map(|v|{
+                        if v.abs() <= threshold[scale] {
+                            0.0
+                        } else {
+                            v
+                        }
+                    }).collect();
 
-    // // // Step 4: Reconstruct from processed coefficients
-    // // wavelet.reconstruct(approx, &details).into_raw_vec()
+                    let len = new_data.len();
+                    let new_data = PixF32::new_with(new_data, width, height);
+                    let new_data = (0..len).into_par_iter().map(|idx| {
+                        new_data.get_px_tail(2, idx).iter().median()
+                    }).collect();
+
+                    // let new_data = PixF32::new_with(new_data, width, height);
+                    // let new_data = (0..len).into_par_iter().map(|idx| new_data.get_px_tail(2, idx).iter().mean()).collect();
+
+
+                    let filtered_data = Array2::from_shape_vec(data.dim(), new_data).unwrap();
+
+                    let new = WaveletLayer{
+                        buffer: WaveletLayerBuffer::Grayscale { data: filtered_data },
+                        pixel_scale: item.pixel_scale
+                    };
+                    new
+                }else{
+                    item
+                }
+            }else{
+                item
+            }
+        })
+        // Recompose processed layers into final image
+        .recompose_into_vec(height, width, OutputLayer::Grayscale);
+    recomposed
 }
 
 fn estimate_noise(detail: &Array2<f32>) -> f32 {
