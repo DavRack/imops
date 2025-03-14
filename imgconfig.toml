@@ -32,7 +32,7 @@ strength = 2
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 6
+ev = 5
 
 # [[pipeline_modules]]
 # name = "LS"

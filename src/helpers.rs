@@ -3,6 +3,18 @@ use std::usize;
 use rawler::pixarray::PixF32;
 use rawler::pixarray::RgbF32;
 
+pub trait Mask {
+    fn mask(&self, grayscale_mask: Vec<f32>) -> impl Iterator<Item = f32> where
+        Self: Iterator + Sized + Copy + Iterator<Item = f32>,
+
+    {
+        self.zip(grayscale_mask).map(|(v, m)| v*m)
+    }
+}
+
+impl Mask for rayon::slice::Iter<'_, f32> {}
+impl Mask for std::slice::Iter<'_, f32> {}
+
 
 pub trait PixelTail<T> {
    fn get_tail(&self, tail_size: usize, center: usize) -> Vec<(usize, T)>;
@@ -30,26 +42,10 @@ impl PixelTail<f32> for PixF32 {
                 );
             }
         }
-        // let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
-        //     let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
-        //     (
-        //         image_index,
-        //         self.data[image_index]
-        //     )
-        // }).collect();
         return tail
     }
     fn get_px_tail(&self, tail_radious: usize, center: usize) -> Vec<f32>{
         self.get_tail(tail_radious, center).into_iter().map(|(_, tail)| tail).collect()
-        // let tail_radious = tail_radious as i32;
-        // let col: i32 = (center % self.width) as i32;
-        // let row: i32 = (center as i32 - col)/self.width as i32;
-
-        // let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
-        //     let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
-        //     self.data[image_index]
-        // }).collect();
-        // return tail
     }
 }
 
@@ -122,13 +118,13 @@ impl Stats for std::slice::Iter<'_, f32>{
     }
 
     fn max(self) -> f32{
-        let r = self.min_by(|a, b| a.total_cmp(b)).unwrap();
-        *r
+        let r = self.cloned().reduce(f32::max).unwrap();
+        r
     }
 
     fn min(self) -> f32{
-        let r = self.max_by(|a, b| a.total_cmp(b)).unwrap();
-        *r
+        let r = self.cloned().reduce(f32::min).unwrap();
+        r
     }
 
     fn median(self) -> f32{

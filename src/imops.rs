@@ -111,20 +111,27 @@ pub struct ChromaDenoise {
 
 impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
+
         let data_l = image.data.data.par_iter().map(|p|{
             let [l, _h, _c] = XyzD65::convert::<Oklch>(*p);
             l
         });
 
-        let res: Vec<Vec<f32>> = (0..3).into_par_iter().map(|channel|{
+        let vres: Vec<Vec<f32>> = (0..3).into_par_iter().map(|channel|{
             let channel_data = image.data.data.par_iter().map(|pixel|pixel[channel]).collect();
             chroma_nr::denoise(channel_data, image.data.width, image.data.height, 6, 3)
         }).collect();
 
-        let [r,g,b] = res.as_slice() else {panic!()};
+        let res = (0..(image.data.width*image.data.height)).into_par_iter().map(|idx|{
+            [
+                vres[0][idx],
+                vres[1][idx],
+                vres[2][idx],
+            ]
+        });
 
-        let denoised: Vec<[f32; 3]> = r.into_par_iter().zip(g).zip(b).zip(data_l).map(|(((r,g), b), l)|{
-            let [_l, c, h] = XyzD65::convert::<Oklch>([*r,*g, *b]);
+        let denoised: Vec<[f32; 3]> = res.into_par_iter().zip(data_l).map(|([r, g, b], l)|{
+            let [_l, c, h] = XyzD65::convert::<Oklch>([r,g, b]);
             Oklch::convert::<XyzD65>([l, c, h])
         }).collect();
 
@@ -165,8 +172,10 @@ impl PipelineModule for Sigmoid {
     fn process(&self, mut image: FormedImage) -> FormedImage {
         let max_current_value = image.data.data.as_flattened().iter().cloned().reduce(f32::max).unwrap();
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
-        let c = 1.0 + (1.0/scaled_one).powf(2.0);
-        let result = image.data.data.par_iter().map(|p| p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powf(2.0)));
+        let c = 1.0 + (1.0/scaled_one).powi(2);
+        let result = image.data.data.par_iter().map(|p|{
+            p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powi(2))
+        });
         image.data.data = result.collect();
         return image
     }
