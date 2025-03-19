@@ -1,0 +1,3 @@
++ del color crate extraer los metodos para convertir Oklab a XYZ y ponerlos en el código para optimizar la conversion
++ completar herramienta crop
++ implementar convolusion en image-dwt

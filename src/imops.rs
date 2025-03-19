@@ -1,6 +1,7 @@
 use std::usize;
 
-use color::{ColorSpace, Oklab, XyzD65};
+// use crate::color_p::{ColorSpace, Oklab, Oklch, XyzD65};
+use color::{ColorSpace, Oklab, Oklch, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
@@ -27,12 +28,12 @@ pub struct  LCH{
 
 impl PipelineModule for LCH {
     fn process(&self, mut image: FormedImage) -> FormedImage {
-        image.data.data = image.data.data.par_iter().map(
+        image.data.data.par_iter_mut().for_each(
             |p| {
                 let [l, c, h] = XyzD65::convert::<Oklab>(*p);
-                Oklab::convert::<XyzD65>([l*self.lc, c*self.cc, h*self.hc])
+                *p = Oklab::convert::<XyzD65>([l*self.lc, c*self.cc, h*self.hc])
             }
-        ).collect();
+        );
         return image
     }
 
@@ -73,8 +74,8 @@ impl PipelineModule for Crop {
 pub struct HighlightReconstruction {
 }
 
-fn get_cliped_channels(image: &FormedImage, pixel: [f32; 3]) -> [bool; 3]{
-    let [clip_r, clip_g, clip_b, _] = image.raw_image.wb_coeffs;
+fn get_cliped_channels(wb_coeffs: [f32; 4], pixel: [f32; 3]) -> [bool; 3]{
+    let [clip_r, clip_g, clip_b, _] = wb_coeffs;
     let [r, g, b] = pixel;
     [
         r >= clip_r,
@@ -83,44 +84,49 @@ fn get_cliped_channels(image: &FormedImage, pixel: [f32; 3]) -> [bool; 3]{
     ]
 }
 
-fn reconstruct_pixel<I>(sorrounding_pixels: &I, channel: usize) -> f32
-where 
-    I: Iterator<Item = [f32; 3]> + Clone + ExactSizeIterator + Sync,
-{
-
-    let other_channels = (
-        (channel + 1) % 3,
-        (channel + 2) % 3
-        );
-
-    let len = sorrounding_pixels.len() as f32;
-
-    let px = sorrounding_pixels.clone().reduce(|[ar, ag, ab], [r, g, b]| [ar + r, ag + g, ab + b]).unwrap();
-    (px[other_channels.0]+px[other_channels.1])/(2.0*len)
-}
-
 impl PipelineModule for HighlightReconstruction {
 
     fn process(&self, mut image: FormedImage) -> FormedImage {
-        let corrected_pixels= image.data.data.par_iter().enumerate().map(|(idx, pixel)|{
-            let sorrounding_pixels = image.data.get_px_tail(1, idx).into_iter();
+        let d = image.data.clone();
+        let reconstruct_pixel = |channel, sorrounding_pixels: &Vec<[f32; 3]>| {
+            let other_channels = (
+                ((channel + 1) % 3) as usize,
+                ((channel + 2) % 3) as usize
+            );
+
+            let len = sorrounding_pixels.len() as f32;
+            let mut px = [0.0, 0.0, 0.0];
+            for pixel in sorrounding_pixels.iter(){
+                px[0] += pixel[0];
+                px[1] += pixel[1];
+                px[2] += pixel[2];
+            }
+
+            // let px = sorrounding_pixels.iter_mut().reduce(|[ar, ag, ab], [r, g, b]| [ar + r, ag + g, ab + b]).unwrap();
+            (px[other_channels.0]+px[other_channels.1])/(2.0*len)
+
+        };
+
+        image.data.data.par_iter_mut().enumerate().for_each(|(idx, pixel)|{
+            let sorrounding_pixels = d.get_px_tail(1, idx);
             let mut reconstructed_pixel: [f32; 3] = *pixel;
-            let [cliped_r, cliped_g, cliped_b] = get_cliped_channels(&image, *pixel);
+            let [cliped_r, cliped_g, cliped_b] = get_cliped_channels(image.raw_image.wb_coeffs, *pixel);
+
 
             if cliped_r {
-                    reconstructed_pixel[0] = reconstruct_pixel(&sorrounding_pixels, 0);
+                reconstructed_pixel[0] = reconstruct_pixel(0, &sorrounding_pixels);
             }
 
             if cliped_g {
-                    reconstructed_pixel[1] = reconstruct_pixel(&sorrounding_pixels, 1);
+                reconstructed_pixel[1] = reconstruct_pixel(1, &sorrounding_pixels);
             }
 
             if cliped_b {
-                    reconstructed_pixel[2] = reconstruct_pixel(&sorrounding_pixels, 2);
+                reconstructed_pixel[2] = reconstruct_pixel(2, &sorrounding_pixels);
             }
-            reconstructed_pixel
+            *pixel = reconstructed_pixel
         });
-        image.data.data = corrected_pixels.collect();
+        // image.data.data = corrected_pixels.collect();
         return image
     }
 
@@ -157,12 +163,12 @@ impl PipelineModule for ChromaDenoise {
             ]
         });
 
-        let denoised: Vec<[f32; 3]> = res.into_par_iter().zip(data_l).map(|([r, g, b], l)|{
+        let res = res.zip(data_l).map(|([r, g, b], l)|{
             let [_l, c, h] = XyzD65::convert::<Oklab>([r,g, b]);
             Oklab::convert::<XyzD65>([l, c, h])
         }).collect();
 
-        image.data.data = denoised;
+        image.data.data = res;
         return image;
     }
 
@@ -179,9 +185,10 @@ pub struct Exp {
 impl PipelineModule for Exp {
     fn process(&self, mut image: FormedImage) -> FormedImage {
         let value = (2.0 as f32).powf(self.ev);
-        let result = image.data.data.par_iter().map(|p| p.map(|x| x*value));
+        image.data.data.par_iter_mut().for_each(
+            |p| *p = p.map(|x| x*value)
+        );
         // image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
-        image.data.data = result.collect();
         return image;
     }
 
@@ -200,10 +207,9 @@ impl PipelineModule for Sigmoid {
         let max_current_value = image.data.data.as_flattened().iter().cloned().reduce(f32::max).unwrap();
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/scaled_one).powi(2);
-        let result = image.data.data.par_iter().map(|p|{
-            p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powi(2))
+        image.data.data.par_iter_mut().for_each(|p|{
+            *p = p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powi(2))
         });
-        image.data.data = result.collect();
         return image
     }
 
@@ -221,7 +227,9 @@ impl PipelineModule for Contrast {
     fn process(&self, mut image: FormedImage) -> FormedImage {
         const MIDDLE_GRAY: f32 = 0.1845;
         let f = |x: f32| (MIDDLE_GRAY*(x/MIDDLE_GRAY)).powf(self.c);
-        image.data.data = image.data.data.par_iter().map(|p|p.map(f)).collect();
+        image.data.data.par_iter_mut().for_each(
+            |p| *p = p.map(f)
+        );
         return image
     }
 
@@ -239,8 +247,12 @@ impl PipelineModule for CFACoeffs {
         let rv = image.raw_image.wb_coeffs[0];
         let gv = image.raw_image.wb_coeffs[1]; 
         let bv = image.raw_image.wb_coeffs[2];
-        let result = image.data.data.par_iter().map(|[r,g,b]| [r*rv, g*gv, b*bv]);
-        image.data = RgbF32::new_with(result.collect(), image.data.width, image.data.height);
+        image.data.data.par_iter_mut().for_each(
+            |p|{
+                let [r, g, b] = p;
+                *p = [*r*rv, *g*gv, *b*bv]
+            }
+        );
         return image
     }
 
@@ -325,9 +337,9 @@ impl PipelineModule for CST {
         let foward_matrix = match self.color_space {
             ColorSpaceMatrix::XYZTOsRGB => {
                 let matrix = [
-                    [3.240479, -1.537150, -0.498535,],
+                    [3.240479,  -1.537150, -0.498535,],
                     [-0.969256,  1.875991,  0.041556,],
-                    [0.055648, -0.204043,  1.057311]
+                    [0.055648,  -0.204043,  1.057311]
                 ];
                 let xyz2srgb_normalized = rawler::imgop::matrix::normalize(matrix);
                 xyz2srgb_normalized
@@ -347,13 +359,14 @@ impl PipelineModule for CST {
             },
         };
 
-        image.data.data = image.data.data.par_iter().map(|[rp, gp, bp]|{
-            [
-                foward_matrix[0][0] * rp + foward_matrix[0][1] * gp + foward_matrix[0][2] * bp,
-                foward_matrix[1][0] * rp + foward_matrix[1][1] * gp + foward_matrix[1][2] * bp,
-                foward_matrix[2][0] * rp + foward_matrix[2][1] * gp + foward_matrix[2][2] * bp,
+        image.data.data.par_iter_mut().for_each(|p|{
+            let [r, g, b] = *p;
+            *p = [
+                foward_matrix[0][0] * r + foward_matrix[0][1] * g + foward_matrix[0][2] * b,
+                foward_matrix[1][0] * r + foward_matrix[1][1] * g + foward_matrix[1][2] * b,
+                foward_matrix[2][0] * r + foward_matrix[2][1] * g + foward_matrix[2][2] * b,
             ]
-        }).collect();
+        });
         return image
     }
 
