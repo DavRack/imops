@@ -1,11 +1,10 @@
-use std::time::{Duration, Instant};
-use rayon::{prelude::*, result};
-use ndarray::{Array2, Array3};
+use rayon::prelude::*;
+use ndarray::Array2;
 use image_dwt::{
     self, layer::WaveletLayerBuffer, transform::ATrousTransformInput, ATrousTransform
 };
 
-
+#[inline(always)]
 pub fn denoise(
     image: Vec<f32>,
     width: usize,

@@ -1,6 +1,13 @@
 #### Pixel Pipeline ####
 
 [[pipeline_modules]]
+name = "Crop"
+factor = 1
+# point = [0, 0]
+# size = [1, 1]
+# view_window = [1920, 1080]
+
+[[pipeline_modules]]
 name = "CFACoeffs"
 
 [[pipeline_modules]]
@@ -16,23 +23,9 @@ a = 1
 b = 1
 strength = 2
 
-
-# [[pipeline_modules]]
-# name = "ChromaDenoise"
-# a = 1
-# b = 1
-# strength = 2
-
-
-# [[pipeline_modules]]
-# name = "ChromaDenoise"
-# a = 1
-# b = 1
-# strength = 2
-
 [[pipeline_modules]]
 name = "Exp"
-ev = 5
+ev = 6
 
 # [[pipeline_modules]]
 # name = "LS"
@@ -41,9 +34,9 @@ ev = 5
 # highlits_exp = 0.3
 # pivot = 2
 
-# [[pipeline_modules]]
-# name = "Contrast"
-# c = 2
+[[pipeline_modules]]
+name = "Contrast"
+c = 1.2
 
 # [[pipeline_modules]]
 # name = "LS"
@@ -52,11 +45,11 @@ ev = 5
 # highlits_exp = 0.5
 # pivot = 2.5
 
-# [[pipeline_modules]]
-# name = "LCH"
-# lc = 1.0
-# cc = 1.1
-# hc = 1
+[[pipeline_modules]]
+name = "LCH"
+lc = 1
+cc = 1
+hc = 1
 
 [[pipeline_modules]]
 name = "Sigmoid"

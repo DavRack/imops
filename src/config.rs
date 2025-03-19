@@ -34,6 +34,7 @@ pub fn parse_config(config_path: String) -> PipelineConfig{
             "LCH" => Box::new(module.clone().try_into::<imops::LCH>().unwrap()),
             "ChromaDenoise" => Box::new(module.clone().try_into::<imops::ChromaDenoise>().unwrap()),
             "HighlightReconstruction" => Box::new(module.clone().try_into::<imops::HighlightReconstruction>().unwrap()),
+            "Crop" => Box::new(module.clone().try_into::<imops::Crop>().unwrap()),
             v => panic!("wrong pipeline module name {:}", v)
         };
 

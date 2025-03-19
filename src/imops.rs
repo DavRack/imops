@@ -1,6 +1,6 @@
 use std::usize;
 
-use color::{ColorSpace, Oklch, XyzD65};
+use color::{ColorSpace, Oklab, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
@@ -29,9 +29,8 @@ impl PipelineModule for LCH {
     fn process(&self, mut image: FormedImage) -> FormedImage {
         image.data.data = image.data.data.par_iter().map(
             |p| {
-                let [l, c, h] = XyzD65::convert::<Oklch>(*p);
-                let xyz = Oklch::convert::<XyzD65>([l*self.lc, c*self.cc, h*self.hc]);
-                xyz
+                let [l, c, h] = XyzD65::convert::<Oklab>(*p);
+                Oklab::convert::<XyzD65>([l*self.lc, c*self.cc, h*self.hc])
             }
         ).collect();
         return image
@@ -39,6 +38,34 @@ impl PipelineModule for LCH {
 
     fn get_name(&self) -> String{
         return "LCH".to_string()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct  Crop{
+    pub factor: usize,
+}
+
+impl PipelineModule for Crop {
+    fn process(&self, mut image: FormedImage) -> FormedImage {
+        let width = image.data.width;
+        let height = image.data.height;
+        let new_width = width/self.factor;
+        let new_height = height/self.factor;
+        let mut result = Vec::with_capacity((new_width)*(new_height));
+        for row in (0..image.data.height).step_by(self.factor) {
+            for col in (0..image.data.width).step_by(self.factor) {
+                result.push(*image.data.at(row, col));
+            }
+        }
+        image.data.data = result;
+        image.data.width = new_width;
+        image.data.height = new_height;
+        image
+    }
+
+    fn get_name(&self) -> String{
+        return "Crop".to_string()
     }
 }
 
@@ -113,7 +140,7 @@ impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
 
         let data_l = image.data.data.par_iter().map(|p|{
-            let [l, _h, _c] = XyzD65::convert::<Oklch>(*p);
+            let [l, _h, _c] = XyzD65::convert::<Oklab>(*p);
             l
         });
 
@@ -131,8 +158,8 @@ impl PipelineModule for ChromaDenoise {
         });
 
         let denoised: Vec<[f32; 3]> = res.into_par_iter().zip(data_l).map(|([r, g, b], l)|{
-            let [_l, c, h] = XyzD65::convert::<Oklch>([r,g, b]);
-            Oklch::convert::<XyzD65>([l, c, h])
+            let [_l, c, h] = XyzD65::convert::<Oklab>([r,g, b]);
+            Oklab::convert::<XyzD65>([l, c, h])
         }).collect();
 
         image.data.data = denoised;
