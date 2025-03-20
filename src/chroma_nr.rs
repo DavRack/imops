@@ -1,8 +1,59 @@
 use rayon::prelude::*;
 use ndarray::Array2;
+use crate::wavelets::{Kernel, WaveletDecompose};
 use image_dwt::{
-    self, layer::WaveletLayerBuffer, transform::ATrousTransformInput, ATrousTransform
+    self, layer::WaveletLayerBuffer, transform::ATrousTransformInput
 };
+
+#[derive(Clone)]
+pub struct ATrousTransform {
+    pub input: Vec<f32>,
+    pub width: usize,
+    pub height: usize,
+    pub levels: usize,
+    pub kernel: Kernel,
+    pub current_level: usize,
+}
+#[derive(Clone)]
+pub struct WaveletLayer {
+    pub buffer: Vec<f32>,
+    pub pixel_scale: Option<usize>,
+}
+
+impl WaveletLayer {
+    #[must_use]
+    pub fn is_residue_layer(&self) -> bool {
+        self.pixel_scale.is_none()
+    }
+}
+
+impl Iterator for ATrousTransform {
+    type Item = WaveletLayer;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let pixel_scale = self.current_level;
+        self.current_level += 1;
+
+        if pixel_scale > self.levels {
+            return None;
+        }
+
+        if pixel_scale == self.levels {
+            return Some(WaveletLayer {
+                buffer: self.input.clone(),
+                pixel_scale: None,
+            });
+        }
+
+        let kernel = self.kernel;
+
+        let layer_buffer = self.input.wavelet_decompose(self.height, self.width, kernel, pixel_scale);
+        Some(WaveletLayer {
+            pixel_scale: Some(pixel_scale),
+            buffer: layer_buffer,
+        })
+    }
+}
 
 #[inline(always)]
 pub fn denoise(
@@ -12,13 +63,15 @@ pub fn denoise(
     num_scales: usize,
     v: usize,
 ) -> Vec<f32> {
-    let grayscale_image = ATrousTransformInput::Grayscale {
-        data: Array2::from_shape_vec((height, width), image).unwrap()
-    };
+    // let grayscale_image = ATrousTransformInput::Grayscale {
+    //     data: Array2::from_shape_vec((height, width), image).unwrap()
+    // };
 
     let transform = ATrousTransform{
-        input: grayscale_image,
-        kernel: image_dwt::Kernel::B3SplineKernel,
+        input: image,
+        height,
+        width,
+        kernel: Kernel::B3SplineKernel,
         levels: num_scales,
         current_level: 0,
     };
@@ -35,10 +88,7 @@ pub fn denoise(
     let layers: Vec<Vec<f32>> = transform
         .into_iter()
         .map(|item|{
-            let data = match item.buffer {
-                WaveletLayerBuffer::Grayscale { data } => data.into_raw_vec(),
-                _ => panic!(),
-            };
+            let data = item.buffer;
             if item.pixel_scale.is_some_and(|scale| scale < v ){
                 let scale = item.pixel_scale.unwrap();
                 let th = threshold[scale]/1.0;

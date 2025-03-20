@@ -7,6 +7,7 @@ mod nl_means;
 mod chroma_nr;
 mod helpers;
 mod color_p;
+mod wavelets;
 
 use clap::Parser as Clap_parser;
 use core::panic;
