@@ -1,3 +1,11 @@
-+ del color crate extraer los metodos para convertir Oklab a XYZ y ponerlos en el código para optimizar la conversion
 + completar herramienta crop
 + implementar convolusion en image-dwt
++ implementar corrección de viñetas
++ implementar mascaras
++ implementar correción de distorción
++ implementar claridad
++ implementar correcíon de aberración cromática
+
+# ejecutadas
+no hay mejora lo suficientemente buena:
+x + del color crate extraer los metodos para convertir Oklab a XYZ y ponerlos en el código para optimizar la conversion
