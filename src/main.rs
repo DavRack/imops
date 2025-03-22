@@ -8,6 +8,7 @@ mod chroma_nr;
 mod helpers;
 mod color_p;
 mod wavelets;
+// mod no_rayon;
 
 use clap::Parser as Clap_parser;
 use core::panic;
@@ -90,6 +91,10 @@ fn run_pixel_pipeline(
 }
 
 fn main() {
+    // match rayon::ThreadPoolBuilder::new().num_threads(1).build_global() {
+    //     Ok(_) => (),
+    //     Err(v) => panic!("{:}", v),
+    // };
     let args = Box::leak(Box::new(Args::parse()));
 
     let path = args.input_path.clone();
@@ -100,7 +105,6 @@ fn main() {
     let mut raw_image = rawler::decode_file(path).unwrap();
     let rotation = raw_image.orientation;
 
-    println!("rotation: {:.2?}", rotation);
     println!("decode file: {:.2?}", decode.elapsed());
 
     let now = Instant::now();

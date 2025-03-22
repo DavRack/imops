@@ -1,4 +1,6 @@
 use convolve_image::kernel::{NonSeparableKernel, SeparableKernel};
+
+use crate::helpers;
 use rayon::prelude::*;
 
 #[derive(Copy, Clone)]
@@ -11,27 +13,21 @@ pub enum Kernel {
 pub trait Convolution {
     #[inline]
     fn compute_pixel_index(
-        stride: usize,
-        kernel_size: usize,
-        kernel_index: isize,
+        kernel_padding: isize,
+        distance: isize,
         pixel_index: usize,
         max: usize,
-    ) -> u32 {
-        let kernel_size = kernel_size as isize;
-        let kernel_padding = kernel_size / 2;
-
-        let distance = kernel_index * stride as isize;
+    ) -> usize {
 
         let mut index = pixel_index as isize + distance;
 
-        if index < 0 {
-            index = -index;
-        } else if index > max as isize - kernel_padding {
-            let overshot_distance = index - max as isize + kernel_padding;
-            index = max as isize - overshot_distance;
+        index = index.abs();
+        let bound = max as isize - kernel_padding;
+        if index > bound {
+            index = max as isize - index +  bound;
         }
 
-        index as u32
+        index as usize
     }
 
     fn convolve<const KERNEL_SIZE: usize>(
@@ -46,84 +42,34 @@ impl Convolution for Vec<f32> {
     fn convolve<const KERNEL_SIZE: usize>(&mut self, height: usize, width: usize, kernel: SeparableKernel<KERNEL_SIZE>, stride: usize) {
         let linear_kernel = kernel.values();
 
-        (0..self.len()).into_iter().for_each(|idx|{
+        (0..width*height).into_iter().for_each(|idx|{
             let x = idx % width;
-            let y = (idx - x)/width;
+            let y = (idx - x) / width;
+            let pixel_sum = linear_kernel.into_iter().enumerate().fold(0.0, |acc, (kernel_index, value)|{
+                let kernel_side = KERNEL_SIZE as isize / 2;
+                let relative_kernel_index = kernel_index as isize - kernel_side;
 
-            let mut pixel_sum = 0.;
+                let distance = relative_kernel_index * stride as isize;
 
-            for (kernel_index, value) in linear_kernel.iter().enumerate() {
-                let relative_kernel_index = kernel_index as isize - (KERNEL_SIZE as isize / 2);
-                let pixel_index = Self::compute_pixel_index(
-                    stride,
-                    KERNEL_SIZE,
-                    relative_kernel_index,
+                let pixel_index_x = Self::compute_pixel_index(
+                    kernel_side,
+                    distance,
                     x,
                     width
                 );
 
-                pixel_sum += self[(y * width) + pixel_index as usize] * *value;
-            }
-            self[idx] = pixel_sum;
-        });
-
-        // for (y, x) in dimensions.into_iter() {
-        //     let mut pixel_sum = 0.;
-
-        //     for (kernel_index, value) in linear_kernel.iter().enumerate() {
-        //         let relative_kernel_index = kernel_index as isize - (KERNEL_SIZE as isize / 2);
-        //         let pixel_index = Self::compute_pixel_index(
-        //             stride,
-        //             KERNEL_SIZE,
-        //             relative_kernel_index,
-        //             x,
-        //             width
-        //         );
-
-        //         pixel_sum += self[[y, pixel_index as usize]] * *value;
-        //     }
-
-        //     self[[y, x]] = pixel_sum;
-        // }
-        (0..self.len()).into_iter().for_each(|idx|{
-            let x = idx % width;
-            let y = (idx - x )/width;
-
-            let mut pixel_sum = 0.;
-
-            for (kernel_index, value) in linear_kernel.iter().enumerate() {
-                let relative_kernel_index = kernel_index as isize - (KERNEL_SIZE as isize / 2);
-                let pixel_index = Self::compute_pixel_index(
-                    stride,
-                    KERNEL_SIZE,
-                    relative_kernel_index,
+                let pixel_index_y = Self::compute_pixel_index(
+                    kernel_side,
+                    distance,
                     y,
                     height
                 );
 
-                pixel_sum += self[(pixel_index as usize * width) + x] * *value;
-            }
-            self[idx] = pixel_sum;
+                acc + ( (self[(y * width) + pixel_index_x] + self[(pixel_index_y * width) + x]) * value)
+            });
+
+            self[idx] = pixel_sum/2.;
         });
-
-        // for (y, x) in dimensions.into_iter() {
-        //     let mut pixel_sum = 0.;
-
-        //     for (kernel_index, value) in linear_kernel.iter().enumerate() {
-        //         let relative_kernel_index = kernel_index as isize - (KERNEL_SIZE as isize / 2);
-        //         let pixel_index = Self::compute_pixel_index(
-        //             stride,
-        //             KERNEL_SIZE,
-        //             relative_kernel_index,
-        //             y,
-        //             height
-        //         );
-
-        //         pixel_sum += self[[pixel_index as usize, x]] * *value;
-        //     }
-
-        //     self[[y, x]] = pixel_sum;
-        // }
     }
 }
 

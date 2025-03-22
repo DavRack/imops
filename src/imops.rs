@@ -4,8 +4,11 @@ use std::usize;
 use color::{ColorSpace, Oklab, Oklch, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
-use rayon::prelude::*;
 use crate::{chroma_nr, helpers::*};
+
+// use crate::no_rayon::prelude::*;
+
+use rayon::prelude::*;
 
 #[derive(Clone)]
 pub struct FormedImage {
@@ -97,9 +100,8 @@ impl PipelineModule for HighlightReconstruction {
             let len = sorrounding_pixels.len() as f32;
             let mut px = [0.0, 0.0, 0.0];
             for pixel in sorrounding_pixels.iter(){
-                px[0] += pixel[0];
-                px[1] += pixel[1];
-                px[2] += pixel[2];
+                px[other_channels.0] += pixel[other_channels.0];
+                px[other_channels.1] += pixel[other_channels.1];
             }
 
             // let px = sorrounding_pixels.iter_mut().reduce(|[ar, ag, ab], [r, g, b]| [ar + r, ag + g, ab + b]).unwrap();
@@ -109,22 +111,20 @@ impl PipelineModule for HighlightReconstruction {
 
         image.data.data.par_iter_mut().enumerate().for_each(|(idx, pixel)|{
             let sorrounding_pixels = d.get_px_tail(1, idx);
-            let mut reconstructed_pixel: [f32; 3] = *pixel;
             let [cliped_r, cliped_g, cliped_b] = get_cliped_channels(image.raw_image.wb_coeffs, *pixel);
 
 
             if cliped_r {
-                reconstructed_pixel[0] = reconstruct_pixel(0, &sorrounding_pixels);
+                pixel[0] = reconstruct_pixel(0, &sorrounding_pixels);
             }
 
             if cliped_g {
-                reconstructed_pixel[1] = reconstruct_pixel(1, &sorrounding_pixels);
+                pixel[1] = reconstruct_pixel(1, &sorrounding_pixels);
             }
 
             if cliped_b {
-                reconstructed_pixel[2] = reconstruct_pixel(2, &sorrounding_pixels);
+                pixel[2] = reconstruct_pixel(2, &sorrounding_pixels);
             }
-            *pixel = reconstructed_pixel
         });
         // image.data.data = corrected_pixels.collect();
         return image

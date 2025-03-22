@@ -360,10 +360,6 @@ name = "convolve-image"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4aeda9d84b4ba35fafee1f1aa74704c88018dfc3d4c93e29aaf41b32c1a9398c"
-dependencies = [
- "image 0.25.5",
- "ndarray",
-]
 
 [[package]]
 name = "core-foundation-sys"
@@ -490,7 +486,6 @@ dependencies = [
  "color",
  "convolve-image",
  "image 0.25.5",
- "image-dwt",
  "itertools 0.14.0",
  "ndarray",
  "rawler",
@@ -749,16 +744,6 @@ dependencies = [
  "tiff",
  "zune-core",
  "zune-jpeg",
-]
-
-[[package]]
-name = "image-dwt"
-version = "0.4.1"
-source = "git+https://github.com/DavRack/image-dwt.git#33ef5cc51b657e321c9e5259a81da1cc95a45d43"
-dependencies = [
- "convolve-image",
- "image 0.25.5",
- "ndarray",
 ]
 
 [[package]]

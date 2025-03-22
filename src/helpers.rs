@@ -2,6 +2,15 @@ use std::usize;
 
 use rawler::pixarray::PixF32;
 use rawler::pixarray::RgbF32;
+use rayon::prelude::*;
+
+pub fn index2d(height: usize, width: usize) -> impl Iterator<Item = (usize, usize, usize)>{
+    (0..(width*height)).into_iter().map(move |idx|{
+        let x = idx % width;
+        let y = (idx - x) / width;
+        (idx, y, x)
+    })
+}
 
 pub trait Mask {
     fn mask(&self, grayscale_mask: Vec<f32>) -> impl Iterator<Item = f32> where

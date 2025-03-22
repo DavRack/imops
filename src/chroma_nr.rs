@@ -1,9 +1,9 @@
 use rayon::prelude::*;
 use ndarray::Array2;
 use crate::wavelets::{Kernel, WaveletDecompose};
-use image_dwt::{
-    self, layer::WaveletLayerBuffer, transform::ATrousTransformInput
-};
+// use image_dwt::{
+//     self, layer::WaveletLayerBuffer, transform::ATrousTransformInput
+// };
 
 #[derive(Clone)]
 pub struct ATrousTransform {
@@ -18,13 +18,6 @@ pub struct ATrousTransform {
 pub struct WaveletLayer {
     pub buffer: Vec<f32>,
     pub pixel_scale: Option<usize>,
-}
-
-impl WaveletLayer {
-    #[must_use]
-    pub fn is_residue_layer(&self) -> bool {
-        self.pixel_scale.is_none()
-    }
 }
 
 impl Iterator for ATrousTransform {
