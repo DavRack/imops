@@ -4,6 +4,7 @@ use std::usize;
 use color::{ColorSpace, Oklab, Oklch, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
+use crate::cst::{oklab_to_xyz, xyz_to_oklab};
 use crate::{chroma_nr, helpers::*};
 
 use crate::conditional_paralell::prelude::*;
@@ -147,30 +148,17 @@ impl PipelineModule for ChromaDenoise {
 
         let data = image.data.data.clone();
         let data_l = data.par_iter().map(|p|{
-            let [l, _h, _c] = XyzD65::convert::<Oklab>(*p);
+            let [l, _h, _c] = xyz_to_oklab(*p);
             l
         });
 
-        // let vres: Vec<Vec<f32>> = (0..3).into_par_iter().map(|channel|{
-        //     let channel_data = image.data.data.par_iter().map(|pixel|pixel[channel]).collect();
-        //     chroma_nr::denoise(channel_data, image.data.width, image.data.height, 6, 3)
-        // }).collect();
-
-        // let res = (0..(image.data.width*image.data.height)).into_par_iter().map(|idx|{
-        //     [
-        //         vres[0][idx],
-        //         vres[1][idx],
-        //         vres[2][idx],
-        //     ]
-        // });
         let res = chroma_nr::denoise_rgb(image.data.data, image.data.width, image.data.height, 3, 1);
 
-        let res = res.par_iter().zip(data_l).map(|([r, g, b], l)|{
-            let [_l, c, h] = XyzD65::convert::<Oklab>([*r, *g, *b]);
-            Oklab::convert::<XyzD65>([l, c, h])
+        image.data.data = res.into_par_iter().zip(data_l).map(|(pixel, l)|{
+            let [_l, c, h] = xyz_to_oklab(pixel);
+            oklab_to_xyz([l, c, h])
         }).collect();
 
-        image.data.data = res;
         return image;
     }
 

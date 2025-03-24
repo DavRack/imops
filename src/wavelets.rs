@@ -1,7 +1,6 @@
 use std::isize;
 
-use convolve_image::kernel::{NonSeparableKernel, SeparableKernel};
-use ndarray::Array2;
+use convolve_image::kernel::{SeparableKernel};
 use crate::conditional_paralell::prelude::*;
 
 #[derive(Copy, Clone)]
@@ -226,26 +225,8 @@ fn convolve3<const KERNEL_SIZE: usize>(
 #[derive(Copy, Clone)]
 pub(crate) struct LinearInterpolationKernel(SeparableKernel<3>);
 
-impl LinearInterpolationKernel {
-    pub(crate) fn new() -> Self {
-        Self(SeparableKernel::new([1. / 4., 1. / 2., 1. / 4.]))
-    }
-}
-
 #[derive(Copy, Clone)]
 pub(crate) struct B3SplineKernel(SeparableKernel<5>);
-
-impl B3SplineKernel {
-    pub(crate) fn new() -> Self {
-        Self(SeparableKernel::new([
-            1. / 16.,
-            1. / 4.,
-            3. / 8.,
-            1. / 4.,
-            1. / 16.,
-        ]))
-    }
-}
 
 impl From<LinearInterpolationKernel> for SeparableKernel<3> {
     fn from(value: LinearInterpolationKernel) -> Self {

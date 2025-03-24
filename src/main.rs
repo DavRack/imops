@@ -9,6 +9,7 @@ mod helpers;
 mod color_p;
 mod wavelets;
 mod conditional_paralell;
+mod cst;
 
 use clap::Parser as Clap_parser;
 use core::panic;
