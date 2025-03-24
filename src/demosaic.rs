@@ -4,7 +4,7 @@ use rawler::imgop;
 use rawler::imgop::{Dim2, Rect};
 use ndarray::{Array2, Array3};
 use rawler::pixarray::RgbF32;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use crate::conditional_paralell::prelude::*;
 
 pub fn crop(dim: Dim2, crop_rect: Rect, data: Vec<f32>) -> (Vec<f32>, usize, usize) {
     let nim = imgop::crop(&data, dim, crop_rect);
@@ -53,42 +53,42 @@ impl DemosaicAlgorithms{
         }
         return final_image;
     }
-    pub fn linear_interpolation(
-        width: usize,
-        height: usize,
-        cfa: rawler::CFA,
-        data: Vec<f32>,
-    ) -> RgbF32 {
-        let w = width;
-        let h = height;
-        let mut final_image = RgbF32::new(w-2, h-2);
-        let f = |(indx, _)| {
-            let mut j: usize = indx%final_image.width;
-            let mut i: usize = (indx-j)/final_image.width;
-            j+=1;
-            i+=1;
+    // pub fn linear_interpolation(
+    //     width: usize,
+    //     height: usize,
+    //     cfa: rawler::CFA,
+    //     data: Vec<f32>,
+    // ) -> RgbF32 {
+    //     let w = width;
+    //     let h = height;
+    //     let mut final_image = RgbF32::new(w-2, h-2);
+    //     let f = |(indx, _)| {
+    //         let mut j: usize = indx%final_image.width;
+    //         let mut i: usize = (indx-j)/final_image.width;
+    //         j+=1;
+    //         i+=1;
 
-            let mut pixel_count = [0.0, 0.0, 0.0];
-            let mut pixel = [0.0, 0.0, 0.0];
+    //         let mut pixel_count = [0.0, 0.0, 0.0];
+    //         let mut pixel = [0.0, 0.0, 0.0];
 
-            for i2 in 0..3{
-                for j2 in 0..3{
-                    let index = ((i+i2-1)*width)+(j+j2-1);
-                    let channel = cfa.color_at((i+i2)-1, (j+j2)-1);
-                    pixel_count[channel] += 1.0;
-                    pixel[channel] += data[index];
-                }
-            }
-            [
-                pixel[0]/pixel_count[0],
-                pixel[1]/pixel_count[1],
-                pixel[2]/pixel_count[2],
-            ]
+    //         for i2 in 0..3{
+    //             for j2 in 0..3{
+    //                 let index = ((i+i2-1)*width)+(j+j2-1);
+    //                 let channel = cfa.color_at((i+i2)-1, (j+j2)-1);
+    //                 pixel_count[channel] += 1.0;
+    //                 pixel[channel] += data[index];
+    //             }
+    //         }
+    //         [
+    //             pixel[0]/pixel_count[0],
+    //             pixel[1]/pixel_count[1],
+    //             pixel[2]/pixel_count[2],
+    //         ]
 
-        };
-        final_image.data = final_image.data.par_iter().with_min_len(final_image.width).enumerate().map(f).collect();
-        return final_image;
-    }
+    //     };
+    //     final_image.data = final_image.data.iter().with_min_len(final_image.width).enumerate().map(f).collect();
+    //     return final_image;
+    // }
 
     pub fn pass(
         width: usize,

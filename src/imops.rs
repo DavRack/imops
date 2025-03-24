@@ -6,9 +6,9 @@ use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
 use crate::{chroma_nr, helpers::*};
 
-// use crate::no_rayon::prelude::*;
+use crate::conditional_paralell::prelude::*;
 
-use rayon::prelude::*;
+// use rayon::prelude::*;
 
 #[derive(Clone)]
 pub struct FormedImage {
@@ -145,26 +145,28 @@ pub struct ChromaDenoise {
 impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
 
-        let data_l = image.data.data.par_iter().map(|p|{
+        let data = image.data.data.clone();
+        let data_l = data.par_iter().map(|p|{
             let [l, _h, _c] = XyzD65::convert::<Oklab>(*p);
             l
         });
 
-        let vres: Vec<Vec<f32>> = (0..3).into_par_iter().map(|channel|{
-            let channel_data = image.data.data.par_iter().map(|pixel|pixel[channel]).collect();
-            chroma_nr::denoise(channel_data, image.data.width, image.data.height, 6, 3)
-        }).collect();
+        // let vres: Vec<Vec<f32>> = (0..3).into_par_iter().map(|channel|{
+        //     let channel_data = image.data.data.par_iter().map(|pixel|pixel[channel]).collect();
+        //     chroma_nr::denoise(channel_data, image.data.width, image.data.height, 6, 3)
+        // }).collect();
 
-        let res = (0..(image.data.width*image.data.height)).into_par_iter().map(|idx|{
-            [
-                vres[0][idx],
-                vres[1][idx],
-                vres[2][idx],
-            ]
-        });
+        // let res = (0..(image.data.width*image.data.height)).into_par_iter().map(|idx|{
+        //     [
+        //         vres[0][idx],
+        //         vres[1][idx],
+        //         vres[2][idx],
+        //     ]
+        // });
+        let res = chroma_nr::denoise_rgb(image.data.data, image.data.width, image.data.height, 3, 1);
 
-        let res = res.zip(data_l).map(|([r, g, b], l)|{
-            let [_l, c, h] = XyzD65::convert::<Oklab>([r,g, b]);
+        let res = res.par_iter().zip(data_l).map(|([r, g, b], l)|{
+            let [_l, c, h] = XyzD65::convert::<Oklab>([*r, *g, *b]);
             Oklab::convert::<XyzD65>([l, c, h])
         }).collect();
 

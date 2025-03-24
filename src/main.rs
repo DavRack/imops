@@ -8,7 +8,7 @@ mod chroma_nr;
 mod helpers;
 mod color_p;
 mod wavelets;
-// mod no_rayon;
+mod conditional_paralell;
 
 use clap::Parser as Clap_parser;
 use core::panic;

@@ -1,5 +1,8 @@
 /target
 /data
+*.tar.gz
+*.json.gz
+*.svg
 *.jpg
 *.dng
 *.RAF

@@ -2,7 +2,6 @@ use std::usize;
 
 use rawler::pixarray::PixF32;
 use rawler::pixarray::RgbF32;
-use rayon::prelude::*;
 
 pub fn index2d(height: usize, width: usize) -> impl Iterator<Item = (usize, usize, usize)>{
     (0..(width*height)).into_iter().map(move |idx|{
