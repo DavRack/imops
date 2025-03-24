@@ -1,6 +1,6 @@
 use std::isize;
 
-use convolve_image::kernel::{SeparableKernel};
+use convolve_image::kernel::SeparableKernel;
 use crate::conditional_paralell::prelude::*;
 
 #[derive(Copy, Clone)]
@@ -84,25 +84,18 @@ fn convolve_ref<const KERNEL_SIZE: usize>(
     }
 #[inline]
 fn compute_pixel_index(
-    stride: usize,
+    stride: isize,
     kernel_padding: isize,
     kernel_index: isize,
     signal_index: usize,
     max: usize,
 ) -> usize {
 
-    let distance = kernel_index * stride as isize;
+    let mut index = signal_index as isize + kernel_index * stride;
 
-    let mut index = signal_index as isize + distance;
-
-    if index < 0 {
-        index = -index;
-        return index as usize
-
-    }
+    index = index.abs();
     let bound = max as isize - kernel_padding;
     if index > bound {
-        // let overshot_distance = index - max as isize + kernel_padding;
         index = max as isize - index + bound;
     }
 
@@ -152,14 +145,14 @@ fn convolve<const KERNEL_SIZE: usize>(
             let relative_kernel_index = kernel_index as isize - kernel_side;
 
             let pixel_index_y = compute_pixel_index(
-                stride,
+                stride as isize,
                 kernel_padding,
                 relative_kernel_index,
                 y,
                 height
             );
             let pixel_index_x = compute_pixel_index(
-                stride,
+                stride as isize,
                 kernel_padding,
                 relative_kernel_index,
                 x,
@@ -177,19 +170,18 @@ fn convolve3<const KERNEL_SIZE: usize>(
     height: usize,
     width: usize,
     linear_kernel: [f32; KERNEL_SIZE],
-    stride: usize,
+    stride: isize,
 ) {
-    let kernel_side = KERNEL_SIZE as isize / 2;
     let kernel_isize = KERNEL_SIZE as isize;
     let kernel_padding = kernel_isize / 2;
     let inter = data.clone();
 
     *data = (0..data.len()).into_par_iter().map(|idx| {
-        let x = (idx) % width;
+        let x = idx % width;
         let y = (idx-x) / width;
 
-        let pixel_sum = linear_kernel.iter().enumerate().fold((0.0, 0.0, 0.0), |acc, (kernel_index, value)| {
-            let relative_kernel_index = kernel_index as isize - kernel_side;
+        let pixel_sum = linear_kernel.iter().enumerate().fold([0.0, 0.0, 0.0], |acc, (kernel_index, value)| {
+            let relative_kernel_index = kernel_index as isize - kernel_padding;
 
             let pixel_index_y = compute_pixel_index(
                 stride,
@@ -205,21 +197,17 @@ fn convolve3<const KERNEL_SIZE: usize>(
                 x,
                 width
             );
-            let a = inter[(pixel_index_y * width) + x];
-            let b = inter[(y * width)+ pixel_index_x];
+            let a = inter[pixel_index_y * width + x];
+            let b = inter[y * width + pixel_index_x];
 
-            (
-                acc.0 + (a[0] + b[0]) * value,
-                acc.1 + (a[1] + b[1]) * value,
-                acc.2 + (a[2] + b[2]) * value,
-            )
+            [
+                acc[0] + (a[0] + b[0]) * value,
+                acc[1] + (a[1] + b[1]) * value,
+                acc[2] + (a[2] + b[2]) * value,
+            ]
         });
 
-        [
-            pixel_sum.0/2.,
-            pixel_sum.1/2.,
-            pixel_sum.2/2.,
-        ]
+        pixel_sum.map(|x|x/2.0)
     }).collect::<Vec<[f32; 3]>>();
 }
 #[derive(Copy, Clone)]
@@ -290,7 +278,7 @@ impl WaveletDecompose<[f32; 3]> for Vec<[f32; 3]> {
         match kernel {
             Kernel::LinearInterpolationKernel => {
                 let kernel = [1. / 4., 1. / 2., 1. / 4.];
-                convolve3(&mut current_data, height, width, kernel, stride)
+                convolve3(&mut current_data, height, width, kernel, stride as isize)
             }
             Kernel::LowScaleKernel => {
                 unimplemented!("Low scale is not a separable kernel");
@@ -303,7 +291,7 @@ impl WaveletDecompose<[f32; 3]> for Vec<[f32; 3]> {
                     1. / 4.,
                     1. / 16.,
                 ];
-                convolve3(&mut current_data, height, width, kernel, stride)
+                convolve3(&mut current_data, height, width, kernel, stride as isize)
             }
             ,
         }

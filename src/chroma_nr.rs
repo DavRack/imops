@@ -1,17 +1,5 @@
-use rayon::iter::IntoParallelRefIterator;
-
 use crate::wavelets::{Kernel, WaveletDecompose};
-// use image_dwt::{
-//     self, layer::WaveletLayerBuffer, transform::ATrousTransformInput
-// };
-// use rayon::prelude::*;
 use crate::conditional_paralell::prelude::*;
-
-// #[derive(Clone)]
-// pub enum ATrousTransformData {
-//     RGB{data: Vec<[f32; 3]>},
-//     GRAYSCALE{data: Vec<f32>}
-// }
 
 #[derive(Clone)]
 pub struct ATrousTransform {
@@ -143,7 +131,7 @@ pub fn denoise_rgb(
             let mut data = item.buffer;
             if item.pixel_scale.is_some_and(|scale| scale < v ){
                 let scale = item.pixel_scale.unwrap();
-                let th = threshold[scale]/1.0;
+                let th = threshold[scale];
 
                 data.iter_mut().for_each(|v|{
                     *v = [
@@ -154,7 +142,7 @@ pub fn denoise_rgb(
                 });
             }
             data
-        }).reduce(|acc, val|val.par_iter().zip(acc).map(|(a,b)|{
+        }).reduce(|acc, val| val.par_iter().zip(acc).map(|(a, b)|{
             [
                 a[0] + b[0],
                 a[1] + b[1],
@@ -162,14 +150,5 @@ pub fn denoise_rgb(
             ]
         }).collect()).unwrap();
 
-    // let layers: Vec<[f32; 3]> = (0..width*height).into_par_iter().map(|idx|{
-    //     layers.iter().map(|layer|layer[idx]).fold([0., 0., 0.], |acc, pixel|{
-    //         [
-    //             acc[0] + pixel[0],
-    //             acc[1] + pixel[1],
-    //             acc[2] + pixel[2],
-    //         ]
-    //     })
-    // }).collect() ;
     return layers
 }
