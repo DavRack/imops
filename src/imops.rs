@@ -78,6 +78,7 @@ impl PipelineModule for Crop {
 pub struct HighlightReconstruction {
 }
 
+#[inline]
 fn get_cliped_channels(wb_coeffs: [f32; 4], pixel: [f32; 3]) -> [bool; 3]{
     let [clip_r, clip_g, clip_b, _] = wb_coeffs;
     let [r, g, b] = pixel;
@@ -88,46 +89,62 @@ fn get_cliped_channels(wb_coeffs: [f32; 4], pixel: [f32; 3]) -> [bool; 3]{
     ]
 }
 
+fn reconstruct_pixel(channel: usize, sorrounding_pixels: &Vec<[f32; 3]>) -> f32{
+    // let other_channels = (
+    //     ((channel + 1) % 3) as usize,
+    //     ((channel + 2) % 3) as usize
+    // );
+
+    let len = sorrounding_pixels.len() as f32;
+    let px = sorrounding_pixels.iter().fold(0.0, |acc, pixel|{
+        let [r, g, b] = pixel;
+        acc + r + g + b - pixel[channel]
+    });
+    px/(2.0*len)
+
+}
+
+#[inline]
+fn avg_pixels(sorrounding_pixels: &Vec<[f32; 3]>) -> [f32; 3]{
+    let len = sorrounding_pixels.len() as f32;
+    let px = sorrounding_pixels.into_iter().fold([0., 0., 0.], |acc, pixel|{
+        let [r, g, b] = pixel;
+        let [ar, ag, ab] = acc;
+        [
+            r+ar,
+            g+ag,
+            b+ab
+        ]
+    });
+    px.map(|x|x/(len*2.0))
+}
+
 impl PipelineModule for HighlightReconstruction {
 
     fn process(&self, mut image: FormedImage) -> FormedImage {
         let d = image.data.clone();
-        let reconstruct_pixel = |channel, sorrounding_pixels: &Vec<[f32; 3]>| {
-            let other_channels = (
-                ((channel + 1) % 3) as usize,
-                ((channel + 2) % 3) as usize
-            );
-
-            let len = sorrounding_pixels.len() as f32;
-            let mut px = [0.0, 0.0, 0.0];
-            for pixel in sorrounding_pixels.iter(){
-                px[other_channels.0] += pixel[other_channels.0];
-                px[other_channels.1] += pixel[other_channels.1];
-            }
-
-            // let px = sorrounding_pixels.iter_mut().reduce(|[ar, ag, ab], [r, g, b]| [ar + r, ag + g, ab + b]).unwrap();
-            (px[other_channels.0]+px[other_channels.1])/(2.0*len)
-
-        };
 
         image.data.data.par_iter_mut().enumerate().for_each(|(idx, pixel)|{
-            let sorrounding_pixels = d.get_px_tail(1, idx);
             let [cliped_r, cliped_g, cliped_b] = get_cliped_channels(image.raw_image.wb_coeffs, *pixel);
 
+            if cliped_g || cliped_r || cliped_b{
+                let sorrounding_pixels = d.get_px_tail(1, idx);
+                let [r, g, b] = avg_pixels(&sorrounding_pixels);
 
-            if cliped_r {
-                pixel[0] = reconstruct_pixel(0, &sorrounding_pixels);
-            }
 
-            if cliped_g {
-                pixel[1] = reconstruct_pixel(1, &sorrounding_pixels);
-            }
+                if cliped_r {
+                    pixel[0] = g+b
+                }
 
-            if cliped_b {
-                pixel[2] = reconstruct_pixel(2, &sorrounding_pixels);
+                if cliped_g {
+                    pixel[1] = r+b;
+                }
+
+                if cliped_b {
+                    pixel[2] = r+g;
+                }
             }
         });
-        // image.data.data = corrected_pixels.collect();
         return image
     }
 
@@ -194,11 +211,11 @@ pub struct Sigmoid {
 
 impl PipelineModule for Sigmoid {
     fn process(&self, mut image: FormedImage) -> FormedImage {
-        let max_current_value = image.data.data.as_flattened().iter().cloned().reduce(f32::max).unwrap();
+        let max_current_value = image.data.data.iter().fold(0.0, |current_max, [r, g, b]| r.max(*g).max(*b).max(current_max));
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/scaled_one).powi(2);
         image.data.data.par_iter_mut().for_each(|p|{
-            *p = p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powi(2))
+            *p = p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powf(2.))
         });
         return image
     }
@@ -234,9 +251,7 @@ pub struct CFACoeffs {
 
 impl PipelineModule for CFACoeffs {
     fn process(&self, mut image: FormedImage) -> FormedImage {
-        let rv = image.raw_image.wb_coeffs[0];
-        let gv = image.raw_image.wb_coeffs[1]; 
-        let bv = image.raw_image.wb_coeffs[2];
+        let [rv, gv, bv, _] =image.raw_image.wb_coeffs;
         image.data.data.par_iter_mut().for_each(
             |p|{
                 let [r, g, b] = p;
