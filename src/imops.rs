@@ -152,23 +152,17 @@ pub struct ChromaDenoise {
 impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
 
-        let now = Instant::now();
         let data = image.data.data.clone();
         let data_l = data.par_iter().map(|p|{
-            xyz_to_oklab_l(p.clone())
-        }).collect::<Vec<f32>>();
-        println!("l extraction: {:}", now.elapsed().as_millis());
+            xyz_to_oklab_l(p)
+        });
 
-        let now = Instant::now();
-        let res = chroma_nr::denoise_rgb(image.data.data, image.data.width, image.data.height, 3, 1);
-        println!("chroma_nr: {:}", now.elapsed().as_millis());
+        image.data.data = chroma_nr::denoise_rgb(image.data.data, image.data.width, image.data.height, 3, 1);
 
-        let now = Instant::now();
-        image.data.data = res.into_par_iter().zip(data_l).map(|(pixel, l)|{
-            let [_l, c, h] = xyz_to_oklab(pixel);
-            oklab_to_xyz([l, c, h])
-        }).collect();
-        println!("recomp: {:}", now.elapsed().as_millis());
+        image.data.data.par_iter_mut().zip(data_l).for_each(|(pixel, l)|{
+            let [_, c, h] = xyz_to_oklab(pixel);
+            *pixel = oklab_to_xyz(&[l, c, h])
+        });
 
         return image;
     }

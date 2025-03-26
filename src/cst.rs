@@ -24,7 +24,7 @@ const OKLAB_LMS_TO_XYZ: [[f32; 3]; 3] = [
 const ONE_THIRD: f32 = 1.0/3.0;
 
 #[inline]
-fn matmul(m: &[[f32; 3]; 3], x: [f32; 3]) -> [f32; 3] {
+fn matmul(m: &[[f32; 3]; 3], x: &[f32; 3]) -> [f32; 3] {
     [
         m[0][0] * x[0] + m[0][1] * x[1] + m[0][2] * x[2],
         m[1][0] * x[0] + m[1][1] * x[1] + m[1][2] * x[2],
@@ -33,21 +33,21 @@ fn matmul(m: &[[f32; 3]; 3], x: [f32; 3]) -> [f32; 3] {
 }
 
 #[inline]
-pub fn xyz_to_oklab(src: [f32; 3]) -> [f32; 3]{
+pub fn xyz_to_oklab(src: &[f32; 3]) -> [f32; 3]{
         let lms = matmul(&OKLAB_XYZ_TO_LMS, src).map(|v| v.powf(ONE_THIRD));
-        matmul(&OKLAB_LMS_TO_LAB, lms)
+        matmul(&OKLAB_LMS_TO_LAB, &lms)
     // xyz -> srgb -> oklab
 }
 
-pub fn xyz_to_oklab_l(src: [f32; 3]) -> f32{
+pub fn xyz_to_oklab_l(src: &[f32; 3]) -> f32{
         let lms = matmul(&OKLAB_XYZ_TO_LMS, src).map(|v| v.powf(ONE_THIRD));
         OKLAB_LMS_TO_LAB[0][0] * lms[0] + OKLAB_LMS_TO_LAB[0][1] * lms[1] + OKLAB_LMS_TO_LAB[0][2] * lms[2]
     // xyz -> srgb -> oklab
 }
 
 #[inline]
-pub fn oklab_to_xyz(src: [f32; 3]) -> [f32; 3]{
+pub fn oklab_to_xyz(src: &[f32; 3]) -> [f32; 3]{
         let lms = matmul(&OKLAB_LAB_TO_LMS, src).map(|x| x.powi(3));
-        matmul(&OKLAB_LMS_TO_XYZ, lms)
+        matmul(&OKLAB_LMS_TO_XYZ, &lms)
     // oklab -> srgb -> oklab
 }

@@ -34,9 +34,7 @@ impl Iterator for ATrousTransform {
             });
         }
 
-        let kernel = self.kernel;
-
-        let layer_buffer = self.input.wavelet_decompose(self.height, self.width, kernel, pixel_scale);
+        let layer_buffer = self.input.wavelet_decompose(self.height, self.width, self.kernel, pixel_scale);
         Some(WaveletLayer {
             pixel_scale: Some(pixel_scale),
             buffer: layer_buffer,
@@ -126,7 +124,7 @@ pub fn denoise_rgb(
     ];
 
     let layers: Vec<[f32; 3]> = transform
-        .into_iter()
+        .into_iter().skip(1)
         .map(|item|{
             let mut data = item.buffer;
             if item.pixel_scale.is_some_and(|scale| scale < v ){
