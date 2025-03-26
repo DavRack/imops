@@ -1,4 +1,4 @@
-use std::isize;
+use std::{isize, time::Instant, usize};
 
 use convolve_image::kernel::SeparableKernel;
 use crate::conditional_paralell::prelude::*;
@@ -93,7 +93,9 @@ fn compute_pixel_index(
 
     let mut index = signal_index as isize + kernel_index * stride;
 
-    index = index.abs();
+    if index < 0 {
+        return - index as usize
+    }
     let bound = max as isize - kernel_padding;
     if index > bound {
         index = max as isize - index + bound;
@@ -171,16 +173,16 @@ fn convolve3<const KERNEL_SIZE: usize>(
     width: usize,
     linear_kernel: [f32; KERNEL_SIZE],
     stride: isize,
-) {
+) -> Vec<[f32; 3]>{
     let kernel_isize = KERNEL_SIZE as isize;
     let kernel_padding = kernel_isize / 2;
-    let inter = data.clone();
 
-    *data = (0..data.len()).into_par_iter().map(|idx| {
+    (0..data.len()).into_par_iter().map(|idx| {
         let x = idx % width;
         let y = (idx-x) / width;
 
-        let pixel_sum = linear_kernel.iter().enumerate().fold([0.0, 0.0, 0.0], |acc, (kernel_index, value)| {
+        let mut pixel_sum: [f32; 3] = [0.0, 0.0, 0.0];
+        for (kernel_index, value) in linear_kernel.iter().enumerate(){
             let relative_kernel_index = kernel_index as isize - kernel_padding;
 
             let pixel_index_y = compute_pixel_index(
@@ -197,18 +199,16 @@ fn convolve3<const KERNEL_SIZE: usize>(
                 x,
                 width
             );
-            let a = inter[pixel_index_y * width + x];
-            let b = inter[y * width + pixel_index_x];
+            let [ar, ag, ab] = data[pixel_index_y * width + x];
+            let [br, bg, bb] = data[y * width + pixel_index_x];
 
-            [
-                acc[0] + (a[0] + b[0]) * value,
-                acc[1] + (a[1] + b[1]) * value,
-                acc[2] + (a[2] + b[2]) * value,
-            ]
-        });
+            pixel_sum[0] += (ar + br) * value;
+            pixel_sum[1] += (ag + bg) * value;
+            pixel_sum[2] += (ab + bb) * value;
+        }
 
         pixel_sum.map(|x|x/2.0)
-    }).collect::<Vec<[f32; 3]>>();
+    }).collect::<Vec<[f32; 3]>>()
 }
 #[derive(Copy, Clone)]
 pub(crate) struct LinearInterpolationKernel(SeparableKernel<3>);
@@ -274,11 +274,10 @@ impl WaveletDecompose<[f32; 3]> for Vec<[f32; 3]> {
             u32::try_from(pixel_scale)
                 .unwrap_or_else(|_| panic!("pixel_scale cannot be larger than {}", u32::MAX)),
         );
-        let mut current_data = self.clone();
-        match kernel {
+        let current_data = match kernel {
             Kernel::LinearInterpolationKernel => {
                 let kernel = [1. / 4., 1. / 2., 1. / 4.];
-                convolve3(&mut current_data, height, width, kernel, stride as isize)
+                convolve3(self, height, width, kernel, stride as isize)
             }
             Kernel::LowScaleKernel => {
                 unimplemented!("Low scale is not a separable kernel");
@@ -291,20 +290,18 @@ impl WaveletDecompose<[f32; 3]> for Vec<[f32; 3]> {
                     1. / 4.,
                     1. / 16.,
                 ];
-                convolve3(&mut current_data, height, width, kernel, stride as isize)
+                convolve3(self, height, width, kernel, stride as isize)
             }
-            ,
-        }
+        };
 
-        let final_data = (0..self.len()).into_par_iter().map(|idx| {
-            let v1 = self[idx];
-            let v2 = current_data[idx];
+        let final_data = current_data.par_iter().zip(&mut *self).map(|([r1, g1, b1], [r, g, b])| {
             [
-                v1[0] - v2[0],
-                v1[1] - v2[1],
-                v1[2] - v2[2],
+                *r - r1,
+                *g - g1,
+                *b - b1,
             ]
         }).collect();
+
         *self = current_data;
 
         final_data

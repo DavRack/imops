@@ -36,6 +36,8 @@ impl PipelineModule for LCH {
             |p| {
                 let [l, c, h] = XyzD65::convert::<Oklab>(*p);
                 *p = Oklab::convert::<XyzD65>([l*self.lc, c*self.cc, h*self.hc])
+                // let [l, c, h] = xyz_to_oklab(*p);
+                // *p = oklab_to_xyz([l*self.lc, c*self.cc, h*self.hc]);
             }
         );
         return image
@@ -215,7 +217,7 @@ impl PipelineModule for Sigmoid {
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/scaled_one).powi(2);
         image.data.data.par_iter_mut().for_each(|p|{
-            *p = p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powf(2.))
+            *p = p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powi(2))
         });
         return image
     }
@@ -233,10 +235,10 @@ pub struct Contrast {
 impl PipelineModule for Contrast {
     fn process(&self, mut image: FormedImage) -> FormedImage {
         const MIDDLE_GRAY: f32 = 0.1845;
-        let f = |x: f32| (MIDDLE_GRAY*(x/MIDDLE_GRAY)).powf(self.c);
-        image.data.data.par_iter_mut().for_each(
-            |p| *p = p.map(f)
-        );
+        // let f = |x| (MIDDLE_GRAY*(x/MIDDLE_GRAY)).powf(self.c);
+        image.data.data.par_iter_mut().for_each( |p|{
+            *p = p.map(|x| MIDDLE_GRAY*(x/MIDDLE_GRAY).powf(self.c))
+        });
         return image
     }
 

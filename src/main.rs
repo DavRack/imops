@@ -19,6 +19,8 @@ use rawler::{self};
 use std::io::Cursor;
 use std::time::Instant;
 
+use crate::conditional_paralell::prelude::*;
+
 #[derive(Clap_parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -69,7 +71,7 @@ fn demosaic(image: &mut rawler::RawImage) -> imops::FormedImage {
 fn to_vec(data: RgbF32) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     let height = data.height;
     let width = data.width;
-    let data2 = data.flatten().iter().map(|x| (x * 255.0) as u8).collect();
+    let data2 = data.flatten().par_iter().map(|x| (x * 255.0) as u8).collect();
     let img = image::RgbImage::from_vec(width as u32, height as u32, data2).unwrap();
     return img;
 }
