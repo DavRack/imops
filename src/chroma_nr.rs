@@ -134,19 +134,17 @@ pub fn denoise_rgb(
                 let th = threshold[scale];
 
                 data.iter_mut().for_each(|v|{
-                    *v = [
-                        v[0]*th,
-                        v[1]*th,
-                        v[2]*th,
-                    ];
+                    *v = v.map(|x| x*th);
                 });
             }
             data
         }).reduce(|acc, val| val.par_iter().zip(acc).map(|(a, b)|{
+            let [a, x, c] = a;
+            let [r, g, b] = b;
             [
-                a[0] + b[0],
-                a[1] + b[1],
-                a[2] + b[2],
+                a + r,
+                x + g,
+                c + b,
             ]
         }).collect()).unwrap();
 

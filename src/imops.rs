@@ -1,10 +1,12 @@
+use core::time;
+use std::time::Instant;
 use std::usize;
 
 // use crate::color_p::{ColorSpace, Oklab, Oklch, XyzD65};
 use color::{ColorSpace, Oklab, Oklch, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
-use crate::cst::{oklab_to_xyz, xyz_to_oklab};
+use crate::cst::{oklab_to_xyz, xyz_to_oklab, xyz_to_oklab_l};
 use crate::{chroma_nr, helpers::*};
 
 use crate::conditional_paralell::prelude::*;
@@ -91,21 +93,6 @@ fn get_cliped_channels(wb_coeffs: [f32; 4], pixel: [f32; 3]) -> [bool; 3]{
     ]
 }
 
-fn reconstruct_pixel(channel: usize, sorrounding_pixels: &Vec<[f32; 3]>) -> f32{
-    // let other_channels = (
-    //     ((channel + 1) % 3) as usize,
-    //     ((channel + 2) % 3) as usize
-    // );
-
-    let len = sorrounding_pixels.len() as f32;
-    let px = sorrounding_pixels.iter().fold(0.0, |acc, pixel|{
-        let [r, g, b] = pixel;
-        acc + r + g + b - pixel[channel]
-    });
-    px/(2.0*len)
-
-}
-
 #[inline]
 fn avg_pixels(sorrounding_pixels: &Vec<[f32; 3]>) -> [f32; 3]{
     let len = sorrounding_pixels.len() as f32;
@@ -165,18 +152,23 @@ pub struct ChromaDenoise {
 impl PipelineModule for ChromaDenoise {
     fn process(&self, mut image: FormedImage) -> FormedImage {
 
+        let now = Instant::now();
         let data = image.data.data.clone();
         let data_l = data.par_iter().map(|p|{
-            let [l, _h, _c] = xyz_to_oklab(*p);
-            l
-        });
+            xyz_to_oklab_l(p.clone())
+        }).collect::<Vec<f32>>();
+        println!("l extraction: {:}", now.elapsed().as_millis());
 
+        let now = Instant::now();
         let res = chroma_nr::denoise_rgb(image.data.data, image.data.width, image.data.height, 3, 1);
+        println!("chroma_nr: {:}", now.elapsed().as_millis());
 
+        let now = Instant::now();
         image.data.data = res.into_par_iter().zip(data_l).map(|(pixel, l)|{
             let [_l, c, h] = xyz_to_oklab(pixel);
             oklab_to_xyz([l, c, h])
         }).collect();
+        println!("recomp: {:}", now.elapsed().as_millis());
 
         return image;
     }

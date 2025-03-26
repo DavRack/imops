@@ -39,6 +39,12 @@ pub fn xyz_to_oklab(src: [f32; 3]) -> [f32; 3]{
     // xyz -> srgb -> oklab
 }
 
+pub fn xyz_to_oklab_l(src: [f32; 3]) -> f32{
+        let lms = matmul(&OKLAB_XYZ_TO_LMS, src).map(|v| v.powf(ONE_THIRD));
+        OKLAB_LMS_TO_LAB[0][0] * lms[0] + OKLAB_LMS_TO_LAB[0][1] * lms[1] + OKLAB_LMS_TO_LAB[0][2] * lms[2]
+    // xyz -> srgb -> oklab
+}
+
 #[inline]
 pub fn oklab_to_xyz(src: [f32; 3]) -> [f32; 3]{
         let lms = matmul(&OKLAB_LAB_TO_LMS, src).map(|x| x.powi(3));

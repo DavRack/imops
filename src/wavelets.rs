@@ -181,7 +181,7 @@ fn convolve3<const KERNEL_SIZE: usize>(
         let x = idx % width;
         let y = (idx-x) / width;
 
-        let mut pixel_sum: [f32; 3] = [0.0, 0.0, 0.0];
+        let mut pixel_sum: [f32; 3] = [0.0; 3];
         for (kernel_index, value) in linear_kernel.iter().enumerate(){
             let relative_kernel_index = kernel_index as isize - kernel_padding;
 
@@ -201,10 +201,13 @@ fn convolve3<const KERNEL_SIZE: usize>(
             );
             let [ar, ag, ab] = data[pixel_index_y * width + x];
             let [br, bg, bb] = data[y * width + pixel_index_x];
+            let [r, g, b] = pixel_sum;
 
-            pixel_sum[0] += (ar + br) * value;
-            pixel_sum[1] += (ag + bg) * value;
-            pixel_sum[2] += (ab + bb) * value;
+            pixel_sum = [
+                r + (ar + br) * value,
+                g + (ag + bg) * value,
+                b + (ab + bb) * value,
+            ]
         }
 
         pixel_sum.map(|x|x/2.0)
