@@ -114,29 +114,6 @@ fn convolve<const KERNEL_SIZE: usize>(
     let kernel_isize = KERNEL_SIZE as isize;
     let kernel_padding = kernel_isize / 2;
 
-    // let mut inter_image: Vec<f32> = vec![0.0; width*height];
-
-    // let inter_image: Vec<f32> = (0..data.len()).map(|idx| {
-    //     let x = idx % width;
-    //     let y = (idx-x) / width;
-
-    //     let pixel_sum = linear_kernel.iter().enumerate().fold(0.0, |acc, (kernel_index, value)| {
-    //         let relative_kernel_index = kernel_index as isize - kernel_side;
-
-    //         let pixel_index_x = compute_pixel_index(
-    //             stride,
-    //             kernel_padding,
-    //             relative_kernel_index,
-    //             x,
-    //             width
-    //         );
-
-    //         acc + data[(y * width) + pixel_index_x] * value
-    //     });
-
-    //     pixel_sum
-    // }).collect();
-    //
     let inter = data.clone();
 
     *data = (0..data.len()).into_par_iter().map(|idx| {

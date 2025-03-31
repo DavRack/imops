@@ -1,6 +1,5 @@
 use std::{any,  usize};
 
-// use crate::color_p::{ColorSpace, Oklab, Oklch, XyzD65};
 use color::{ColorSpace, Oklab, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
@@ -9,8 +8,6 @@ use crate::cst::{oklab_to_xyz, xyz_to_oklab, xyz_to_oklab_l};
 use crate::{chroma_nr, helpers::*};
 
 use crate::conditional_paralell::prelude::*;
-
-// use rayon::prelude::*;
 
 #[derive(Clone)]
 pub struct FormedImage {
@@ -31,11 +28,30 @@ pub struct PipelineImage {
 pub trait PipelineModule {
     fn process(&self, image: PipelineImage, raw_image: &RawImage) -> PipelineImage;
     fn get_name(&self) -> String;
-    fn from_toml<'a>(module: Map<String, toml::Value>) -> Box<Self>
-    where Self: Deserialize<'a> + Default{
-        Box::new(module.try_into::<Self>().expect(any::type_name::<Self>()))
+    fn from_toml<'a, T>(module: Map<String, toml::Value>) -> Box<Module<T>>
+    where T: Deserialize<'a> + Default + Sized{
+        let cfg: T = module.try_into::<T>().expect(any::type_name::<Self>());
+        let module = Module{
+            cache: PipelineImage::default(),
+            config: cfg
+        };
+        Box::new(module)
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct Module<T>{
+    #[serde(skip_deserializing)]
+    pub cache: PipelineImage,
+    pub config: T
+}
+
+impl<T> Module<T> {
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct  LCH{
@@ -98,17 +114,6 @@ impl PipelineModule for Crop {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct HighlightReconstruction {
-}
-
-#[inline]
-fn get_cliped_channels(wb_coeffs: [f32; 4], pixel: [f32; 3]) -> [bool; 3]{
-    let [clip_r, clip_g, clip_b, _] = wb_coeffs;
-    let [r, g, b] = pixel;
-    [
-        r >= clip_r,
-        g >= clip_g,
-        b >= clip_b,
-    ]
 }
 
 #[inline]
@@ -204,10 +209,6 @@ pub struct Exp {
     #[serde(skip_deserializing)]
     pub cache: PipelineImage,
     pub ev: f32
-}
-
-fn apply_mask(mask: f32, old: f32, new: f32)-> f32{
-    (old*(1.0-mask))+(mask*new)
 }
 
 impl PipelineModule for Exp {
