@@ -2,7 +2,7 @@ use core::panic;
 
 use serde::{Deserialize, Serialize};
 
-use crate::imops;
+use crate::imops::{self, PipelineModule};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
@@ -24,17 +24,17 @@ pub fn parse_config(config_path: String) -> PipelineConfig{
 
     for module in data.pipeline_modules {
         let pipeline_module: Box<dyn imops::PipelineModule> = match module["name"].as_str().unwrap() {
-            "CFACoeffs" => Box::new(module.clone().try_into::<imops::CFACoeffs>().unwrap()),
-            "CST" => Box::new(module.clone().try_into::<imops::CST>().unwrap()),
-            "Exp" => Box::new(module.clone().try_into::<imops::Exp>().unwrap()),
-            "Contrast" => Box::new(module.clone().try_into::<imops::Contrast>().unwrap()),
-            "Sigmoid" => Box::new(module.clone().try_into::<imops::Sigmoid>().unwrap()),
-            "LocalExpousure" => Box::new(module.clone().try_into::<imops::LocalExpousure>().unwrap()),
-            "LS" => Box::new(module.clone().try_into::<imops::LS>().unwrap()),
-            "LCH" => Box::new(module.clone().try_into::<imops::LCH>().unwrap()),
-            "ChromaDenoise" => Box::new(module.clone().try_into::<imops::ChromaDenoise>().unwrap()),
-            "HighlightReconstruction" => Box::new(module.clone().try_into::<imops::HighlightReconstruction>().unwrap()),
-            "Crop" => Box::new(module.clone().try_into::<imops::Crop>().unwrap()),
+            "CFACoeffs" => imops::CFACoeffs::from_toml(module),
+            "CST" => imops::CST::from_toml(module),
+            "Exp" => imops::Exp::from_toml(module),
+            "Contrast" => imops::Contrast::from_toml(module),
+            "Sigmoid" => imops::Sigmoid::from_toml(module),
+            "LocalExpousure" => imops::LocalExpousure::from_toml(module),
+            "LS" => imops::LS::from_toml(module),
+            "LCH" => imops::LCH::from_toml(module),
+            "ChromaDenoise" => imops::ChromaDenoise::from_toml(module),
+            "HighlightReconstruction" => imops::HighlightReconstruction::from_toml(module),
+            "Crop" =>imops::Crop::from_toml(module),
             v => panic!("wrong pipeline module name {:}", v)
         };
 

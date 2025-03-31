@@ -118,15 +118,13 @@ impl DemosaicAlgorithms{
     ) -> RgbF32 {
         // Initialize RGB buffers
         let mut rgb = vec![[0.0f32; 3]; width * height];
-        rgb = rgb.par_iter().enumerate().map(|(idx, _)|{
+        rgb.par_iter_mut().enumerate().for_each(|(idx, pix)|{
             let col = idx % width;
             let row = (idx - col)/width;
             let idx = row * width + col;
             let color = cfa.color_at(row, col);
-            let mut pix = rgb[idx];
             pix[color] = input[idx];
-            pix
-        }).collect();
+        });
 
         // Green interpolation for non-green pixels
         rgb = rgb.par_iter().enumerate().map(|(idx, _)|{
@@ -137,7 +135,7 @@ impl DemosaicAlgorithms{
             }else{
 
                 // Collect surrounding green values
-                let mut greens = Vec::new();
+                let mut greens = Vec::with_capacity(9);
                 for dy in -1..=1 {
                     for dx in -1..=1 {
                         let y = row as isize + dy;
@@ -165,7 +163,7 @@ impl DemosaicAlgorithms{
         }).collect();
 
         // Red and Blue interpolation using the green values
-        rgb = rgb.par_iter().enumerate().map(|(idx, _)|{
+        rgb = rgb.par_iter().enumerate().map(|(idx, pix)|{
                 let col = idx % width;
                 let row = (idx - col)/width;
 
@@ -173,8 +171,8 @@ impl DemosaicAlgorithms{
                 let color = cfa.color_at(row, col);
                 if color == 1 {
                     // Green pixel, interpolate Red and Blue
-                    let mut reds = Vec::new();
-                    let mut blues = Vec::new();
+                    let mut reds = Vec::with_capacity(9);
+                    let mut blues = Vec::with_capacity(9);
                     for dy in -1..=1 {
                         for dx in -1..=1 {
                             let y = row as isize + dy;
@@ -195,13 +193,13 @@ impl DemosaicAlgorithms{
                     }
                 [
                     reds.iter().sum::<f32>() / reds.len() as f32,
-                    rgb[idx][1],
+                    pix[1],
                     blues.iter().sum::<f32>() / blues.len() as f32,
                 ]
                 } else {
                     // Non-green pixel, interpolate the missing color
                     let target_color = if color == 0 { 2 } else { 0 };
-                    let mut samples = Vec::new();
+                    let mut samples = Vec::with_capacity(9);
                     for dy in -1..=1 {
                         for dx in -1..=1 {
                             let y = row as isize + dy;

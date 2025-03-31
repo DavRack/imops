@@ -17,7 +17,7 @@ convolve-image = "0.4.0"
 image = "0.25.5"
 # image-dwt = { git="https://github.com/DavRack/image-dwt.git" }
 itertools = "0.14.0"
-nalgebra = "0.33.2"
+# nalgebra = "0.33.2"
 ndarray = {version = "0.15.6", features = ["rayon", "matrixmultiply-threading"]}
 rawler = "0.6.0"
 rayon = "1.10.0"

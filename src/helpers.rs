@@ -3,6 +3,8 @@ use std::usize;
 use rawler::pixarray::PixF32;
 use rawler::pixarray::RgbF32;
 
+use crate::imops::PipelineImage;
+
 pub fn index2d(height: usize, width: usize) -> impl Iterator<Item = (usize, usize, usize)>{
     (0..(width*height)).into_iter().map(move |idx|{
         let x = idx % width;
@@ -54,6 +56,43 @@ impl PixelTail<f32> for PixF32 {
     }
     fn get_px_tail(&self, tail_radious: usize, center: usize) -> Vec<f32>{
         self.get_tail(tail_radious, center).into_iter().map(|(_, tail)| tail).collect()
+    }
+}
+impl PixelTail<[f32; 3]> for PipelineImage {
+    #[inline]
+    fn get_tail(&self, tail_radious: usize, center: usize) -> Vec<(usize, [f32; 3])>{
+        let tail_radious = tail_radious as i32;
+        let col: i32 = (center % self.width) as i32;
+        let row: i32 = (center as i32 - col)/self.width as i32;
+
+        let tail_side = (2*tail_radious as usize)+1;
+        let mut tail = Vec::with_capacity(tail_side*tail_side);
+
+        for i in -(tail_radious)..(tail_radious+1) {
+            for j in -(tail_radious)..(tail_radious+1) {
+                let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+                tail.push(
+                    (
+                        image_index,
+                        self.data[image_index]
+                    )
+                );
+            }
+        }
+        return tail
+    }
+
+    #[inline]
+    fn get_px_tail(&self, tail_radious: usize, center: usize) -> Vec<[f32; 3]>{
+        let tail_radious = tail_radious as i32;
+        let col: i32 = (center % self.width) as i32;
+        let row: i32 = (center as i32 - col)/self.width as i32;
+
+        let tail = (-(tail_radious)..(tail_radious+1)).into_iter().zip(-(tail_radious)..(tail_radious+1)).map(|(i,j)|{
+            let image_index = (row+i).clamp(0, (self.height-1) as i32) as usize * self.width + (col+j).clamp(0, (self.width-1) as i32) as usize;
+            self.data[image_index]
+        }).collect();
+        return tail
     }
 }
 
