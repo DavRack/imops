@@ -9,13 +9,24 @@ use crate::{chroma_nr, helpers::*};
 
 use crate::conditional_paralell::prelude::*;
 
+pub trait PipelineModule{
+    fn process(&self, image: PipelineImage, raw_image: &RawImage) -> PipelineImage;
+    fn get_name(&self) -> String;
+    fn set_cache(&mut self, cache: PipelineImage);
+    fn get_cache(self) -> PipelineImage;
+}
+
+const CHANNELS_PER_PIXEL: usize = 3;
+
+const R: usize = 0;
+const G: usize = 0;
+const B: usize = 0;
+
 #[derive(Clone)]
 pub struct FormedImage {
     pub raw_image: RawImage,
     pub data: RgbF32,
 }
-
-const CHANNELS_PER_PIXEL: usize = 3;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
 pub struct PipelineImage {
@@ -25,11 +36,18 @@ pub struct PipelineImage {
     pub max_raw_value: f32,
 }
 
-pub trait PipelineModule {
-    fn process(&self, image: PipelineImage, raw_image: &RawImage) -> PipelineImage;
-    fn get_name(&self) -> String;
-    fn from_toml<'a, T>(module: Map<String, toml::Value>) -> Box<Module<T>>
-    where T: Deserialize<'a> + Default + Sized{
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct Module<T>{
+    pub cache: PipelineImage,
+    pub config: T
+}
+
+impl<T> Module<T>{
+    pub fn from_toml<'a>(module: Map<String, toml::Value>) -> Box<Self>
+    where
+        T: Deserialize<'a> + Default,
+        Self: Sized
+    {
         let cfg: T = module.try_into::<T>().expect(any::type_name::<Self>());
         let module = Module{
             cache: PipelineImage::default(),
@@ -39,37 +57,20 @@ pub trait PipelineModule {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct Module<T>{
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
-    pub config: T
-}
-
-impl<T> Module<T> {
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-}
-
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct  LCH{
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
     pub lc: f32,
     pub cc: f32,
     pub hc: f32,
 }
 
-impl PipelineModule for LCH {
+impl PipelineModule for Module<LCH> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         image.data.par_iter_mut().for_each(
             |p| {
                 let [l, c, h] = XyzD65::convert::<Oklab>(*p);
-                *p = Oklab::convert::<XyzD65>([l*self.lc, c*self.cc, h*self.hc])
-                // let [l, c, h] = xyz_to_oklab(*p);
-                // *p = oklab_to_xyz([l*self.lc, c*self.cc, h*self.hc]);
+                *p = Oklab::convert::<XyzD65>([l*self.config.lc, c*self.config.cc, h*self.config.hc])
             }
         );
         return image
@@ -78,25 +79,31 @@ impl PipelineModule for LCH {
     fn get_name(&self) -> String{
         return "LCH".to_string()
     }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct  Crop{
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
     pub factor: usize,
 }
 
-impl PipelineModule for Crop {
+impl PipelineModule for Module<Crop> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         let width = image.width;
         let height = image.height;
-        let new_width = width/self.factor;
-        let new_height = height/self.factor;
+        let new_width = width/self.config.factor;
+        let new_height = height/self.config.factor;
         let mut result = vec![[0.0;3] ; (new_width)*(new_height)];
         let mut i = 0;
-        for row in (0..image.height).step_by(self.factor) {
-            for col in (0..image.width).step_by(self.factor) {
+        for row in (0..image.height).step_by(self.config.factor) {
+            for col in (0..image.width).step_by(self.config.factor) {
                 result[i] = image.data[row*width+col];
                 i+=1;
             }
@@ -109,6 +116,14 @@ impl PipelineModule for Crop {
 
     fn get_name(&self) -> String{
         return "Crop".to_string()
+    }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
     }
 }
 
@@ -131,7 +146,7 @@ fn avg_pixels(sorrounding_pixels: &Vec<[f32; 3]>) -> [f32; 3]{
     px.map(|x|x/len)
 }
 
-impl PipelineModule for HighlightReconstruction {
+impl PipelineModule for Module<HighlightReconstruction> {
 
     fn process(&self, mut image: PipelineImage, raw_image: &RawImage) -> PipelineImage {
         let d = image.clone();
@@ -152,15 +167,15 @@ impl PipelineModule for HighlightReconstruction {
 
 
                 if cliped_r {
-                    pixel[0] = g+b
+                    pixel[R] = g+b
                 }
 
                 if cliped_g {
-                    pixel[1] = r+b;
+                    pixel[G] = r+b;
                 }
 
                 if cliped_b {
-                    pixel[2] = r+g;
+                    pixel[B] = r+g;
                 }
             }
         });
@@ -170,18 +185,24 @@ impl PipelineModule for HighlightReconstruction {
     fn get_name(&self) -> String{
         return "HighlightReconstruction".to_string()
     }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct ChromaDenoise {
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
 	  a: f32,
     b: f32,
     strength: f32
 }
 
-impl PipelineModule for ChromaDenoise {
+impl PipelineModule for Module<ChromaDenoise> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
 
         let data = image.data.clone();
@@ -202,18 +223,24 @@ impl PipelineModule for ChromaDenoise {
     fn get_name(&self) -> String{
         return "ChromaDenoise".to_string()
     }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Exp {
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
     pub ev: f32
 }
 
-impl PipelineModule for Exp {
+impl PipelineModule for Module<Exp> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        let value = 2.0_f32.powf(self.ev);
+        let value = 2.0_f32.powf(self.config.ev);
         image.data.par_iter_mut().for_each(
             |p| *p = p.map(|x| x*value)
         );
@@ -223,22 +250,28 @@ impl PipelineModule for Exp {
     fn get_name(&self) -> String{
         return "Exp".to_string()
     }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Sigmoid {
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
     pub c: f32
 }
 
-impl PipelineModule for Sigmoid {
+impl PipelineModule for Module<Sigmoid> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         let max_current_value = image.data.iter().fold(0.0, |current_max, [r, g, b]| r.max(*g).max(*b).max(current_max));
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/scaled_one).powi(2);
         image.data.par_iter_mut().for_each(|p|{
-            *p = p.map(|x| (c / (1.0 + (1.0/(self.c*x)))).powi(2))
+            *p = p.map(|x| (c / (1.0 + (1.0/(self.config.c*x)))).powi(2))
         });
         return image
     }
@@ -246,21 +279,27 @@ impl PipelineModule for Sigmoid {
     fn get_name(&self) -> String{
         return "Sigmoid".to_string()
     }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Contrast {
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
     pub c: f32
 }
 
-impl PipelineModule for Contrast {
+impl PipelineModule for Module<Contrast> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         const MIDDLE_GRAY: f32 = 0.1845;
         // let f = |x| (MIDDLE_GRAY*(x/MIDDLE_GRAY)).powf(self.c);
         image.data.par_iter_mut().for_each( |p|{
-            *p = p.map(|x| MIDDLE_GRAY*(x/MIDDLE_GRAY).powf(self.c))
+            *p = p.map(|x| MIDDLE_GRAY*(x/MIDDLE_GRAY).powf(self.config.c))
         });
         return image
     }
@@ -268,13 +307,21 @@ impl PipelineModule for Contrast {
     fn get_name(&self) -> String{
         return "Contrast".to_string()
     }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct CFACoeffs {
 }
 
-impl PipelineModule for CFACoeffs {
+impl PipelineModule for Module<CFACoeffs> {
     fn process(&self, mut image: PipelineImage, raw_image: &RawImage) -> PipelineImage {
         let [rv, gv, bv, _] = raw_image.wb_coeffs;
         image.data.par_iter_mut().for_each(
@@ -289,20 +336,26 @@ impl PipelineModule for CFACoeffs {
     fn get_name(&self) -> String{
         return "CFACoeffs".to_string()
     }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct LocalExpousure {
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
     pub c: f32,
     pub m: f32,
     pub p: f32,
 }
 
-impl PipelineModule for LocalExpousure {
+impl PipelineModule for Module<LocalExpousure> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        let f = |x: f32| x*((self.c*(2.0_f32.powf(-((x-self.p).powf(2.0)/self.m))))+1.0);
+        let f = |x: f32| x*((self.config.c*(2.0_f32.powf(-((x-self.config.p).powf(2.0)/self.config.m))))+1.0);
         let result = image.data.par_iter().map(|p|p.map(f));
         image.data = result.collect();
         return image
@@ -311,6 +364,14 @@ impl PipelineModule for LocalExpousure {
 
     fn get_name(&self) -> String{
         return "LocalExpousure".to_string()
+    }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
     }
 }
 
@@ -324,20 +385,21 @@ pub struct LS {
     pub pivot: f32, //ev
 }
 
-impl PipelineModule for LS {
+impl PipelineModule for Module<LS> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        let p: f32 = self.pivot;
-        let d: f32 = self.transition_width;
+        let config = self.clone();
+        let p: f32 = config.config.pivot;
+        let d: f32 = config.config.transition_width;
         let f2 = |x: f32, m: f32| p*(x/p).powf(m);
         let f = |x: f32, pf: f32| 1.0/(1.0+(1.0/(2.0_f32.powf(d*(x-(p*pf))))));
 
         // shadows
-        let ms: f32 = 1.0/self.shadows_exp;
+        let ms: f32 = 1.0/config.config.shadows_exp;
         let pfs: f32 = 0.8;
         // let result = image.data.data.par_iter().map(|p|p.map(|x| (f2(x, ms)*(1.0-f(x, pf)))+f(x, pf)*x));
         //
         //// heights
-        let mh: f32 = self.highlits_exp;
+        let mh: f32 = config.config.highlits_exp;
         let pfh: f32 = 1.2;
 
         let complete_f = |x| (((f2(x, ms)*(1.0-f(x, pfs)))+f(x, pfs)*x)+((f2(x, mh)*f(x, pfh))+((1.0-f(x, pfh))*x)))/2.0;
@@ -352,12 +414,18 @@ impl PipelineModule for LS {
     fn get_name(&self) -> String{
         return "LS".to_string()
     }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct CST {
-    #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
     pub color_space: ColorSpaceMatrix,
 }
 
@@ -369,9 +437,9 @@ pub enum ColorSpaceMatrix {
 }
 
 
-impl PipelineModule for CST {
+impl PipelineModule for Module<CST> {
     fn process(&self, mut image: PipelineImage, raw_image: &RawImage) -> PipelineImage {
-        let foward_matrix = match self.color_space {
+        let foward_matrix = match self.config.color_space {
             ColorSpaceMatrix::XYZTOsRGB => {
                 let matrix = [
                     [3.240479,  -1.537150, -0.498535,],
@@ -409,6 +477,14 @@ impl PipelineModule for CST {
 
     fn get_name(&self) -> String{
         return "CST".to_string()
+    }
+
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.cache = cache
+    }
+
+    fn get_cache(self) -> PipelineImage{
+        self.cache
     }
 }
 
