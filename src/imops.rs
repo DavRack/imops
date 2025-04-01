@@ -13,7 +13,7 @@ pub trait PipelineModule{
     fn process(&self, image: PipelineImage, raw_image: &RawImage) -> PipelineImage;
     fn get_name(&self) -> String;
     fn set_cache(&mut self, cache: PipelineImage);
-    fn get_cache(self) -> PipelineImage;
+    fn get_cache(&self) -> PipelineImage;
 }
 
 const CHANNELS_PER_PIXEL: usize = 3;
@@ -39,7 +39,7 @@ pub struct PipelineImage {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Module<T>{
     pub cache: PipelineImage,
-    pub config: T
+    pub config: T,
 }
 
 impl<T> Module<T>{
@@ -84,8 +84,8 @@ impl PipelineModule for Module<LCH> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -122,8 +122,8 @@ impl PipelineModule for Module<Crop> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -190,8 +190,8 @@ impl PipelineModule for Module<HighlightReconstruction> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -228,8 +228,8 @@ impl PipelineModule for Module<ChromaDenoise> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -255,8 +255,8 @@ impl PipelineModule for Module<Exp> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -284,8 +284,8 @@ impl PipelineModule for Module<Sigmoid> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -312,8 +312,8 @@ impl PipelineModule for Module<Contrast> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -341,8 +341,8 @@ impl PipelineModule for Module<CFACoeffs> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -370,8 +370,8 @@ impl PipelineModule for Module<LocalExpousure> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -419,8 +419,8 @@ impl PipelineModule for Module<LS> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
@@ -483,11 +483,21 @@ impl PipelineModule for Module<CST> {
         self.cache = cache
     }
 
-    fn get_cache(self) -> PipelineImage{
-        self.cache
+    fn get_cache(&self) -> PipelineImage{
+        self.cache.clone()
     }
 }
 
+// pub fn lineal_mask(height: usize, width: usize) -> Vec<f32> {
+//     let mut result = vec![0.0; width*height];
+//     result.par_iter_mut().enumerate().for_each(|(i, val)|{
+//         let x = i % width;
+//         let y = (i - x) / width;
+//         // *val = 1.0/(((height-y) as f32 * 0.01) + 1.0)
+//         *val = 1.0
+//     });
+//     result
+// }
 // pub fn get_channel(c: usize, data: &mut Array3<f32>) -> Array3<f32>{
 //     let shape = data.shape();
 

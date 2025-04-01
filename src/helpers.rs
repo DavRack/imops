@@ -13,17 +13,17 @@ pub fn index2d(height: usize, width: usize) -> impl Iterator<Item = (usize, usiz
     })
 }
 
-pub trait Mask {
-    fn mask(&self, grayscale_mask: Vec<f32>) -> impl Iterator<Item = f32> where
-        Self: Iterator + Sized + Copy + Iterator<Item = f32>,
+// pub trait Mask {
+//     fn mask(&self, grayscale_mask: Vec<f32>) -> impl Iterator<Item = f32> where
+//         Self: Iterator + Sized + Copy + Iterator<Item = f32>,
 
-    {
-        self.zip(grayscale_mask).map(|(v, m)| v*m)
-    }
-}
+//     {
+//         self.zip(grayscale_mask).map(|(v, m)| v*m)
+//     }
+// }
 
-impl Mask for rayon::slice::Iter<'_, f32> {}
-impl Mask for std::slice::Iter<'_, f32> {}
+// impl Mask for rayon::slice::Iter<'_, f32> {}
+// impl Mask for std::slice::Iter<'_, f32> {}
 
 
 pub trait PixelTail<T> {

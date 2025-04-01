@@ -92,12 +92,32 @@ fn run_pixel_pipeline(
         max_raw_value
     };
 
+    let set_cache = false;
+
     println!("\n");
+    // let mut last_image = modules[0].get_cache();
     for mut module in modules {
         let now = Instant::now();
         
         pipeline_image = module.process(pipeline_image, &image.raw_image);
-        module.set_cache(pipeline_image.clone());
+
+        // if module.get_name() == "Exp" {
+        //     let mask = imops::lineal_mask(pipeline_image.height, pipeline_image.width);
+        //     pipeline_image.data.iter_mut().zip(last_image.data).zip(mask).for_each(|((pixel, pixel_cache), mask)|{
+        //         let [or, og, ob] = pixel_cache.map(|v| (1.0-mask)*v);
+        //         let [nr, ng, nb] = pixel.map(|v| v*mask);
+        //         *pixel = [
+        //             or + nr,
+        //             og + ng,
+        //             ob + nb,
+        //         ]
+
+        //     });
+        // }
+        if set_cache {
+            module.set_cache(pipeline_image.clone());
+        }
+        // last_image = module.get_cache();
         println!("{:} execution time: {:.2?}",module.get_name(), now.elapsed());
     }
     println!("\n");
