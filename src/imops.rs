@@ -16,31 +16,28 @@ const R: usize = 0;
 const G: usize = 0;
 const B: usize = 0;
 
-pub trait Cache {
-    fn set_inner_cache(&mut self, cache: PipelineImage);
-    fn get_inner_cache(&self) -> Option<PipelineImage>;
-}
-
-pub trait PipelineModule: Cache{
-    fn process(&self, image: PipelineImage, raw_image: &RawImage) -> PipelineImage;
+pub trait GenericModule {
+    fn set_cache(&mut self, cache: PipelineImage);
+    fn get_cache(&self) -> Option<PipelineImage>;
     fn get_name(&self) -> String;
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.set_inner_cache(cache);
-    }
-    fn get_cache(&self) -> Option<PipelineImage>{
-        self.get_inner_cache()
-    }
 }
 
-impl<T> Cache for Module<T> {
-    fn set_inner_cache(&mut self, cache: PipelineImage) {
+pub trait PipelineModule: GenericModule{
+    fn process(&self, image: PipelineImage, raw_image: &RawImage) -> PipelineImage;
+}
+
+impl<T> GenericModule for Module<T> {
+    fn set_cache(&mut self, cache: PipelineImage) {
         self.cache = Some(cache)
     }
-    fn get_inner_cache(&self) -> Option<PipelineImage>{
+    fn get_cache(&self) -> Option<PipelineImage>{
         match &self.cache {
             Some(cache) => Some(cache.clone()),
             None => None,
         }
+    }
+    fn get_name(&self) -> String {
+        self.name.clone()
     }
 }
 
@@ -60,6 +57,7 @@ pub struct PipelineImage {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Module<T>{
+    pub name: String,
     pub cache: Option<PipelineImage>,
     pub config: T,
 }
@@ -70,8 +68,9 @@ impl<T> Module<T>{
         T: Deserialize<'a> + Default,
         Self: Sized
     {
-        let cfg: T = module.try_into::<T>().expect(any::type_name::<Self>());
+        let cfg: T = module.clone().try_into::<T>().expect(any::type_name::<Self>());
         let module = Module{
+            name: module["name"].to_string(),
             cache: None,
             config: cfg
         };
@@ -96,10 +95,6 @@ impl PipelineModule for Module<LCH> {
             }
         );
         return image
-    }
-
-    fn get_name(&self) -> String{
-        return "LCH".to_string()
     }
 }
 
@@ -126,10 +121,6 @@ impl PipelineModule for Module<Crop> {
         image.width = new_width;
         image.height = new_height;
         image
-    }
-
-    fn get_name(&self) -> String{
-        return "Crop".to_string()
     }
 }
 
@@ -187,10 +178,6 @@ impl PipelineModule for Module<HighlightReconstruction> {
         });
         return image
     }
-
-    fn get_name(&self) -> String{
-        return "HighlightReconstruction".to_string()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -217,18 +204,6 @@ impl PipelineModule for Module<ChromaDenoise> {
 
         return image;
     }
-
-    fn get_name(&self) -> String{
-        return "ChromaDenoise".to_string()
-    }
-
-    // fn set_cache(&mut self, cache: PipelineImage){
-    //     self.cache = cache
-    // }
-
-    // fn get_cache(&self) -> PipelineImage{
-    //     self.cache.clone()
-    // }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -243,10 +218,6 @@ impl PipelineModule for Module<Exp> {
             |p| *p = p.map(|x| x*value)
         );
         return image;
-    }
-
-    fn get_name(&self) -> String{
-        return "Exp".to_string()
     }
 }
 
@@ -265,10 +236,6 @@ impl PipelineModule for Module<Sigmoid> {
         });
         return image
     }
-
-    fn get_name(&self) -> String{
-        return "Sigmoid".to_string()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -284,10 +251,6 @@ impl PipelineModule for Module<Contrast> {
             *p = p.map(|x| MIDDLE_GRAY*(x/MIDDLE_GRAY).powf(self.config.c))
         });
         return image
-    }
-
-    fn get_name(&self) -> String{
-        return "Contrast".to_string()
     }
 }
 
@@ -306,10 +269,6 @@ impl PipelineModule for Module<CFACoeffs> {
         );
         return image
     }
-
-    fn get_name(&self) -> String{
-        return "CFACoeffs".to_string()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -326,10 +285,6 @@ impl PipelineModule for Module<LocalExpousure> {
         image.data = result.collect();
         return image
 
-    }
-
-    fn get_name(&self) -> String{
-        return "LocalExpousure".to_string()
     }
 }
 
@@ -367,10 +322,6 @@ impl PipelineModule for Module<LS> {
         image.data = result.collect();
         return image
 
-    }
-
-    fn get_name(&self) -> String{
-        return "LS".to_string()
     }
 }
 
@@ -423,10 +374,6 @@ impl PipelineModule for Module<CST> {
             ]
         });
         return image
-    }
-
-    fn get_name(&self) -> String{
-        return "CST".to_string()
     }
 }
 
