@@ -2,6 +2,7 @@ use std::{any,  usize};
 
 use color::{ColorSpace, Oklab, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
+// use sealed::Cache;
 use serde::{Deserialize, Serialize};
 use toml::map::Map;
 use crate::cst::{oklab_to_xyz, xyz_to_oklab, xyz_to_oklab_l};
@@ -9,18 +10,39 @@ use crate::{chroma_nr, helpers::*};
 
 use crate::conditional_paralell::prelude::*;
 
-pub trait PipelineModule{
-    fn process(&self, image: PipelineImage, raw_image: &RawImage) -> PipelineImage;
-    fn get_name(&self) -> String;
-    fn set_cache(&mut self, cache: PipelineImage);
-    fn get_cache(&self) -> PipelineImage;
-}
-
 const CHANNELS_PER_PIXEL: usize = 3;
 
 const R: usize = 0;
 const G: usize = 0;
 const B: usize = 0;
+
+pub trait Cache {
+    fn set_inner_cache(&mut self, cache: PipelineImage);
+    fn get_inner_cache(&self) -> Option<PipelineImage>;
+}
+
+pub trait PipelineModule: Cache{
+    fn process(&self, image: PipelineImage, raw_image: &RawImage) -> PipelineImage;
+    fn get_name(&self) -> String;
+    fn set_cache(&mut self, cache: PipelineImage){
+        self.set_inner_cache(cache);
+    }
+    fn get_cache(&self) -> Option<PipelineImage>{
+        self.get_inner_cache()
+    }
+}
+
+impl<T> Cache for Module<T> {
+    fn set_inner_cache(&mut self, cache: PipelineImage) {
+        self.cache = Some(cache)
+    }
+    fn get_inner_cache(&self) -> Option<PipelineImage>{
+        match &self.cache {
+            Some(cache) => Some(cache.clone()),
+            None => None,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct FormedImage {
@@ -38,7 +60,7 @@ pub struct PipelineImage {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Module<T>{
-    pub cache: PipelineImage,
+    pub cache: Option<PipelineImage>,
     pub config: T,
 }
 
@@ -50,7 +72,7 @@ impl<T> Module<T>{
     {
         let cfg: T = module.try_into::<T>().expect(any::type_name::<Self>());
         let module = Module{
-            cache: PipelineImage::default(),
+            cache: None,
             config: cfg
         };
         Box::new(module)
@@ -78,14 +100,6 @@ impl PipelineModule for Module<LCH> {
 
     fn get_name(&self) -> String{
         return "LCH".to_string()
-    }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
     }
 }
 
@@ -116,14 +130,6 @@ impl PipelineModule for Module<Crop> {
 
     fn get_name(&self) -> String{
         return "Crop".to_string()
-    }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
     }
 }
 
@@ -185,14 +191,6 @@ impl PipelineModule for Module<HighlightReconstruction> {
     fn get_name(&self) -> String{
         return "HighlightReconstruction".to_string()
     }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -224,13 +222,13 @@ impl PipelineModule for Module<ChromaDenoise> {
         return "ChromaDenoise".to_string()
     }
 
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
+    // fn set_cache(&mut self, cache: PipelineImage){
+    //     self.cache = cache
+    // }
 
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
-    }
+    // fn get_cache(&self) -> PipelineImage{
+    //     self.cache.clone()
+    // }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -249,14 +247,6 @@ impl PipelineModule for Module<Exp> {
 
     fn get_name(&self) -> String{
         return "Exp".to_string()
-    }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
     }
 }
 
@@ -279,14 +269,6 @@ impl PipelineModule for Module<Sigmoid> {
     fn get_name(&self) -> String{
         return "Sigmoid".to_string()
     }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -306,14 +288,6 @@ impl PipelineModule for Module<Contrast> {
 
     fn get_name(&self) -> String{
         return "Contrast".to_string()
-    }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
     }
 }
 
@@ -336,14 +310,6 @@ impl PipelineModule for Module<CFACoeffs> {
     fn get_name(&self) -> String{
         return "CFACoeffs".to_string()
     }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -364,14 +330,6 @@ impl PipelineModule for Module<LocalExpousure> {
 
     fn get_name(&self) -> String{
         return "LocalExpousure".to_string()
-    }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
     }
 }
 
@@ -413,14 +371,6 @@ impl PipelineModule for Module<LS> {
 
     fn get_name(&self) -> String{
         return "LS".to_string()
-    }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
     }
 }
 
@@ -477,14 +427,6 @@ impl PipelineModule for Module<CST> {
 
     fn get_name(&self) -> String{
         return "CST".to_string()
-    }
-
-    fn set_cache(&mut self, cache: PipelineImage){
-        self.cache = cache
-    }
-
-    fn get_cache(&self) -> PipelineImage{
-        self.cache.clone()
     }
 }
 

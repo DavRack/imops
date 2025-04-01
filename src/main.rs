@@ -95,7 +95,7 @@ fn run_pixel_pipeline(
     let set_cache = false;
 
     println!("\n");
-    // let mut last_image = modules[0].get_cache();
+    let mut last_image = modules[0].get_cache();
     for mut module in modules {
         let now = Instant::now();
         
@@ -116,8 +116,8 @@ fn run_pixel_pipeline(
         // }
         if set_cache {
             module.set_cache(pipeline_image.clone());
+            last_image = module.get_cache();
         }
-        // last_image = module.get_cache();
         println!("{:} execution time: {:.2?}",module.get_name(), now.elapsed());
     }
     println!("\n");

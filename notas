@@ -1,11 +1,13 @@
-+ completar herramienta crop
-+ implementar convolusion en image-dwt
-+ implementar corrección de viñetas
++ convertir en libreria y cli
++ agregar visualizador
 + implementar mascaras
-+ implementar correción de distorción
++ completar herramienta crop
 + implementar claridad
++ implementar corrección de viñetas
++ implementar correción de distorción
 + implementar correcíon de aberración cromática
 
 # ejecutadas
 no hay mejora lo suficientemente buena:
 x + del color crate extraer los metodos para convertir Oklab a XYZ y ponerlos en el código para optimizar la conversion
++ implementar convolusion en image-dwt
