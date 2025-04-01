@@ -93,10 +93,11 @@ fn run_pixel_pipeline(
     };
 
     println!("\n");
-    for module in modules {
+    for mut module in modules {
         let now = Instant::now();
         
         pipeline_image = module.process(pipeline_image, &image.raw_image);
+        module.set_cache(pipeline_image.clone());
         println!("{:} execution time: {:.2?}",module.get_name(), now.elapsed());
     }
     println!("\n");
