@@ -25,7 +25,7 @@ strength = 2
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 5
+ev = 3
 
 # [[pipeline_modules]]
 # name = "LS"
@@ -53,7 +53,7 @@ hc = 1
 
 [[pipeline_modules]]
 name = "Sigmoid"
-c = 2.0
+c = 10.0
 
 [[pipeline_modules]]
 name = "CST"

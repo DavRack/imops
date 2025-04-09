@@ -1,6 +1,6 @@
-use std::{any,  usize};
+use std::{any, usize};
 
-use color::{ColorSpace, Oklab, XyzD65};
+use color::{ColorSpace, Oklab, XyzD65, Srgb};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 // use sealed::Cache;
 use serde::{Deserialize, Serialize};
@@ -195,7 +195,7 @@ impl PipelineModule for Module<ChromaDenoise> {
             xyz_to_oklab_l(p)
         });
 
-        image.data = chroma_nr::denoise_rgb(image.data, image.width, image.height, 3, 1);
+        image.data = chroma_nr::denoise_rgb(image.data, image.width, image.height, 3, 2);
 
         image.data.par_iter_mut().zip(data_l).for_each(|(pixel, l)|{
             let [_, c, h] = xyz_to_oklab(pixel);
@@ -226,13 +226,44 @@ pub struct Sigmoid {
     pub c: f32
 }
 
+fn y_luminance(pixel: [f32; 3]) -> f32{
+    let [r, g, b] = pixel;
+    let y = 0.2126*r + 0.7152*g + 0.0722*b;
+    y
+}
+
+const R_RELATIVE_LUMINANCE: f32 = 0.2126;
+const G_RELATIVE_LUMINANCE: f32 = 0.7152;
+const B_RELATIVE_LUMINANCE: f32 = 0.0722;
+
+fn r_sigmoid(v: f32, contrast: f32, c: f32) -> f32 {
+    // const ATENUATION: f32 = G_RELATIVE_LUMINANCE + B_RELATIVE_LUMINANCE;
+    const ATENUATION: f32 = 1.0;
+    ((c*(ATENUATION)) / (1.0 + (1.0/(contrast*v)))).powi(2)
+}
+fn g_sigmoid(v: f32, contrast: f32, c: f32) -> f32 {
+    // const ATENUATION: f32 = R_RELATIVE_LUMINANCE + B_RELATIVE_LUMINANCE;
+    const ATENUATION: f32 = 1.0;
+    ((c*(ATENUATION)) / (1.0 + (1.0/(contrast*v)))).powi(2)
+}
+fn b_sigmoid(v: f32, contrast: f32, c: f32) -> f32 {
+    // const ATENUATION: f32 = R_RELATIVE_LUMINANCE + G_RELATIVE_LUMINANCE;
+    const ATENUATION: f32 = 1.0;
+    ((c*(ATENUATION)) / (1.0 + (1.0/(contrast*v)))).powi(2)
+}
+
 impl PipelineModule for Module<Sigmoid> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         let max_current_value = image.data.iter().fold(0.0, |current_max, [r, g, b]| r.max(*g).max(*b).max(current_max));
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
-        let c = 1.0 + (1.0/scaled_one).powi(2);
+        let c = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
         image.data.par_iter_mut().for_each(|p|{
-            *p = p.map(|x| (c / (1.0 + (1.0/(self.config.c*x)))).powi(2))
+            let [r, g, b] = *p;
+            *p = [
+                r_sigmoid(r, self.config.c, c),
+                g_sigmoid(g, self.config.c, c),
+                b_sigmoid(b, self.config.c, c),
+            ];
         });
         return image
     }
