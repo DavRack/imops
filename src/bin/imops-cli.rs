@@ -1,25 +1,12 @@
 #![warn(unused_extern_crates)]
-mod config;
-mod demosaic;
-mod imops;
-mod denoise;
-mod nl_means;
-mod chroma_nr;
-mod helpers;
-mod color_p;
-mod wavelets;
-mod conditional_paralell;
-mod cst;
-mod mask;
+use imops::{demosaic, config};
+use imops::conditional_paralell::prelude::*;
 
 use clap::Parser as Clap_parser;
 use core::panic;
-use imops::PipelineImage;
 use rawler::{self};
 use std::io::Cursor;
 use std::time::Instant;
-
-use crate::conditional_paralell::prelude::*;
 
 #[derive(Clap_parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -46,8 +33,8 @@ struct Args {
 }
 
 
-fn demosaic(image: &mut rawler::RawImage) -> imops::FormedImage {
-    let debayer_image: imops::FormedImage;
+fn demosaic(image: &mut rawler::RawImage) -> imops::imops::FormedImage {
+    let debayer_image: imops::imops::FormedImage;
     let _ = image.apply_scaling();
     if let rawler::RawImageData::Float(ref im) = image.data {
         let cfa = image.camera.cfa.clone();
@@ -55,7 +42,7 @@ fn demosaic(image: &mut rawler::RawImage) -> imops::FormedImage {
         let (nim, width, height) =
             demosaic::crop(image.dim(), image.crop_area.unwrap(), im.to_vec());
 
-        debayer_image = imops::FormedImage {
+        debayer_image = imops::imops::FormedImage {
             raw_image: image.clone(),
             // data: demosaic::DemosaicAlgorithms::linear_interpolation(width, height, cfa, nim),
             data: demosaic::DemosaicAlgorithms::markesteijn(width, height, cfa, nim),
@@ -66,7 +53,7 @@ fn demosaic(image: &mut rawler::RawImage) -> imops::FormedImage {
     }
 }
 
-fn to_vec(data: PipelineImage) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
+fn to_vec(data: imops::imops::PipelineImage) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     let height = data.height;
     let width = data.width;
     let data2 = data.data.iter().flatten().map(|x| (x * 255.0) as u8).collect();
@@ -75,9 +62,9 @@ fn to_vec(data: PipelineImage) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
 }
 
 fn run_pixel_pipeline(
-    mut image: imops::FormedImage,
+    mut image: imops::imops::FormedImage,
     mut pixel_pipeline: config::PipelineConfig,
-) -> PipelineImage {
+) -> imops::imops::PipelineImage {
     let modules = pixel_pipeline.pipeline_modules;
     let max_raw_value = image.data.data.iter().fold(0.0, |acc, pix|{
         let [r, g, b] = pix;
@@ -85,7 +72,7 @@ fn run_pixel_pipeline(
     });
 
 
-    let mut pipeline_image = imops::PipelineImage{
+    let mut pipeline_image = imops::imops::PipelineImage{
         data: image.data.data.clone(),
         height: image.data.height,
         width: image.data.width,

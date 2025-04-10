@@ -1,4 +1,5 @@
 #!/bin/bash
 # time cargo run --release
-time ./target/release/filsimrs && open result.ppm
-open result.ppm
+cargo build --release --bin imops-cli
+sleep 2
+time ./target/release/filsimrs "$1" && open result.jpg
