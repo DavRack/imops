@@ -79,8 +79,6 @@ impl Mask for LuminanceGradient {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use crate::pixels::Pixel;
 
     use super::*;
@@ -155,5 +153,21 @@ mod tests {
         assert_eq!(mask_cfg.mask(0.5), 1.0);
         assert_eq!(mask_cfg.mask(0.875), 0.5);
         assert_eq!(mask_cfg.mask(1.0), 0.0);
+    }
+    #[test]
+    fn test_luminance_gradient_constant(){
+        let mask_cfg = LuminanceGradient{
+            l_bottom: 0.0,
+            l_top: 0.0,
+            r_top: 1.0,
+            r_bottom: 1.0,
+        };
+
+        assert_eq!(mask_cfg.mask(0.0),      1.0);
+        assert_eq!(mask_cfg.mask(0.125),    1.0);
+        assert_eq!(mask_cfg.mask(0.25),     1.0);
+        assert_eq!(mask_cfg.mask(0.5),      1.0);
+        assert_eq!(mask_cfg.mask(0.875),    1.0);
+        assert_eq!(mask_cfg.mask(1.0),      1.0);
     }
 }
