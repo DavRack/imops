@@ -10,4 +10,5 @@ pub mod wavelets;
 pub mod conditional_paralell;
 pub mod cst;
 pub mod mask;
+pub mod pixels;
 

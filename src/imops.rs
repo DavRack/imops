@@ -1,3 +1,4 @@
+use core::panic;
 use std::{any, usize};
 
 use color::{ColorSpace, Oklab, XyzD65, Srgb};
@@ -6,11 +7,11 @@ use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 use serde::{Deserialize, Serialize};
 use toml::map::Map;
 use crate::cst::{oklab_to_xyz, xyz_to_oklab, xyz_to_oklab_l};
-use crate::{chroma_nr, helpers::*};
+use crate::mask::{Mask, MaskFn};
+use crate::{chroma_nr, helpers::*, pixels};
+use crate::pixels::*;
 
 use crate::conditional_paralell::prelude::*;
-
-const CHANNELS_PER_PIXEL: usize = 3;
 
 const R: usize = 0;
 const G: usize = 0;
@@ -20,6 +21,7 @@ pub trait GenericModule {
     fn set_cache(&mut self, cache: PipelineImage);
     fn get_cache(&self) -> Option<PipelineImage>;
     fn get_name(&self) -> String;
+    fn get_mask(&self) -> Option<Box<dyn Mask>>;
 }
 
 pub trait PipelineModule: GenericModule{
@@ -39,6 +41,15 @@ impl<T> GenericModule for Module<T> {
     fn get_name(&self) -> String {
         self.name.clone()
     }
+
+    fn get_mask(&self) -> Option<Box<dyn Mask>> {
+        if let Some(v) = &self.mask{
+            let a = dyn_clone::clone_box(&**v);
+            return Some(a)
+        }else {
+            return None
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -49,17 +60,17 @@ pub struct FormedImage {
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
 pub struct PipelineImage {
-    pub data: Vec<[f32; CHANNELS_PER_PIXEL]>,
+    pub data: pixels::ImageBuffer,
     pub height: usize,
     pub width: usize,
-    pub max_raw_value: f32,
+    pub max_raw_value: SubPixel,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Module<T>{
     pub name: String,
     pub cache: Option<PipelineImage>,
     pub config: T,
+    pub mask: Option<Box<dyn Mask>>
 }
 
 impl<T> Module<T>{
@@ -72,7 +83,8 @@ impl<T> Module<T>{
         let module = Module{
             name: module["name"].to_string(),
             cache: None,
-            config: cfg
+            config: cfg,
+            mask: None
         };
         Box::new(module)
     }
@@ -81,9 +93,9 @@ impl<T> Module<T>{
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct  LCH{
-    pub lc: f32,
-    pub cc: f32,
-    pub hc: f32,
+    pub lc: SubPixel,
+    pub cc: SubPixel,
+    pub hc: SubPixel,
 }
 
 impl PipelineModule for Module<LCH> {
@@ -129,8 +141,8 @@ pub struct HighlightReconstruction {
 }
 
 #[inline]
-fn avg_pixels(sorrounding_pixels: &Vec<[f32; 3]>) -> [f32; 3]{
-    let len = sorrounding_pixels.len() as f32;
+fn avg_pixels(sorrounding_pixels: &Vec<Pixel>) -> Pixel{
+    let len = sorrounding_pixels.len() as SubPixel;
     let px = sorrounding_pixels.into_iter().fold([0., 0., 0.], |acc, pixel|{
         let [r, g, b] = pixel;
         let [ar, ag, ab] = acc;
@@ -182,9 +194,9 @@ impl PipelineModule for Module<HighlightReconstruction> {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct ChromaDenoise {
-	  a: f32,
-    b: f32,
-    strength: f32
+	  a: SubPixel,
+    b: SubPixel,
+    strength: SubPixel
 }
 
 impl PipelineModule for Module<ChromaDenoise> {
@@ -208,12 +220,12 @@ impl PipelineModule for Module<ChromaDenoise> {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Exp {
-    pub ev: f32
+    pub ev: SubPixel
 }
 
 impl PipelineModule for Module<Exp> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        let value = 2.0_f32.powf(self.config.ev);
+        let value = (2.0 as SubPixel).powf(self.config.ev);
         image.data.par_iter_mut().for_each(
             |p| *p = p.map(|x| x*value)
         );
@@ -223,47 +235,53 @@ impl PipelineModule for Module<Exp> {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Sigmoid {
-    pub c: f32
+    pub c: SubPixel
 }
 
-fn y_luminance(pixel: [f32; 3]) -> f32{
+const R_RELATIVE_LUMINANCE: SubPixel = 0.2126;
+const G_RELATIVE_LUMINANCE: SubPixel = 0.7152;
+const B_RELATIVE_LUMINANCE: SubPixel = 0.0722;
+
+fn y_luminance(pixel: Pixel) -> SubPixel{
     let [r, g, b] = pixel;
-    let y = 0.2126*r + 0.7152*g + 0.0722*b;
+    let y = R_RELATIVE_LUMINANCE*r + G_RELATIVE_LUMINANCE*g + B_RELATIVE_LUMINANCE*b;
     y
 }
 
-const R_RELATIVE_LUMINANCE: f32 = 0.2126;
-const G_RELATIVE_LUMINANCE: f32 = 0.7152;
-const B_RELATIVE_LUMINANCE: f32 = 0.0722;
-
-fn r_sigmoid(v: f32, contrast: f32, c: f32) -> f32 {
-    // const ATENUATION: f32 = G_RELATIVE_LUMINANCE + B_RELATIVE_LUMINANCE;
-    const ATENUATION: f32 = 1.0;
-    ((c*(ATENUATION)) / (1.0 + (1.0/(contrast*v)))).powi(2)
+#[inline]
+fn r_sigmoid(v: SubPixel, contrast: SubPixel, c: SubPixel) -> SubPixel {
+    // const ATENUATION: SubPixel = G_RELATIVE_LUMINANCE + B_RELATIVE_LUMINANCE;
+    const ATENUATION: SubPixel = 1.0;
+    (c / (1.0 + (1.0/((contrast*ATENUATION)*v)))).powi(2)
 }
-fn g_sigmoid(v: f32, contrast: f32, c: f32) -> f32 {
-    // const ATENUATION: f32 = R_RELATIVE_LUMINANCE + B_RELATIVE_LUMINANCE;
-    const ATENUATION: f32 = 1.0;
-    ((c*(ATENUATION)) / (1.0 + (1.0/(contrast*v)))).powi(2)
+fn g_sigmoid(v: SubPixel, contrast: SubPixel, c: SubPixel) -> SubPixel {
+    // const ATENUATION: SubPixel = R_RELATIVE_LUMINANCE + B_RELATIVE_LUMINANCE;
+    const ATENUATION: SubPixel = 1.0;
+    (c / (1.0 + (1.0/((contrast*ATENUATION)*v)))).powi(2)
 }
-fn b_sigmoid(v: f32, contrast: f32, c: f32) -> f32 {
-    // const ATENUATION: f32 = R_RELATIVE_LUMINANCE + G_RELATIVE_LUMINANCE;
-    const ATENUATION: f32 = 1.0;
-    ((c*(ATENUATION)) / (1.0 + (1.0/(contrast*v)))).powi(2)
+fn b_sigmoid(v: SubPixel, contrast: SubPixel, c: SubPixel) -> SubPixel {
+    // const ATENUATION: SubPixel = R_RELATIVE_LUMINANCE + G_RELATIVE_LUMINANCE;
+    const ATENUATION: SubPixel = 1.0;
+    (c / (1.0 + (1.0/((contrast*ATENUATION)*v)))).powi(2)
 }
 
 impl PipelineModule for Module<Sigmoid> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        let max_current_value = image.data.iter().fold(0.0, |current_max, [r, g, b]| r.max(*g).max(*b).max(current_max));
+        let max_current_value = image.data.iter().fold(0.0, |current_max, pixel| pixel.luminance().max(current_max));
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
-        image.data.par_iter_mut().for_each(|p|{
-            let [r, g, b] = *p;
-            *p = [
-                r_sigmoid(r, self.config.c, c),
-                g_sigmoid(g, self.config.c, c),
-                b_sigmoid(b, self.config.c, c),
-            ];
+
+        image.data.iter_mut().for_each(|p|{
+            let s = p.saturation();
+            if s > 0.8 && false{
+                let [r, g, b] = *p;
+                println!("saturation: {:}", p.saturation());
+                println!("R: {:}", r);
+                println!("G: {:}", g);
+                println!("B: {:}", b);
+                println!(" ");
+            }
+            *p = (*p).map(|x| r_sigmoid(x, self.config.c, c))
         });
         return image
     }
@@ -271,12 +289,12 @@ impl PipelineModule for Module<Sigmoid> {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Contrast {
-    pub c: f32
+    pub c: SubPixel
 }
 
 impl PipelineModule for Module<Contrast> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        const MIDDLE_GRAY: f32 = 0.1845;
+        const MIDDLE_GRAY: SubPixel = 0.1845;
         // let f = |x| (MIDDLE_GRAY*(x/MIDDLE_GRAY)).powf(self.c);
         image.data.par_iter_mut().for_each( |p|{
             *p = p.map(|x| MIDDLE_GRAY*(x/MIDDLE_GRAY).powf(self.config.c))
@@ -304,14 +322,14 @@ impl PipelineModule for Module<CFACoeffs> {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct LocalExpousure {
-    pub c: f32,
-    pub m: f32,
-    pub p: f32,
+    pub c: SubPixel,
+    pub m: SubPixel,
+    pub p: SubPixel,
 }
 
 impl PipelineModule for Module<LocalExpousure> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        let f = |x: f32| x*((self.config.c*(2.0_f32.powf(-((x-self.config.p).powf(2.0)/self.config.m))))+1.0);
+        let f = |x: SubPixel| x*((self.config.c*((2.0 as SubPixel).powf(-((x-self.config.p).powf(2.0)/self.config.m))))+1.0);
         let result = image.data.par_iter().map(|p|p.map(f));
         image.data = result.collect();
         return image
@@ -323,28 +341,28 @@ impl PipelineModule for Module<LocalExpousure> {
 pub struct LS {
     #[serde(skip_deserializing)]
     pub cache: PipelineImage,
-    pub transition_width: f32,
-    pub shadows_exp: f32,
-    pub highlits_exp: f32,
-    pub pivot: f32, //ev
+    pub transition_width: SubPixel,
+    pub shadows_exp: SubPixel,
+    pub highlits_exp: SubPixel,
+    pub pivot: SubPixel, //ev
 }
 
 impl PipelineModule for Module<LS> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         let config = self.clone();
-        let p: f32 = config.config.pivot;
-        let d: f32 = config.config.transition_width;
-        let f2 = |x: f32, m: f32| p*(x/p).powf(m);
-        let f = |x: f32, pf: f32| 1.0/(1.0+(1.0/(2.0_f32.powf(d*(x-(p*pf))))));
+        let p: SubPixel = config.config.pivot;
+        let d: SubPixel = config.config.transition_width;
+        let f2 = |x: SubPixel, m: SubPixel| p*(x/p).powf(m);
+        let f = |x: SubPixel, pf: SubPixel| 1.0/(1.0+(1.0/((2.0 as SubPixel).powf(d*(x-(p*pf))))));
 
         // shadows
-        let ms: f32 = 1.0/config.config.shadows_exp;
-        let pfs: f32 = 0.8;
+        let ms: SubPixel = 1.0/config.config.shadows_exp;
+        let pfs: SubPixel = 0.8;
         // let result = image.data.data.par_iter().map(|p|p.map(|x| (f2(x, ms)*(1.0-f(x, pf)))+f(x, pf)*x));
         //
         //// heights
-        let mh: f32 = config.config.highlits_exp;
-        let pfh: f32 = 1.2;
+        let mh: SubPixel = config.config.highlits_exp;
+        let pfh: SubPixel = 1.2;
 
         let complete_f = |x| (((f2(x, ms)*(1.0-f(x, pfs)))+f(x, pfs)*x)+((f2(x, mh)*f(x, pfh))+((1.0-f(x, pfh))*x)))/2.0;
 
@@ -371,62 +389,63 @@ pub enum ColorSpaceMatrix {
 
 impl PipelineModule for Module<CST> {
     fn process(&self, mut image: PipelineImage, raw_image: &RawImage) -> PipelineImage {
-        let foward_matrix = match self.config.color_space {
+        match self.config.color_space {
             ColorSpaceMatrix::XYZTOsRGB => {
-                let matrix = [
-                    [3.240479,  -1.537150, -0.498535,],
-                    [-0.969256,  1.875991,  0.041556,],
-                    [0.055648,  -0.204043,  1.057311]
-                ];
-                let xyz2srgb_normalized = rawler::imgop::matrix::normalize(matrix);
-                xyz2srgb_normalized
+                // let matrix = [
+                //     [3.240479,  -1.537150, -0.498535,],
+                //     [-0.969256,  1.875991,  0.041556,],
+                //     [0.055648,  -0.204043,  1.057311]
+                // ];
+                // let foward_matrix = rawler::imgop::matrix::normalize(matrix);
+                image.data.par_iter_mut().for_each(|p|{
+                    *p = XyzD65::convert::<Srgb>(*p);
+                });
             },
             ColorSpaceMatrix::CameraToXYZ => {
                 let d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
                 let components = d65.len() / 3;
-                let mut xyz2cam: [[f32; 3]; 3] = [[0.0; 3]; 3];
+                let mut xyz2cam: [Pixel; 3] = [[0.0; 3]; 3];
                 for i in 0..components {
                     for j in 0..3 {
                         xyz2cam[i][j] = d65[i * 3 + j];
                     }
                 }
                 let xyz2cam_normalized = rawler::imgop::matrix::normalize(xyz2cam);
-                let cam2xyz = rawler::imgop::matrix::pseudo_inverse(xyz2cam_normalized);
-                cam2xyz
+                let foward_matrix = rawler::imgop::matrix::pseudo_inverse(xyz2cam_normalized);
+                image.data.par_iter_mut().for_each(|p|{
+                    let [r, g, b] = *p;
+                    *p = [
+                        foward_matrix[0][0] * r + foward_matrix[0][1] * g + foward_matrix[0][2] * b,
+                        foward_matrix[1][0] * r + foward_matrix[1][1] * g + foward_matrix[1][2] * b,
+                        foward_matrix[2][0] * r + foward_matrix[2][1] * g + foward_matrix[2][2] * b,
+                    ]
+                });
             },
         };
 
-        image.data.par_iter_mut().for_each(|p|{
-            let [r, g, b] = *p;
-            *p = [
-                foward_matrix[0][0] * r + foward_matrix[0][1] * g + foward_matrix[0][2] * b,
-                foward_matrix[1][0] * r + foward_matrix[1][1] * g + foward_matrix[1][2] * b,
-                foward_matrix[2][0] * r + foward_matrix[2][1] * g + foward_matrix[2][2] * b,
-            ]
-        });
         return image
     }
 }
 
-// pub fn lineal_mask(height: usize, width: usize) -> Vec<f32> {
+// pub fn lineal_mask(height: usize, width: usize) -> Vec<SubPixel> {
 //     let mut result = vec![0.0; width*height];
 //     result.par_iter_mut().enumerate().for_each(|(i, val)|{
 //         let x = i % width;
 //         let y = (i - x) / width;
-//         // *val = 1.0/(((height-y) as f32 * 0.01) + 1.0)
+//         // *val = 1.0/(((height-y) as SubPixel * 0.01) + 1.0)
 //         *val = 1.0
 //     });
 //     result
 // }
-// pub fn get_channel(c: usize, data: &mut Array3<f32>) -> Array3<f32>{
+// pub fn get_channel(c: usize, data: &mut Array3<SubPixel>) -> Array3<SubPixel>{
 //     let shape = data.shape();
 
-//     let mut final_image = Array3::<f32>::zeros((shape[0], shape[1], 3));
+//     let mut final_image = Array3::<SubPixel>::zeros((shape[0], shape[1], 3));
 //     final_image.slice_mut(s![.., ..,c]).assign(&data.slice(s![.., .., c]));
 //     return final_image
 // }
 
-// pub fn film_curve(p: f64, d: f64, a: f64, b: f64, p2: f64, data: &mut Array3<f32>) -> Array3<f32> {
+// pub fn film_curve(p: f64, d: f64, a: f64, b: f64, p2: f64, data: &mut Array3<SubPixel>) -> Array3<SubPixel> {
 //     let f1 = |x: f64| d*(x-p)+p;
 
 //     let c2 = (d*a)/f1(a);
@@ -445,11 +464,11 @@ impl PipelineModule for Module<CST> {
 //         else {0.0}
 //     ;
 
-//     data.par_mapv_inplace(|x| f(x as f64) as f32);
+//     data.par_mapv_inplace(|x| f(x as f64) as SubPixel);
 //     return data.clone();
 // }
 
-// fn small(v: Array3<f32>) -> Array3<f32> {
+// fn small(v: Array3<SubPixel>) -> Array3<SubPixel> {
 //     let f = 1;
 //     let s = v.shape();
 //     let mut nv = Array3::zeros(((s[0] / f) + 1, (s[1] / f) + 1, s[2]));

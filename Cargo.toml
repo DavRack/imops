@@ -18,6 +18,7 @@ debug = true
 clap = {version="4.5.29", features = ["derive"]}
 color = "0.2.3"
 convolve-image = "0.4.0"
+dyn-clone = "1.0.19"
 image = "0.25.5"
 # image-dwt = { git="https://github.com/DavRack/image-dwt.git" }
 itertools = "0.14.0"

@@ -4,6 +4,7 @@ use imops::conditional_paralell::prelude::*;
 
 use clap::Parser as Clap_parser;
 use core::panic;
+use std::borrow::Borrow;
 use rawler::{self};
 use std::io::Cursor;
 use std::time::Instant;
@@ -79,31 +80,38 @@ fn run_pixel_pipeline(
         max_raw_value
     };
 
-    let set_cache = false;
+    let set_cache = true;
 
     println!("\n");
-    let mut last_image = modules[0].get_cache();
+    let mut last_image = match modules[0].get_cache(){
+        Some(image) => image,
+        None => pipeline_image.clone(),
+    };
     for mut module in modules {
         let now = Instant::now();
         
         pipeline_image = module.process(pipeline_image, &image.raw_image);
 
-        // if module.get_name() == "Exp" {
-        //     let mask = imops::lineal_mask(pipeline_image.height, pipeline_image.width);
-        //     pipeline_image.data.iter_mut().zip(last_image.data).zip(mask).for_each(|((pixel, pixel_cache), mask)|{
-        //         let [or, og, ob] = pixel_cache.map(|v| (1.0-mask)*v);
-        //         let [nr, ng, nb] = pixel.map(|v| v*mask);
-        //         *pixel = [
-        //             or + nr,
-        //             og + ng,
-        //             ob + nb,
-        //         ]
-
-        //     });
-        // }
         if set_cache {
+            match module.get_mask(){
+                Some(mask) =>{
+                    let mask_value = mask.create(&pipeline_image, &image.raw_image);
+                    pipeline_image.data.par_iter_mut().zip(last_image.data).zip(mask_value).for_each(
+                        |((new_pixel, old_pixel), pixel_mask_value)|{
+                            let [r, g, b] = *new_pixel;
+                            let [or, og, ob] = old_pixel;
+                            *new_pixel = [
+                                (or*(1.0-pixel_mask_value)) + (r * pixel_mask_value),
+                                (og*(1.0-pixel_mask_value)) + (g * pixel_mask_value),
+                                (ob*(1.0-pixel_mask_value)) + (b * pixel_mask_value),
+                            ];
+                        }
+                    );
+                },
+                None => ()
+            }
             module.set_cache(pipeline_image.clone());
-            last_image = module.get_cache();
+            last_image = pipeline_image.clone();
         }
         println!("{:} execution time: {:.2?}",module.get_name(), now.elapsed());
     }

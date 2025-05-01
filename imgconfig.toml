@@ -25,7 +25,13 @@ strength = 2
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 3
+# ev = 15
+ev = 1
+
+[[pipeline_modules]]
+name = "Exp"
+ev = 1
+mask = { "name"="LuminanceGradient", "r_bottom"=1.0, "r_top"=1.0, "l_bottom"=0.5, "l_top"=0.0}
 
 # [[pipeline_modules]]
 # name = "LS"
@@ -36,7 +42,7 @@ ev = 3
 
 [[pipeline_modules]]
 name = "Contrast"
-c = 1.2
+c = 1.25
 
 # [[pipeline_modules]]
 # name = "LS"
@@ -53,7 +59,7 @@ hc = 1
 
 [[pipeline_modules]]
 name = "Sigmoid"
-c = 10.0
+c = 8
 
 [[pipeline_modules]]
 name = "CST"

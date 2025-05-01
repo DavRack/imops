@@ -1,8 +1,10 @@
 use core::panic;
+use std::any;
 
 use serde::{Deserialize, Serialize};
+use toml::map::Map;
 
-use crate::imops::*;
+use crate::{imops::{self, *}, mask::{Constant, LuminanceGradient, Mask}};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
@@ -11,6 +13,31 @@ pub struct RawConfig {
 pub struct PipelineConfig {
     pub pipeline_modules: Vec<Box<dyn PipelineModule>>
 }
+
+pub fn from_toml<'a, T>(module: Map<String, toml::Value>) -> Box<dyn PipelineModule>
+    where
+    T: Deserialize<'a> + Default + 'static,
+    imops::Module<T>: imops::PipelineModule
+{
+    let mask: Option<Box<dyn Mask>> = match module.get("mask"){
+        Some(mask_cfg) => match mask_cfg["name"].as_str().unwrap(){
+            "LuminanceGradient" => Some(Box::new(mask_cfg.clone().try_into::<LuminanceGradient>().unwrap())),
+            "Constant" =>          Some(Box::new(mask_cfg.clone().try_into::<Constant>().unwrap())),
+            v => panic!("wrong mask function name: {:}", v),
+        },
+        None => None,
+    };
+
+    let cfg: T = module.clone().try_into::<T>().expect(any::type_name::<T>());
+    let module = Module{
+        name: module["name"].to_string(),
+        cache: None,
+        config: cfg,
+        mask
+    };
+    Box::new(module)
+}
+
 
 pub fn parse_config(config_path: String) -> PipelineConfig{
     let data_string = &std::fs::read_to_string(config_path).unwrap();
@@ -23,17 +50,17 @@ pub fn parse_config(config_path: String) -> PipelineConfig{
 
     for module in data.pipeline_modules {
         let pipeline_module: Box<dyn PipelineModule> = match module["name"].as_str().unwrap() {
-            "HighlightReconstruction" =>    Module::<HighlightReconstruction>::from_toml(module),
-            "LocalExpousure" =>             Module::<LocalExpousure>::from_toml(module),
-            "ChromaDenoise" =>              Module::<ChromaDenoise>::from_toml(module),
-            "CFACoeffs" =>                  Module::<CFACoeffs>::from_toml(module),
-            "Contrast" =>                   Module::<Contrast>::from_toml(module),
-            "Sigmoid" =>                    Module::<Sigmoid>::from_toml(module),
-            "Crop" =>                       Module::<Crop>::from_toml(module),
-            "CST" =>                        Module::<CST>::from_toml(module),
-            "Exp" =>                        Module::<Exp>::from_toml(module),
-            "LCH" =>                        Module::<LCH>::from_toml(module),
-            "LS" =>                         Module::<LS>::from_toml(module),
+            "HighlightReconstruction" =>    from_toml::<HighlightReconstruction>(module),
+            "LocalExpousure" =>             from_toml::<LocalExpousure>(module),
+            "ChromaDenoise" =>              from_toml::<ChromaDenoise>(module),
+            "CFACoeffs" =>                  from_toml::<CFACoeffs>(module),
+            "Contrast" =>                   from_toml::<Contrast>(module),
+            "Sigmoid" =>                    from_toml::<Sigmoid>(module),
+            "Crop" =>                       from_toml::<Crop>(module),
+            "CST" =>                        from_toml::<CST>(module),
+            "Exp" =>                        from_toml::<Exp>(module),
+            "LCH" =>                        from_toml::<LCH>(module),
+            "LS" =>                         from_toml::<LS>(module),
             v => panic!("wrong pipeline module name {:}", v)
         };
 
