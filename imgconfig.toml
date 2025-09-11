@@ -21,17 +21,16 @@ color_space = "CameraToXYZ"
 name = "ChromaDenoise"
 a = 1
 b = 1
-strength = 2
+strength = 4
 
 [[pipeline_modules]]
 name = "Exp"
-# ev = 15
-ev = 1
+ev = 2
 
-[[pipeline_modules]]
-name = "Exp"
-ev = 1
-mask = { "name"="LuminanceGradient", "r_bottom"=1.0, "r_top"=1.0, "l_bottom"=0.5, "l_top"=0.0}
+# [[pipeline_modules]]
+# name = "Exp"
+# ev = 1.2
+# mask = { "name"="LuminanceGradient", "l_bottom"=0.0, "l_top"=0.0, "r_bottom"=0.1, "r_top"=0.0 }
 
 # [[pipeline_modules]]
 # name = "LS"

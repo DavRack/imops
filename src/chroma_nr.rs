@@ -1,5 +1,6 @@
 use crate::wavelets::{Kernel, WaveletDecompose};
 use crate::conditional_paralell::prelude::*;
+use crate::cst::{xyz_to_oklab, oklab_to_xyz};
 
 #[derive(Clone)]
 pub struct ATrousTransform {
@@ -42,19 +43,18 @@ impl Iterator for ATrousTransform {
     }
 }
 
-pub fn denoise_rgb(
+pub fn denoise_chroma(
     image: Vec<[f32; 3]>,
     width: usize,
     height: usize,
     num_scales: usize,
-    v: usize,
+    strength: f32,
 ) -> Vec<[f32; 3]> {
-    // let grayscale_image = ATrousTransformInput::Grayscale {
-    //     data: Array2::from_shape_vec((height, width), image).unwrap()
-    // };
+    // Convert image to Oklab
+    let oklab_image: Vec<[f32; 3]> = image.par_iter().map(|p| xyz_to_oklab(p)).collect();
 
-    let transform = ATrousTransform{
-        input: image,
+    let transform = ATrousTransform {
+        input: oklab_image,
         height,
         width,
         kernel: Kernel::B3SplineKernel,
@@ -72,27 +72,31 @@ pub fn denoise_rgb(
     ];
 
     let layers: Vec<[f32; 3]> = transform
-        .into_iter().skip(1)
-        .map(|item|{
+        .into_iter()
+        .skip(1)
+        .map(|item| {
             let mut data = item.buffer;
-            if item.pixel_scale.is_some_and(|scale| scale < v ){
-                let scale = item.pixel_scale.unwrap();
-                let th = threshold[scale];
-
-                data.iter_mut().for_each(|v|{
-                    *v = v.map(|x| x*th);
-                });
+            if let Some(scale) = item.pixel_scale {
+                if scale < threshold.len() {
+                    let th = 1.0 - (threshold[scale] * strength).min(1.0);
+                    data.par_iter_mut().for_each(|val| {
+                        // val is [L, a, b]
+                        // Only denoise chroma channels 'a' and 'b'
+                        val[1] *= th;
+                        val[2] *= th;
+                    });
+                }
             }
             data
-        }).reduce(|acc, val| val.par_iter().zip(acc).map(|(a, b)|{
-            let [a, x, c] = a;
-            let [r, g, b] = b;
-            [
-                a + r,
-                x + g,
-                c + b,
-            ]
-        }).collect()).unwrap();
+        })
+        .reduce(|acc, val| {
+            val.par_iter()
+                .zip(acc)
+                .map(|(a, b)| [a[0] + b[0], a[1] + b[1], a[2] + b[2]])
+                .collect()
+        })
+        .unwrap();
 
-    return layers
+    // Convert back to XYZ
+    layers.par_iter().map(|p| oklab_to_xyz(p)).collect()
 }

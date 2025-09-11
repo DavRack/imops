@@ -79,6 +79,10 @@ impl Mask for LuminanceGradient {
 
 #[cfg(test)]
 mod tests {
+    use core::f32;
+
+    use approx::assert_relative_eq;
+
     use crate::pixels::Pixel;
 
     use super::*;
@@ -169,5 +173,21 @@ mod tests {
         assert_eq!(mask_cfg.mask(0.5),      1.0);
         assert_eq!(mask_cfg.mask(0.875),    1.0);
         assert_eq!(mask_cfg.mask(1.0),      1.0);
+    }
+    #[test]
+    fn test_luminance_gradient_inverted(){
+        let mask_cfg = LuminanceGradient{
+            l_bottom: 0.0,
+            l_top: 0.0,
+            r_top: 0.02,
+            r_bottom: 0.1,
+        };
+
+        assert_relative_eq!(mask_cfg.mask(0.0),     1.0, epsilon = f32::EPSILON);
+        assert_relative_eq!(mask_cfg.mask(0.02),    1.0);
+        assert_relative_eq!(mask_cfg.mask(0.06),    0.5, epsilon = f32::EPSILON);
+        assert_relative_eq!(mask_cfg.mask(0.1),     0.0);
+        assert_relative_eq!(mask_cfg.mask(0.5),     0.0);
+        assert_relative_eq!(mask_cfg.mask(1.0),     0.0);
     }
 }

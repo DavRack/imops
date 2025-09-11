@@ -2,6 +2,7 @@ use core::panic;
 use std::{any, usize};
 
 use color::{ColorSpace, Oklab, XyzD65, Srgb};
+use image::math;
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 // use sealed::Cache;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use crate::cst::{oklab_to_xyz, xyz_to_oklab, xyz_to_oklab_l};
 use crate::mask::{Mask, MaskFn};
 use crate::{chroma_nr, helpers::*, pixels};
 use crate::pixels::*;
+use crate::wavelet_nl_means;
 
 use crate::conditional_paralell::prelude::*;
 
@@ -201,19 +203,21 @@ pub struct ChromaDenoise {
 
 impl PipelineModule for Module<ChromaDenoise> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-
-        let data = image.data.clone();
-        let data_l = data.par_iter().map(|p|{
-            xyz_to_oklab_l(p)
-        });
-
-        image.data = chroma_nr::denoise_rgb(image.data, image.width, image.height, 3, 2);
-
-        image.data.par_iter_mut().zip(data_l).for_each(|(pixel, l)|{
-            let [_, c, h] = xyz_to_oklab(pixel);
-            *pixel = oklab_to_xyz(&[l, c, h])
-        });
-
+        // The user requested to comment out the previous method and use the new one.
+        // image.data = chroma_nr::denoise_chroma(image.data, image.width, image.height, 3, self.config.strength);
+        
+        // Using the new hybrid Wavelet + NL-Means denoising method.
+        // Using some reasonable defaults for patch and search radius.
+        // The `strength` parameter from config is used as the `h` filtering parameter for NL-Means.
+        image.data = wavelet_nl_means::denoise(
+            image.data,
+            image.width,
+            image.height,
+            4,      // num_scales for wavelet decomposition
+            1,      // patch_radius for NL-Means (3x3 patches)
+            5,      // search_radius for NL-Means (11x11 search window)
+            self.config.strength, // h (filtering parameter) for NL-Means
+        );
         return image;
     }
 }
@@ -238,50 +242,33 @@ pub struct Sigmoid {
     pub c: SubPixel
 }
 
-const R_RELATIVE_LUMINANCE: SubPixel = 0.2126;
-const G_RELATIVE_LUMINANCE: SubPixel = 0.7152;
-const B_RELATIVE_LUMINANCE: SubPixel = 0.0722;
-
-fn y_luminance(pixel: Pixel) -> SubPixel{
-    let [r, g, b] = pixel;
-    let y = R_RELATIVE_LUMINANCE*r + G_RELATIVE_LUMINANCE*g + B_RELATIVE_LUMINANCE*b;
-    y
-}
-
-#[inline]
-fn r_sigmoid(v: SubPixel, contrast: SubPixel, c: SubPixel) -> SubPixel {
-    // const ATENUATION: SubPixel = G_RELATIVE_LUMINANCE + B_RELATIVE_LUMINANCE;
-    const ATENUATION: SubPixel = 1.0;
-    (c / (1.0 + (1.0/((contrast*ATENUATION)*v)))).powi(2)
-}
-fn g_sigmoid(v: SubPixel, contrast: SubPixel, c: SubPixel) -> SubPixel {
-    // const ATENUATION: SubPixel = R_RELATIVE_LUMINANCE + B_RELATIVE_LUMINANCE;
-    const ATENUATION: SubPixel = 1.0;
-    (c / (1.0 + (1.0/((contrast*ATENUATION)*v)))).powi(2)
-}
-fn b_sigmoid(v: SubPixel, contrast: SubPixel, c: SubPixel) -> SubPixel {
-    // const ATENUATION: SubPixel = R_RELATIVE_LUMINANCE + G_RELATIVE_LUMINANCE;
-    const ATENUATION: SubPixel = 1.0;
-    (c / (1.0 + (1.0/((contrast*ATENUATION)*v)))).powi(2)
-}
-
 impl PipelineModule for Module<Sigmoid> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         let max_current_value = image.data.iter().fold(0.0, |current_max, pixel| pixel.luminance().max(current_max));
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
+        // let sat_curve = 1.5;
+        // let sat_vs_luma = |x: SubPixel| -x.powf(sat_curve);
+        let sat_curve = 2.0;
+        let sat_vs_luma = |x: SubPixel| -(x.powf(-sat_curve*x.ln()));
 
         image.data.iter_mut().for_each(|p|{
+            let lum = p.luminance();
+            let new_lum = (c / (1.0 + (1.0/(self.config.c*lum)))).powi(2);
+            let factor = new_lum/lum;
+            let sat_delta = sat_vs_luma(new_lum);
             let s = p.saturation();
-            if s > 0.8 && false{
+            if s > 0.8 && new_lum > 0.5 && false{
                 let [r, g, b] = *p;
                 println!("saturation: {:}", p.saturation());
+                println!("luma: {:}", new_lum);
+                println!("sat_delta: {:}", sat_delta);
                 println!("R: {:}", r);
                 println!("G: {:}", g);
                 println!("B: {:}", b);
                 println!(" ");
             }
-            *p = (*p).map(|x| r_sigmoid(x, self.config.c, c))
+            *p = (*p).map(|x| (x*factor)+(((x*factor)-new_lum)*(sat_delta)))
         });
         return image
     }

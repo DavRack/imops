@@ -1,4 +1,4 @@
-input: test.dng
+input: data/test.NEF
 output: result.ppm
 
 pipeline:

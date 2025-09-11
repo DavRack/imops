@@ -1,7 +1,12 @@
-pub const CHANNELS_PER_PIXEL: usize = 3;
 pub type SubPixel = f32;
 pub type Pixel = [SubPixel; CHANNELS_PER_PIXEL];
 pub type ImageBuffer = Vec<Pixel>;
+
+pub const CHANNELS_PER_PIXEL: usize = 3;
+pub const R_RELATIVE_LUMINANCE: SubPixel = 0.2126;
+pub const G_RELATIVE_LUMINANCE: SubPixel = 0.7152;
+pub const B_RELATIVE_LUMINANCE: SubPixel = 0.0722;
+pub const MIDDLE_GRAY: SubPixel = 0.185;
 
 pub trait PixelOps {
     fn luminance(self) -> SubPixel;
@@ -10,7 +15,7 @@ pub trait PixelOps {
 impl PixelOps for Pixel{
     fn luminance(self) -> SubPixel{
         let [r, g, b] = self;
-        let y = 0.2126*r + 0.7152*g + 0.0722*b;
+        let y = R_RELATIVE_LUMINANCE*r + G_RELATIVE_LUMINANCE*g + B_RELATIVE_LUMINANCE*b;
         return y
     }
     fn saturation(self) -> SubPixel {
