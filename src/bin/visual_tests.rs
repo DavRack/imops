@@ -47,21 +47,9 @@ fn main() {
                 mask: None,
             }),
             Box::new(Module {
-                name: "Exp".to_string(),
-                cache: None,
-                config: Exp { ev: 2.5 },
-                mask: None,
-            }),
-            Box::new(Module {
-                name: "Contrast".to_string(),
-                cache: None,
-                config: Contrast { c: 1.25 },
-                mask: None,
-            }),
-            Box::new(Module {
                 name: "Sigmoid (Soft)".to_string(),
                 cache: None,
-                config: Sigmoid { c: 1.5 },
+                config: Sigmoid { c: 8.0 },
                 mask: None,
             }),
             Box::new(Module {
@@ -93,21 +81,9 @@ fn main() {
                 mask: None,
             }),
             Box::new(Module {
-                name: "Exp".to_string(),
-                cache: None,
-                config: Exp { ev: 2.0 },
-                mask: None,
-            }),
-            Box::new(Module {
-                name: "Contrast".to_string(),
-                cache: None,
-                config: Contrast { c: 1.25 },
-                mask: None,
-            }),
-            Box::new(Module {
                 name: "Sigmoid (Soft)".to_string(),
                 cache: None,
-                config: Sigmoid { c: 1.2 },
+                config: Sigmoid { c: 8.0 },
                 mask: None,
             }),
             Box::new(Module {
