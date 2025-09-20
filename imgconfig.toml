@@ -10,18 +10,18 @@ factor = 1
 [[pipeline_modules]]
 name = "CFACoeffs"
 
-[[pipeline_modules]]
-name = "HighlightReconstruction"
+# [[pipeline_modules]]
+# name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "CST"
 color_space = "CameraToXYZ"
 
-[[pipeline_modules]]
-name = "ChromaDenoise"
-a = 1
-b = 1
-strength = 4
+# [[pipeline_modules]]
+# name = "ChromaDenoise"
+# a = 1
+# b = 1
+# strength = 4
 
 [[pipeline_modules]]
 name = "Exp"
@@ -50,17 +50,17 @@ c = 1.25
 # highlits_exp = 0.5
 # pivot = 2.5
 
-[[pipeline_modules]]
-name = "LCH"
-lc = 1
-cc = 1
-hc = 1
+# [[pipeline_modules]]
+# name = "LCH"
+# lc = 1
+# cc = 1
+# hc = 1
 
 [[pipeline_modules]]
 name = "Sigmoid"
 c = 8
 
-[[pipeline_modules]]
-name = "CST"
-color_space = "XYZTOsRGB"
+# [[pipeline_modules]]
+# name = "CST"
+# color_space = "XYZTOsRGB"
 
