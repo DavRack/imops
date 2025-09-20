@@ -1,7 +1,5 @@
 #![warn(unused_extern_crates)]
-use imops::{config};
-use imops::conditional_paralell::prelude::*;
-
+use imops::{config, pipeline::run_pixel_pipeline};
 use clap::Parser as Clap_parser;
 use rawler::{self};
 use std::io::Cursor;
@@ -31,67 +29,12 @@ struct Args {
     config_path: String,
 }
 
-
-
-
 fn to_vec(data: imops::imops::PipelineImage) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     let height = data.height;
     let width = data.width;
     let data2 = data.data.iter().flatten().map(|x| (x * 255.0) as u8).collect();
     let img = image::RgbImage::from_vec(width as u32, height as u32, data2).unwrap();
     return img;
-}
-
-fn run_pixel_pipeline(
-    raw_image: rawler::RawImage,
-    pixel_pipeline: config::PipelineConfig,
-) -> imops::imops::PipelineImage {
-    let modules = pixel_pipeline.pipeline_modules;
-
-    let mut pipeline_image = imops::imops::PipelineImage{
-        data: vec![],
-        height: 0,
-        width: 0,
-        max_raw_value: 1.0
-    };
-
-    let set_cache = true;
-
-    println!("\n");
-    let mut last_image = match modules[0].get_cache(){
-        Some(image) => image,
-        None => pipeline_image.clone(),
-    };
-    for mut module in modules {
-        let now = Instant::now();
-        
-        pipeline_image = module.process(pipeline_image, &raw_image);
-
-        if set_cache {
-            match module.get_mask(){
-                Some(mask) =>{
-                    let mask_value = mask.create(&pipeline_image, &raw_image);
-                    pipeline_image.data.par_iter_mut().zip(last_image.data).zip(mask_value).for_each(
-                        |((new_pixel, old_pixel), pixel_mask_value)|{
-                            let [r, g, b] = *new_pixel;
-                            let [or, og, ob] = old_pixel;
-                            *new_pixel = [
-                                (or*(1.0-pixel_mask_value)) + (r * pixel_mask_value),
-                                (og*(1.0-pixel_mask_value)) + (g * pixel_mask_value),
-                                (ob*(1.0-pixel_mask_value)) + (b * pixel_mask_value),
-                            ];
-                        }
-                    );
-                },
-                None => ()
-            }
-            module.set_cache(pipeline_image.clone());
-            last_image = pipeline_image.clone();
-        }
-        println!("{:} execution time: {:.2?}",module.get_name(), now.elapsed());
-    }
-    println!("\n");
-    return pipeline_image;
 }
 
 fn main() {

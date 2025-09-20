@@ -1,5 +1,5 @@
 #!/bin/bash
 # time cargo run --release
-cargo build --release --bin imops-cli
-sleep 2
+cargo build --release --bin imops-cli &&
+sleep 2 &&
 time ./target/release/imops-cli "$1" && open result.jpg

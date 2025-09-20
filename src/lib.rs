@@ -1,6 +1,5 @@
 pub mod config;
 pub mod demosaic;
-
 pub mod imops;
 pub mod denoise;
 pub mod nl_means;
@@ -13,3 +12,5 @@ pub mod conditional_paralell;
 pub mod cst;
 pub mod mask;
 pub mod pixels;
+pub mod pipeline;
+pub mod visual_viewwer;
