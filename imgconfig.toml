@@ -60,7 +60,6 @@ c = 1.25
 name = "Sigmoid"
 c = 8
 
-# [[pipeline_modules]]
-# name = "CST"
-# color_space = "XYZTOsRGB"
-
+[[pipeline_modules]]
+name = "CST"
+color_space = "XYZTOsRGB"
