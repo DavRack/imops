@@ -1,17 +1,15 @@
-use core::panic;
 use std::{any, usize};
 
 use color::{ColorSpace, Oklab, XyzD65, Srgb};
-use image::math;
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 // use sealed::Cache;
 use serde::{Deserialize, Serialize};
 use toml::map::Map;
-use crate::cst::{oklab_to_xyz, xyz_to_oklab, xyz_to_oklab_l};
-use crate::mask::{Mask, MaskFn};
-use crate::{chroma_nr, helpers::*, pixels};
+use crate::mask::{Mask};
+use crate::{helpers::*, pixels};
 use crate::pixels::*;
 use crate::wavelet_nl_means;
+use crate::demosaic;
 
 use crate::conditional_paralell::prelude::*;
 
@@ -325,18 +323,18 @@ impl PipelineModule for Module<LocalExpousure> {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct LS {
+pub struct LS<'a> {
     #[serde(skip_deserializing)]
-    pub cache: PipelineImage,
+    pub cache: Option<&'a PipelineImage>,
     pub transition_width: SubPixel,
     pub shadows_exp: SubPixel,
     pub highlits_exp: SubPixel,
     pub pivot: SubPixel, //ev
 }
 
-impl PipelineModule for Module<LS> {
+impl<'a> PipelineModule for Module<LS<'a>> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        let config = self.clone();
+        let config = self;
         let p: SubPixel = config.config.pivot;
         let d: SubPixel = config.config.transition_width;
         let f2 = |x: SubPixel, m: SubPixel| p*(x/p).powf(m);
@@ -411,6 +409,51 @@ impl PipelineModule for Module<CST> {
         };
 
         return image
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct Demosaic {
+    pub algorithm: String,
+}
+
+impl PipelineModule for Module<Demosaic> {
+    fn process(
+        &self,
+        image: PipelineImage,
+        raw_image: &RawImage,
+    ) -> PipelineImage {
+        let mut new_image = image;
+        let debayer_image: FormedImage;
+        let mut raw_image = raw_image.clone();
+        let _ = raw_image.apply_scaling();
+        if let rawler::RawImageData::Float(ref im) = raw_image.data {
+            let cfa = raw_image.camera.cfa.clone();
+            let cfa = demosaic::get_cfa(cfa, raw_image.crop_area.unwrap());
+            let (nim, width, height) =
+                demosaic::crop(raw_image.dim(), raw_image.crop_area.unwrap(), im.to_vec());
+
+            debayer_image = FormedImage {
+                raw_image: raw_image.clone(),
+                data: match self.config.algorithm.as_str() {
+                    "markesteijn" => demosaic::DemosaicAlgorithms::markesteijn(width, height, cfa, nim),
+                    _ => panic!("Unknown demosaic algorithm"),
+                },
+            };
+        } else {
+            panic!("Don't know how to process non-integer raw files");
+        }
+
+        let max_raw_value = debayer_image.data.data.iter().fold(0.0, |acc, pix|{
+            let [r, g, b] = pix;
+            r.max(*g).max(*b).max(acc)
+        });
+
+        new_image.data = debayer_image.data.data;
+        new_image.width = debayer_image.data.width;
+        new_image.height = debayer_image.data.height;
+        new_image.max_raw_value = max_raw_value;
+        new_image
     }
 }
 

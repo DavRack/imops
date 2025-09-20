@@ -4,7 +4,7 @@ use std::any;
 use serde::{Deserialize, Serialize};
 use toml::map::Map;
 
-use crate::{imops::{self, *}, mask::{Constant, LuminanceGradient, Mask}};
+use crate::{imops::{self, *, Demosaic}, mask::{Constant, LuminanceGradient, Mask}};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
@@ -61,6 +61,7 @@ pub fn parse_config(config_path: String) -> PipelineConfig{
             "Exp" =>                        from_toml::<Exp>(module),
             "LCH" =>                        from_toml::<LCH>(module),
             "LS" =>                         from_toml::<LS>(module),
+            "Demosaic" =>                   from_toml::<Demosaic>(module),
             v => panic!("wrong pipeline module name {:}", v)
         };
 

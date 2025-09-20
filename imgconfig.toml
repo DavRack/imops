@@ -1,6 +1,10 @@
 #### Pixel Pipeline ####
 
 [[pipeline_modules]]
+name = "Demosaic"
+algorithm = "markesteijn"
+
+[[pipeline_modules]]
 name = "Crop"
 factor = 1
 # point = [0, 0]
