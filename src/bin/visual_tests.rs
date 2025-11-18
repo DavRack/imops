@@ -18,7 +18,8 @@ fn process_pipeline(
 }
 
 fn main() {
-    let raw_image_path = "test_data/raw_sample.NEF";
+    // let raw_image_path = "test_data/raw_sample.NEF";
+    let raw_image_path = "test_data/test.dng";
 
     // 1. Load the raw image.
     let raw_image = decode_file(raw_image_path).expect("Failed to load raw image");

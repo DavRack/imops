@@ -17,7 +17,7 @@ debug = true
 [dependencies]
 approx = "0.5.1"
 clap = {version="4.5.29", features = ["derive"]}
-color = "0.2.3"
+color = "0.3.2"
 convolve-image = "0.4.0"
 dyn-clone = "1.0.19"
 image = "0.25.5"

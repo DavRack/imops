@@ -1,6 +1,6 @@
 use std::{any, usize};
 
-use color::{ColorSpace, Oklab, XyzD65, Srgb};
+use color::{ColorSpace, Oklab, Srgb, XyzD50, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 // use sealed::Cache;
 use serde::{Deserialize, Serialize};
@@ -245,28 +245,9 @@ impl PipelineModule for Module<Sigmoid> {
         let max_current_value = image.data.iter().fold(0.0, |current_max, pixel| pixel.luminance().max(current_max));
         let scaled_one = (1.0/image.max_raw_value)*max_current_value;
         let c = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
-        // let sat_curve = 1.5;
-        // let sat_vs_luma = |x: SubPixel| -x.powf(sat_curve);
-        let sat_curve = 2.0;
-        let sat_vs_luma = |x: SubPixel| -(x.powf(-sat_curve*x.ln()));
 
         image.data.iter_mut().for_each(|p|{
-            let lum = p.luminance();
-            let new_lum = (c / (1.0 + (1.0/(self.config.c*lum)))).powi(2);
-            let factor = new_lum/lum;
-            let sat_delta = sat_vs_luma(new_lum);
-            let s = p.saturation();
-            if s > 0.8 && new_lum > 0.5 && false{
-                let [r, g, b] = *p;
-                println!("saturation: {:}", p.saturation());
-                println!("luma: {:}", new_lum);
-                println!("sat_delta: {:}", sat_delta);
-                println!("R: {:}", r);
-                println!("G: {:}", g);
-                println!("B: {:}", b);
-                println!(" ");
-            }
-            *p = (*p).map(|x| (x*factor)+(((x*factor)-new_lum)*(sat_delta)))
+            *p = (*p).map(|x| (c / (1.0 + (1.0/(self.config.c*x)))).powi(2))
         });
         return image
     }

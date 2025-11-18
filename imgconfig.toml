@@ -4,9 +4,9 @@
 name = "Demosaic"
 algorithm = "markesteijn"
 
-[[pipeline_modules]]
-name = "Crop"
-factor = 1
+# [[pipeline_modules]]
+# name = "Crop"
+# factor = 1
 # point = [0, 0]
 # size = [1, 1]
 # view_window = [1920, 1080]
@@ -54,15 +54,15 @@ c = 1.25
 # highlits_exp = 0.5
 # pivot = 2.5
 
-# [[pipeline_modules]]
-# name = "LCH"
-# lc = 1
-# cc = 1
-# hc = 1
+[[pipeline_modules]]
+name = "LCH"
+lc = 1
+cc = 1.8
+hc = 1
 
 [[pipeline_modules]]
 name = "Sigmoid"
-c = 8
+c = 6
 
 [[pipeline_modules]]
 name = "CST"
