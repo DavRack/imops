@@ -1,6 +1,6 @@
-use std::{any, usize};
+use std::{any, fmt, usize};
 
-use color::{ColorSpace, Oklab, Srgb, XyzD50, XyzD65};
+use color::{ColorSpace, Oklch, Srgb, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 // use sealed::Cache;
 use serde::{Deserialize, Serialize};
@@ -102,8 +102,8 @@ impl PipelineModule for Module<LCH> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         image.data.par_iter_mut().for_each(
             |p| {
-                let [l, c, h] = XyzD65::convert::<Oklab>(*p);
-                *p = Oklab::convert::<XyzD65>([l*self.config.lc, c*self.config.cc, h*self.config.hc])
+                let [l, c, h] = XyzD65::convert::<Oklch>(*p);
+                *p = Oklch::convert::<XyzD65>([l*self.config.lc, c*self.config.cc, h*self.config.hc])
             }
         );
         return image
@@ -363,8 +363,14 @@ impl PipelineModule for Module<CST> {
                 //     [0.055648,  -0.204043,  1.057311]
                 // ];
                 // let foward_matrix = rawler::imgop::matrix::normalize(matrix);
-                image.data.par_iter_mut().for_each(|p|{
-                    *p = XyzD65::convert::<Srgb>(*p);
+                image.data.par_iter_mut().for_each(|pixel|{
+                    let mut srgb = XyzD65::convert::<Srgb>(*pixel);
+                    // if srgb[0] < 0.0 || srgb[1] < 0.0 || srgb[2] < 0.0 {
+                    //     srgb[0] = if srgb[0] < 0.0 {1.0} else {0.0};
+                    //     srgb[1] = if srgb[1] < 0.0 {1.0} else {0.0};
+                    //     srgb[2] = if srgb[2] < 0.0 {1.0} else {0.0};
+                    // }
+                    *pixel = srgb.map(|subp| subp.clamp(0.0, 1.0) );
                 });
             },
             ColorSpaceMatrix::CameraToXYZ => {

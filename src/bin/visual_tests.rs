@@ -18,8 +18,8 @@ fn process_pipeline(
 }
 
 fn main() {
-    // let raw_image_path = "test_data/raw_sample.NEF";
-    let raw_image_path = "test_data/test.dng";
+    let raw_image_path = "test_data/raw_sample.NEF";
+    // let raw_image_path = "test_data/test.dng";
 
     // 1. Load the raw image.
     let raw_image = decode_file(raw_image_path).expect("Failed to load raw image");
@@ -45,6 +45,18 @@ fn main() {
                 name: "CST".to_string(),
                 cache: None,
                 config: CST { color_space: imops::imops::ColorSpaceMatrix::CameraToXYZ},
+                mask: None,
+            }),
+            Box::new(Module {
+                name: "Exp".to_string(),
+                cache: None,
+                config: Exp { ev: 2.0},
+                mask: None,
+            }),
+            Box::new(Module {
+                name: "Contrast".to_string(),
+                cache: None,
+                config: Contrast { c: 1.25},
                 mask: None,
             }),
             Box::new(Module {

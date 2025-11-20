@@ -32,7 +32,7 @@ struct Args {
 fn to_vec(data: imops::imops::PipelineImage) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     let height = data.height;
     let width = data.width;
-    let data2 = data.data.iter().flatten().map(|x| (x * 255.0) as u8).collect();
+    let data2 = data.data.iter().flatten().map(|x| ((x * 255.0) as u8)).collect();
     let img = image::RgbImage::from_vec(width as u32, height as u32, data2).unwrap();
     return img;
 }
