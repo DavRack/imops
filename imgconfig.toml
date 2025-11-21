@@ -14,8 +14,8 @@ algorithm = "markesteijn"
 [[pipeline_modules]]
 name = "CFACoeffs"
 
-# [[pipeline_modules]]
-# name = "HighlightReconstruction"
+[[pipeline_modules]]
+name = "HighlightReconstruction"
 
 
 [[pipeline_modules]]

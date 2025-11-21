@@ -16,8 +16,8 @@ use bm3d_rs::bm3d;
 use crate::conditional_paralell::prelude::*;
 
 const R: usize = 0;
-const G: usize = 0;
-const B: usize = 0;
+const G: usize = 1;
+const B: usize = 2;
 
 pub trait GenericModule {
     fn set_cache(&mut self, cache: PipelineImage);
@@ -142,53 +142,15 @@ impl PipelineModule for Module<Crop> {
 pub struct HighlightReconstruction {
 }
 
-#[inline]
-fn avg_pixels(sorrounding_pixels: &Vec<Pixel>) -> Pixel{
-    let len = sorrounding_pixels.len() as SubPixel;
-    let px = sorrounding_pixels.into_iter().fold([0., 0., 0.], |acc, pixel|{
-        let [r, g, b] = pixel;
-        let [ar, ag, ab] = acc;
-        [
-            r+ar,
-            g+ag,
-            b+ab
-        ]
-    });
-    px.map(|x|x/len)
-}
-
 impl PipelineModule for Module<HighlightReconstruction> {
 
     fn process(&self, mut image: PipelineImage, raw_image: &RawImage) -> PipelineImage {
-        let d = image.clone();
-        let [clip_r, clip_g, clip_b, _] = raw_image.wb_coeffs;
-
-
-        image.data.par_iter_mut().enumerate().for_each(|(idx, pixel)|{
+        let [_, clip_g, _, _] = raw_image.wb_coeffs;
+        image.data.par_iter_mut().for_each(|pixel|{
             let [r, g, b] = *pixel;
-            let [cliped_r, cliped_g, cliped_b] = [
-                r >= clip_r,
-                g >= clip_g,
-                b >= clip_b,
-            ];
-
-            if cliped_g || cliped_r || cliped_b{
-                let sorrounding_pixels = d.get_px_tail(1, idx);
-                let [r, g, b] = avg_pixels(&sorrounding_pixels);
-
-
-                if cliped_r {
-                    pixel[R] = g+b
-                }
-
-                if cliped_g {
-                    pixel[G] = r+b;
-                }
-
-                if cliped_b {
-                    pixel[B] = r+g;
-                }
-            }
+            let factor = (g/clip_g);
+            let reconstructed_g = ((1.0-factor)*g) + (factor*(r+b)*(1.0/2.0));
+            pixel[G] = reconstructed_g;
         });
         return image
     }
