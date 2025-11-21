@@ -52,7 +52,7 @@ color_space = "CameraToXYZ"
 [[pipeline_modules]]
 name = "LCH"
 lc = 1
-cc = 1.9
+cc = 1.25
 hc = 1
 
 # [[pipeline_modules]]
