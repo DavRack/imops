@@ -32,6 +32,7 @@ rawler = "*"
 rayon = "1.10.0"
 serde = { version = "1.0.217", features = ["derive"] }
 toml = "0.8.20"
+bm3d_rs = { path = "../DenoiseRs/BM3D_rs" }
 
 [features]
 default = ["parallel"]

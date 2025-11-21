@@ -5,11 +5,13 @@ use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 // use sealed::Cache;
 use serde::{Deserialize, Serialize};
 use toml::map::Map;
+// use crate::color_p::gamut_clip_aces;
 use crate::mask::{Mask};
 use crate::{helpers::*, pixels};
 use crate::pixels::*;
 use crate::wavelet_nl_means;
 use crate::demosaic;
+use bm3d_rs::bm3d;
 
 use crate::conditional_paralell::prelude::*;
 
@@ -239,6 +241,94 @@ impl PipelineModule for Module<Exp> {
 pub struct Sigmoid {
     pub c: SubPixel
 }
+pub fn tonemap_sota(r: f32, g: f32, b: f32) -> [f32; 3] {
+    // CONTRAST: Controls the slope of the S-curve.
+    // 1.35 to 1.50 is the sweet spot for most photography.
+    const CONTRAST: f32 = 1.0;
+
+    // SKEW: Shifts the curve to favor shadows or highlights.
+    // 0.0 is neutral.
+    const SKEW: f32 = 0.0;
+
+    // CROSSTALK: The "Path to White" strength. 
+    // 0.0 = No desaturation (colors clip weirdly).
+    // 1.0 = heavy desaturation.
+    // 0.75 is the modern standard (similar to AgX/Darktable default).
+    const CROSSTALK: f32 = 0.75;
+
+    // ANCHORS: Map 18% Grey (Scene) to 50% Grey (Display)
+    // This ensures exposure doesn't drift during tone mapping.
+    const MID_GREY_IN: f32 = 0.18;
+    const MID_GREY_OUT: f32 = 0.50;
+
+    // ============================================================
+    // ALGORITHM
+    // ============================================================
+
+    // 1. Find the Pixel Intensity (Norm)
+    // We use Max(RGB) because it preserves the gamut volume shape better 
+    // than Luminance when dealing with highly saturated light sources.
+    let max_in = r.max(g).max(b);
+
+    // optimization: fast path for black pixels
+    if max_in <= 1e-8 {
+        return [0.0, 0.0, 0.0];
+    }
+
+    // 2. Prepare the Sigmoid Curve Constants
+    // We calculate the offset 'b' that forces the curve to pass through (0.18, 0.5).
+    // Formula derivation: y = x^c / (x^c + b)  =>  b = (x^c / y) - x^c
+    let limit_pow = (MID_GREY_IN * 2.0_f32.powf(SKEW)).powf(CONTRAST);
+    let b_offset = (limit_pow / MID_GREY_OUT) - limit_pow;
+
+    // 3. Apply Sigmoid (Tone Map the Intensity)
+    // Apply skew bias to input
+    let biased_norm = max_in * 2.0_f32.powf(SKEW);
+    let norm_pow = biased_norm.powf(CONTRAST);
+    
+    // The Naka-Rushton equation
+    let max_out = norm_pow / (norm_pow + b_offset);
+
+    // 4. Calculate Preservation Ratio
+    // ratio = new_intensity / old_intensity
+    let ratio = max_out / max_in;
+
+    // 5. Calculate Desaturation Factor (Crosstalk)
+    // As the pixel gets brighter (max_out approaches 1.0), we want to 
+    // mix in more white to simulate sensor saturation/film response.
+    // We start desaturating only after the pixel is 5% bright to protect deep dark colors.
+    let desat_factor = if max_out > 0.05 {
+        let range = (max_out - 0.05) / 0.95;
+        range.clamp(0.0, 1.0).powf(2.0) * CROSSTALK
+    } else {
+        0.0
+    };
+
+    // 6. Mix "Pure Color" with "Pure White"
+    // Path A: Pure Color (Ratio Preserved)
+    let r_col = r * ratio;
+    let g_col = g * ratio;
+    let b_col = b * ratio;
+
+    // Path B: Pure White (Target Luminance)
+    // If we are mapping to brightness X, white is just (X, X, X)
+    let r_white = max_out;
+    let g_white = max_out;
+    let b_white = max_out;
+
+    // Linear Interpolation
+    let r_final = r_col + (r_white - r_col) * desat_factor;
+    let g_final = g_col + (g_white - g_col) * desat_factor;
+    let b_final = b_col + (b_white - b_col) * desat_factor;
+
+    // 7. Safety Clamp
+    // Ensure we stay within 0.0 - 1.0 for standard sRGB export
+    [
+        r_final.clamp(0.0, 1.0),
+        g_final.clamp(0.0, 1.0),
+        b_final.clamp(0.0, 1.0)
+    ]
+}
 
 impl PipelineModule for Module<Sigmoid> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
@@ -247,7 +337,8 @@ impl PipelineModule for Module<Sigmoid> {
         let c = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
 
         image.data.iter_mut().for_each(|p|{
-            *p = (*p).map(|x| (c / (1.0 + (1.0/(self.config.c*x)))).powi(2))
+            let [r, g, b] = *p;
+            *p = tonemap_sota(r, g, b)
         });
         return image
     }
@@ -349,7 +440,9 @@ pub struct CST {
 pub enum ColorSpaceMatrix {
     #[default]
     CameraToXYZ,
-    XYZTOsRGB
+    XYZTOsRGB,
+    XYZTORGB,
+    RGBTOsRGB,
 }
 
 
@@ -364,13 +457,28 @@ impl PipelineModule for Module<CST> {
                 // ];
                 // let foward_matrix = rawler::imgop::matrix::normalize(matrix);
                 image.data.par_iter_mut().for_each(|pixel|{
-                    let mut srgb = XyzD65::convert::<Srgb>(*pixel);
+                    let srgb = XyzD65::convert::<Srgb>(*pixel);
+                    // let srgb = gamut_clip_aces(srgb);
                     // if srgb[0] < 0.0 || srgb[1] < 0.0 || srgb[2] < 0.0 {
                     //     srgb[0] = if srgb[0] < 0.0 {1.0} else {0.0};
                     //     srgb[1] = if srgb[1] < 0.0 {1.0} else {0.0};
                     //     srgb[2] = if srgb[2] < 0.0 {1.0} else {0.0};
                     // }
-                    *pixel = srgb.map(|subp| subp.clamp(0.0, 1.0) );
+                    *pixel = srgb.map(|subp| subp );
+                });
+            },
+            ColorSpaceMatrix::XYZTORGB => {
+                image.data.par_iter_mut().for_each(|pixel|{
+                    let srgb = XyzD65::to_linear_srgb(*pixel);
+                    // let srgb = gamut_clip_aces(srgb);
+                    *pixel = srgb.map(|subp| subp.abs() );
+                });
+            },
+            ColorSpaceMatrix::RGBTOsRGB => {
+                image.data.par_iter_mut().for_each(|pixel|{
+                    let srgb = Srgb::from_linear_srgb(*pixel);
+                    // let srgb = gamut_clip_aces(srgb);
+                    *pixel = srgb.map(|subp| subp.abs() );
                 });
             },
             ColorSpaceMatrix::CameraToXYZ => {

@@ -11,11 +11,17 @@ pub const MIDDLE_GRAY: SubPixel = 0.185;
 pub trait PixelOps {
     fn luminance(self) -> SubPixel;
     fn saturation(self) -> SubPixel;
+    fn norm(self) -> SubPixel;
 }
 impl PixelOps for Pixel{
     fn luminance(self) -> SubPixel{
         let [r, g, b] = self;
         let y = R_RELATIVE_LUMINANCE*r + G_RELATIVE_LUMINANCE*g + B_RELATIVE_LUMINANCE*b;
+        return y
+    }
+    fn norm(self) -> SubPixel{
+        let [r, g, b] = self;
+        let y = r.max(g).max(b);
         return y
     }
     fn saturation(self) -> SubPixel {
