@@ -1,2 +1,2 @@
 #!/bin/bash
-find . src -type f -maxdepth 1 | entr $1
+find . src -type f -maxdepth 1 | entr "./$1 $2"
