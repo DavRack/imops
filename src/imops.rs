@@ -11,7 +11,6 @@ use crate::{helpers::*, pixels};
 use crate::pixels::*;
 use crate::wavelet_nl_means;
 use crate::demosaic;
-use bm3d_rs::bm3d;
 
 use crate::conditional_paralell::prelude::*;
 
