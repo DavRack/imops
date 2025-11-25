@@ -166,14 +166,14 @@ pub struct ChromaDenoise {
 
 impl PipelineModule for Module<ChromaDenoise> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        image.data = crate::chroma_nr::denoise_chroma(
-            image.data, 
-            image.width, 
-            image.height, 
-            3, 
-            self.config.strength, 
-            self.config.use_ai
-        );
+        // image.data = crate::chroma_nr::denoise_chroma(
+        //     image.data, 
+        //     image.width, 
+        //     image.height, 
+        //     3, 
+        //     self.config.strength, 
+        //     self.config.use_ai
+        // );
         return image;
     }
 }

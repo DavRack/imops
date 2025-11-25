@@ -36,10 +36,6 @@ rawler = "*"
 rayon = "1.10.0"
 serde = { version = "1.0.217", features = ["derive"] }
 toml = "0.8.20"
-candle-core = "0.8.0"
-candle-nn = "0.8.0"
-candle-onnx = "0.8.0"
-anyhow = "1.0"
 
 # deps for viewer
 eframe = { version = "0.27", optional = true }
