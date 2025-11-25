@@ -20,58 +20,31 @@ name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 1.0
-
-# [[pipeline_modules]]
-# name = "Exp"
-# ev = 1.2
-# mask = { "name"="LuminanceGradient", "l_bottom"=0.0, "l_top"=0.0, "r_bottom"=0.1, "r_top"=0.0 }
-
-# [[pipeline_modules]]
-# name = "LS"
-# transition_width = 3
-# shadows_exp = 4
-# highlits_exp = 0.3
-# pivot = 2
+ev = 1.5
 
 [[pipeline_modules]]
 name = "Contrast"
-c = 1.5
-
-# [[pipeline_modules]]
-# name = "LS"
-# transition_width = 3
-# shadows_exp = 1
-# highlits_exp = 0.5
-# pivot = 2.5
+c = 1.3
 
 [[pipeline_modules]]
 name = "CST"
 color_space = "CameraToXYZ"
 
 [[pipeline_modules]]
+name = "ChromaDenoise"
+a = 1
+b = 1
+strength = 0.1
+
+[[pipeline_modules]]
 name = "LCH"
 lc = 1
-cc = 1.25
+cc = 2.5
 hc = 1
-
-# [[pipeline_modules]]
-# name = "ChromaDenoise"
-# a = 1
-# b = 1
-# strength = 4
-
-# [[pipeline_modules]]
-# name = "CST"
-# color_space = "XYZTORGB"
 
 [[pipeline_modules]]
 name = "Sigmoid"
 c = 6
-
-# [[pipeline_modules]]
-# name = "CST"
-# color_space = "RGBTOsRGB"
 
 [[pipeline_modules]]
 name = "CST"

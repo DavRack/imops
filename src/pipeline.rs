@@ -17,7 +17,6 @@ pub fn run_pixel_pipeline(
 
     let set_cache = true;
 
-    println!("\n");
     let mut last_image = match modules[0].get_cache(){
         Some(image) => image,
         None => pipeline_image.clone(),

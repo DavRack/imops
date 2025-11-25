@@ -1,0 +1,4 @@
+numpy
+Pillow
+colour-science
+pypng

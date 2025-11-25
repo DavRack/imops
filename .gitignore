@@ -1,10 +1,12 @@
 /target
 /data
-*.tar.gz
-*.json.gz
-*.svg
-*.jpg
-*.dng
+venv
 *.RAF
+*.dng
 *.jpeg
+*.jpg
+*.json.gz
+*.png
+*.svg
+*.tar.gz
 *.tif

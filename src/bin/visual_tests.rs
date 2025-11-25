@@ -1,26 +1,16 @@
-use imops::imops::{CFACoeffs, CST, Contrast, Demosaic, Exp, FormedImage, HighlightReconstruction, LCH, Module, PipelineImage, PipelineModule, Sigmoid};
+use imops::config::PipelineConfig;
+use imops::imops::{CFACoeffs, CST, ChromaDenoise, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineImage, PipelineModule, Sigmoid};
 
-use imops::{demosaic, visual_viewwer};
-use imops::conditional_paralell::prelude::*;
+use imops::pipeline::run_pixel_pipeline;
+use imops::{visual_viewwer};
 
 use rawler::{decode_file, RawImage};
 use std::time::Instant;
 use std::vec::Vec;
 
-// This helper function processes an image through a series of modules.
-fn process_pipeline(
-    mut image: PipelineImage,
-    pipeline: &Vec<Box<dyn PipelineModule>>,
-    raw_image: &RawImage,
-) -> PipelineImage {
-    for module in pipeline {
-        image = module.process(image, raw_image);
-    }
-    image
-}
-
 fn main() {
-    let raw_image_path = "test_data/raw_sample.NEF";
+    let raw_image_path = "test_data/maya.dng";
+    // let raw_image_path = "test_data/raw_sample.NEF";
     // let raw_image_path = "test_data/test.dng";
 
     // 1. Load the raw image.
@@ -52,13 +42,13 @@ fn main() {
             Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
-                config: Exp { ev: 2.0},
+                config: Exp { ev: 1.5},
                 mask: None,
             }),
             Box::new(Module {
                 name: "Contrast".to_string(),
                 cache: None,
-                config: Contrast { c: 1.25},
+                config: Contrast { c: 1.75},
                 mask: None,
             }),
             Box::new(Module {
@@ -68,11 +58,22 @@ fn main() {
                 mask: None,
             }),
             Box::new(Module {
+                name: "NR".to_string(),
+                cache: None,
+                config: ChromaDenoise{
+                    a: 0.0,
+                    b: 0.0,
+                    strength: 0.1,
+                    use_ai: false,
+                },
+                mask: None,
+            }),
+            Box::new(Module {
                 name: "LHC".to_string(),
                 cache: None,
                 config: LCH{
                     lc: 1.0,
-                    cc: 1.0,
+                    cc: 1.15,
                     hc: 1.0,
                 },
                 mask: None,
@@ -86,7 +87,7 @@ fn main() {
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { color_space: imops::imops::ColorSpaceMatrix::XYZTORGB},
+                config: CST { color_space: imops::imops::ColorSpaceMatrix::XYZTOsRGB},
                 mask: None,
             })
         ];
@@ -106,37 +107,15 @@ fn main() {
                 mask: None,
             }),
             Box::new(Module {
-                name: "Exp".to_string(),
-                cache: None,
-                config: Exp { ev: 2.0},
-                mask: None,
-            }),
-            Box::new(Module {
-                name: "Contrast".to_string(),
-                cache: None,
-                config: Contrast { c: 1.25},
-                mask: None,
-            }),
-            Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
                 config: CST { color_space: imops::imops::ColorSpaceMatrix::CameraToXYZ},
                 mask: None,
             }),
             Box::new(Module {
-                name: "LCH".to_string(),
-                cache: None,
-                config: LCH{
-                    lc: 1.0,
-                    cc: 2.0,
-                    hc: 1.0,
-                },
-                mask: None,
-            }),
-            Box::new(Module {
                 name: "Sigmoid (Soft)".to_string(),
                 cache: None,
-                config: Sigmoid { c: 8.0 },
+                config: Sigmoid { c: 6.0 },
                 mask: None,
             }),
             Box::new(Module {
@@ -148,16 +127,20 @@ fn main() {
         ];
 
         // --- Process both pipelines starting from a default PipelineImage ---
-        let initial_image = PipelineImage::default();
         println!("Processing pipeline 1...");
-        let img = initial_image.clone();
         let now = Instant::now();
-        let result1 = process_pipeline(img, &pipeline1, &raw_image);
+        // let result1 = process_pipeline(img, &pipeline1, &raw_image);
+        let pipeline1 = PipelineConfig{
+            pipeline_modules: pipeline1,
+        };
+        let result1 = run_pixel_pipeline(raw_image.clone(), pipeline1);
         println!("Pipeline 1 execution time: {}", now.elapsed().as_millis());
         println!("Processing pipeline 2...");
-        let img = initial_image.clone();
         let now = Instant::now();
-        let result2 = process_pipeline(img, &pipeline2, &raw_image);
+        let pipeline2 = PipelineConfig{
+            pipeline_modules: pipeline2,
+        };
+        let result2 = run_pixel_pipeline(raw_image.clone(), pipeline2);
         println!("Pipeline 2 execution time: {}", now.elapsed().as_millis());
 
         // Compare the results of the two pipelines

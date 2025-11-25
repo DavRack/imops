@@ -1,4 +1,5 @@
 #![warn(unused_extern_crates)]
+use image::metadata::{Cicp, CicpColorPrimaries};
 use imops::{config, pipeline::run_pixel_pipeline};
 use clap::Parser as Clap_parser;
 use rawler::{self};
@@ -32,7 +33,12 @@ struct Args {
 fn to_vec(data: imops::imops::PipelineImage) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     let height = data.height;
     let width = data.width;
-    let data2 = data.data.iter().flatten().map(|x| ((x * 255.0) as u8)).collect();
+    let data2 = data
+        .data
+        .iter()
+        .flatten()
+        .map(|x| (x.max(0.0).min(1.0) * 255.0) as u8)
+        .collect();
     let img = image::RgbImage::from_vec(width as u32, height as u32, data2).unwrap();
     return img;
 }
@@ -66,6 +72,9 @@ fn main() {
         _ => img,
     };
 
+
+    img.set_color_space(Cicp::DISPLAY_P3).unwrap();
+    println!("{:?}",img.color_space());
     let now = Instant::now();
     img.write_to(
         &mut Cursor::new(img.as_bytes().to_owned()),
