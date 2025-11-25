@@ -7,6 +7,15 @@ edition = "2021"
 name = "imops"
 path = "src/lib.rs"
 
+[[bin]]
+name = "imops-cli"
+path = "src/bin/imops-cli.rs"
+
+[[bin]]
+name = "visual_tests"
+path = "src/bin/visual_tests.rs"
+required-features = ["visual_tests"]
+
 [profile.release]
 opt-level = 3
 
@@ -21,13 +30,8 @@ color = "0.3.2"
 convolve-image = "0.4.0"
 dyn-clone = "1.0.19"
 image = "0.25.5"
-# image-dwt = { git="https://github.com/DavRack/image-dwt.git" }
 itertools = "0.14.0"
-# nalgebra = "0.33.2"
 ndarray = {version = "0.15.6", features = ["rayon", "matrixmultiply-threading"]}
-eframe = "0.27"
-egui = "0.27"
-egui_plot = "0.27"
 rawler = "*"
 rayon = "1.10.0"
 serde = { version = "1.0.217", features = ["derive"] }
@@ -37,6 +41,12 @@ candle-nn = "0.8.0"
 candle-onnx = "0.8.0"
 anyhow = "1.0"
 
+# deps for viewer
+eframe = { version = "0.27", optional = true }
+egui = { version = "0.27", optional = true }
+egui_plot = { version = "0.27", optional = true }
+
 [features]
 default = ["parallel"]
 parallel = []
+visual_tests = ["dep:eframe", "dep:egui", "dep:egui_plot"]

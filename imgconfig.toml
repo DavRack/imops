@@ -30,11 +30,11 @@ c = 1.3
 name = "CST"
 color_space = "CameraToXYZ"
 
-[[pipeline_modules]]
-name = "ChromaDenoise"
-a = 1
-b = 1
-strength = 0.1
+# [[pipeline_modules]]
+# name = "ChromaDenoise"
+# a = 1
+# b = 1
+# strength = 0.1
 
 [[pipeline_modules]]
 name = "LCH"

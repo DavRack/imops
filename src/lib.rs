@@ -13,4 +13,3 @@ pub mod cst;
 pub mod mask;
 pub mod pixels;
 pub mod pipeline;
-pub mod visual_viewwer;
