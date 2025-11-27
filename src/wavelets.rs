@@ -1,4 +1,4 @@
-use std::{isize, time::Instant, usize};
+use std::{isize, usize};
 
 use convolve_image::kernel::SeparableKernel;
 use crate::conditional_paralell::prelude::*;

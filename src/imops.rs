@@ -1,4 +1,4 @@
-use std::{any, fmt, usize};
+use std::{any, usize};
 
 use color::{ColorSpace, Oklch, Srgb, XyzD65};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
@@ -7,9 +7,8 @@ use serde::{Deserialize, Serialize};
 use toml::map::Map;
 // use crate::color_p::gamut_clip_aces;
 use crate::mask::{Mask};
-use crate::{helpers::*, pixels};
+use crate::{helpers::*, pixels, tone_mapping};
 use crate::pixels::*;
-use crate::wavelet_nl_means;
 use crate::demosaic;
 
 use crate::conditional_paralell::prelude::*;
@@ -147,7 +146,7 @@ impl PipelineModule for Module<HighlightReconstruction> {
         let [_, clip_g, _, _] = raw_image.wb_coeffs;
         image.data.par_iter_mut().for_each(|pixel|{
             let [r, g, b] = *pixel;
-            let factor = (g/clip_g);
+            let factor = g/clip_g;
             let reconstructed_g = ((1.0-factor)*g) + (factor*(r+b)*(1.0/2.0));
             pixel[G] = reconstructed_g;
         });
@@ -165,7 +164,7 @@ pub struct ChromaDenoise {
 }
 
 impl PipelineModule for Module<ChromaDenoise> {
-    fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
+    fn process(&self, image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         // image.data = crate::chroma_nr::denoise_chroma(
         //     image.data, 
         //     image.width, 
@@ -267,24 +266,365 @@ pub fn subtractive_desaturation(pixel_xyz: Vec3, amount: f32) -> Vec3 {
     mat3_mul_vec3(&REC2020_TO_XYZ, &out_rgb)
 }
 
+#[inline(always)]
+fn aces_film(x: f32) -> f32 {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    (x * (a * x + b)) / (x * (c * x + d) + e).max(f32::EPSILON)
+}
+
 impl PipelineModule for Module<Sigmoid> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
-        let max_current_value = image.data.iter().fold(0.0, |current_max, pixel| pixel.luminance().max(current_max));
-        let scaled_one = (1.0/image.max_raw_value)*max_current_value;
-        let c = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
+        #[derive(Debug)]
+        enum SigmoidMethod {
+            Custom,
+            Gemini,
+            PlainSigmoid,
+        }
+        let method = SigmoidMethod::PlainSigmoid;
 
-        image.data.iter_mut().for_each(|p|{
-            let lum = p.luminance();
-            let new_lum = (c / (1.0 + (1.0/(self.config.c*lum)))).powi(2);
-            let [r, g, b] = *p;
-            let factor = new_lum/lum;
-            let pix = [r*factor, g*factor, b*factor];
-            let lum = pix.luminance().clamp(0.0, 1.0);
-            let [l, c, h] = XyzD65::convert::<Oklch>(pix);
-            *p = Oklch::convert::<XyzD65>([l, c*(1.0-(lum.powf(0.8))), h])
-            // *p=agx::transform(*p);
-            // *p = subtractive_desaturation(pix, lum.powf(2.0));
-        });
+        match method {
+            SigmoidMethod::PlainSigmoid => {
+                let max_current_value = image.data.iter().fold(0.0, |current_max, pixel| pixel.norm().max(current_max));
+                let scaled_one = (1.0/image.max_raw_value)*max_current_value;
+                let sigmoid_normalization_constant = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
+
+                fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+                    a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+                }
+                const REC709_LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
+
+                fn sanitize_rgb(rgb: [f32; 3]) -> [f32; 3] {
+                    let min_val = rgb[0].min(rgb[1]).min(rgb[2]);
+
+                    // If all channels are positive, the color is valid. Return as is.
+                    if min_val >= 0.0 {
+                        return rgb;
+                    }
+
+                    // The color is out of gamut (negative). 
+                    // We need to desaturate it towards its own Luminance until it fits.
+                    let luma = dot(rgb, REC709_LUMA);
+
+                    // If the color is so weird it has negative luminance, just black it out.
+                    if luma <= 0.0 {
+                        return [0.0, 0.0, 0.0]; 
+                    }
+
+                    // Solve for x:  min_val + x * (luma - min_val) = 0
+                    // This finds the exact intersection with the gamut boundary.
+                    let sub = luma - min_val;
+                    if sub.abs() < 1e-6 { return [luma, luma, luma]; } // Avoid div by zero
+
+                    let ratio = -min_val / sub;
+
+                    [
+                        rgb[0] + ratio * (luma - rgb[0]),
+                        rgb[1] + ratio * (luma - rgb[1]),
+                        rgb[2] + ratio * (luma - rgb[2]),
+                    ]
+                }
+
+                image.data.iter_mut().for_each(|p|{
+                    let pix = *p;
+                    let lum = pix.luminance();
+                    let transformed_lum = tone_mapping::sigmoid(lum);
+                    let factor = transformed_lum/lum;
+                    let pix = pix.map(|x| (x * factor).clamp(0.0, 1.0));
+                    pix.iter().for_each(|x| if *x < 0.0 || *x > 1.0 { println!("{:?}, {:?}",x, *p)});
+                    let [l, c, h] = XyzD65::convert::<Oklch>(pix);
+                    let pix = Oklch::convert::<XyzD65>([l, c*(1.0-transformed_lum), h]);
+                    *p = pix
+                });
+            },
+            SigmoidMethod::Custom => {
+                let max_current_value = image.data.iter().fold(0.0, |current_max, pixel| pixel.luminance().max(current_max));
+                let scaled_one = (1.0/image.max_raw_value)*max_current_value;
+                let sigmoid_normalization_constant = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
+
+                fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+                    a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+                }
+                                const REC709_LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
+
+                fn sanitize_rgb(rgb: [f32; 3]) -> [f32; 3] {
+                    let min_val = rgb[0].min(rgb[1]).min(rgb[2]);
+
+                    // If all channels are positive, the color is valid. Return as is.
+                    if min_val >= 0.0 {
+                        return rgb;
+                    }
+
+                    // The color is out of gamut (negative). 
+                    // We need to desaturate it towards its own Luminance until it fits.
+                    let luma = dot(rgb, REC709_LUMA);
+
+                    // If the color is so weird it has negative luminance, just black it out.
+                    if luma <= 0.0 {
+                        return [0.0, 0.0, 0.0]; 
+                    }
+
+                    // Solve for x:  min_val + x * (luma - min_val) = 0
+                    // This finds the exact intersection with the gamut boundary.
+                    let sub = luma - min_val;
+                    if sub.abs() < 1e-6 { return [luma, luma, luma]; } // Avoid div by zero
+
+                    let ratio = -min_val / sub;
+
+                    [
+                        rgb[0] + ratio * (luma - rgb[0]),
+                        rgb[1] + ratio * (luma - rgb[1]),
+                        rgb[2] + ratio * (luma - rgb[2]),
+                    ]
+                }
+                image.data.iter_mut().for_each(|p|{
+                    let lum = p.luminance();
+                    let new_lum = (sigmoid_normalization_constant / (1.0 + (1.0/(self.config.c*lum)))).powi(2);
+                    let [r, g, b] = *p;
+                    let factor = new_lum/lum;
+                    let pix = [r*factor, g*factor, b*factor];
+                    let n = new_lum;
+                    let [l, c, h] = XyzD65::convert::<Oklch>(pix);
+                    let pix = Oklch::to_linear_srgb([l, c*(1.0-n.powf(1.5)), h]);
+                    let pix = sanitize_rgb(pix);
+                    *p = Srgb::from_linear_srgb(pix)
+                });
+            },
+            SigmoidMethod::Gemini => {
+                use std::f32::consts::PI;
+
+                // ==========================================
+                // 1. STRUCTS & CONSTANTS
+                // ==========================================
+
+                #[derive(Clone, Copy, Debug)]
+                struct Chromaticities {
+                    red: [f32; 2],
+                    green: [f32; 2],
+                    blue: [f32; 2],
+                    white: [f32; 2],
+                }
+
+                // Standard Rec.709 Primaries (sRGB)
+                const REC709_PRIMARIES: Chromaticities = Chromaticities {
+                    red: [0.64, 0.33],
+                    green: [0.30, 0.60],
+                    blue: [0.15, 0.06],
+                    white: [0.3127, 0.3290], // D65
+                };
+
+                // ==========================================
+                // 2. MATH HELPERS (From Camera-AgX-Lib.h)
+                // ==========================================
+
+                fn mat3_mul_vec3(m: &[f32; 9], v: [f32; 3]) -> [f32; 3] {
+                    [
+                        m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+                        m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
+                        m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
+                    ]
+                }
+
+                // Computes the XYZ conversion matrix from Primaries
+                // (Standard CIE 1931 algorithm)
+                fn primaries_to_xyz_mat(p: Chromaticities) -> [f32; 9] {
+                    let [xr, yr] = p.red;
+                    let [xg, yg] = p.green;
+                    let [xb, yb] = p.blue;
+                    let [xw, yw] = p.white;
+
+                    let zr = 1.0 - xr - yr;
+                    let zg = 1.0 - xg - yg;
+                    let zb = 1.0 - xb - yb;
+                    let zw = 1.0 - xw - yw;
+
+                    let rw = xw / yw;
+                    let gw = 1.0;
+                    let bw = zw / yw;
+
+                    let det = xr * (yg * zb - zg * yb) - xg * (yr * zb - zr * yb) + xb * (yr * zg - zr * yg);
+
+                    let sr = (det.recip()) * (rw * (yg * zb - zg * yb) - gw * (yr * zb - zr * yb) + bw * (yr * zg - zr * yg));
+                    let sg = (det.recip()) * (-rw * (xg * zb - zg * xb) + gw * (xr * zb - zr * xb) - bw * (xr * zg - zr * xg));
+                    let sb = (det.recip()) * (rw * (xg * yb - yg * xb) - gw * (xr * yb - yr * xb) + bw * (xr * yg - yr * xg));
+
+                    [
+                        sr * xr, sg * xg, sb * xb,
+                        sr * yr, sg * yg, sb * yb,
+                        sr * zr, sg * zg, sb * zb,
+                    ]
+                }
+
+                // Inverts a 3x3 Matrix (for Outset)
+                fn mat3_invert(m: &[f32; 9]) -> [f32; 9] {
+                    let det = m[0] * (m[4] * m[8] - m[5] * m[7]) -
+                    m[1] * (m[3] * m[8] - m[5] * m[6]) +
+                    m[2] * (m[3] * m[7] - m[4] * m[6]);
+                    let inv_det = 1.0 / det;
+
+                    [
+                        (m[4] * m[8] - m[5] * m[7]) * inv_det,
+                        (m[2] * m[7] - m[1] * m[8]) * inv_det,
+                        (m[1] * m[5] - m[2] * m[4]) * inv_det,
+                        (m[5] * m[6] - m[3] * m[8]) * inv_det,
+                        (m[0] * m[8] - m[2] * m[6]) * inv_det,
+                        (m[2] * m[3] - m[0] * m[5]) * inv_det,
+                        (m[3] * m[7] - m[4] * m[6]) * inv_det,
+                        (m[1] * m[6] - m[0] * m[7]) * inv_det,
+                        (m[0] * m[4] - m[1] * m[3]) * inv_det,
+                    ]
+                }
+
+                // ==========================================
+                // 3. CORE AGX FUNCTIONS (The "Correct" Parts)
+                // ==========================================
+
+                // Sobotka's "Insetcalcmatrix" from Camera-AgX-Lib.h
+                // This dynamically calculates the compression matrix based on attenuation.
+                fn calc_inset_matrix(p: Chromaticities, att_r: f32, att_g: f32, att_b: f32) -> [f32; 9] {
+                    // 1. Calculate Scale factors (1 / (1-attenuation)^2)
+                    let scale_r = 1.0 / (1.0 - att_r).powi(2);
+                    let scale_g = 1.0 / (1.0 - att_g).powi(2);
+                    let scale_b = 1.0 / (1.0 - att_b).powi(2);
+
+                    // 2. Adjust Primaries towards White Point
+                    // Formula: (Primary - White) * Scale + White
+                    let adj_red = [
+                        (p.red[0] - p.white[0]) * scale_r + p.white[0],
+                        (p.red[1] - p.white[1]) * scale_r + p.white[1],
+                    ];
+                    let adj_green = [
+                        (p.green[0] - p.white[0]) * scale_g + p.white[0],
+                        (p.green[1] - p.white[1]) * scale_g + p.white[1],
+                    ];
+                    let adj_blue = [
+                        (p.blue[0] - p.white[0]) * scale_b + p.white[0],
+                        (p.blue[1] - p.white[1]) * scale_b + p.white[1],
+                    ];
+
+                    let adj_chroma = Chromaticities {
+                        red: adj_red,
+                        green: adj_green,
+                        blue: adj_blue,
+                        white: p.white,
+                    };
+
+                    // 3. Compute Transform: RGB -> XYZ -> Adjusted RGB
+                    let rgb_to_xyz = primaries_to_xyz_mat(p);
+                    let xyz_to_adj = mat3_invert(&primaries_to_xyz_mat(adj_chroma));
+
+                    // Multiply matrices: XYZ_to_Adj * RGB_to_XYZ
+                    // (Note: In Sobotka's code it's `mult_f33_f33(In2XYZ, XYZ2Adj)`)
+                    // We implement row-by-column multiplication here:
+                    let m1 = xyz_to_adj;
+                    let m2 = rgb_to_xyz;
+
+                    [
+                        m1[0]*m2[0]+m1[1]*m2[3]+m1[2]*m2[6], m1[0]*m2[1]+m1[1]*m2[4]+m1[2]*m2[7], m1[0]*m2[2]+m1[1]*m2[5]+m1[2]*m2[8],
+                        m1[3]*m2[0]+m1[4]*m2[3]+m1[5]*m2[6], m1[3]*m2[1]+m1[4]*m2[4]+m1[5]*m2[7], m1[3]*m2[2]+m1[4]*m2[5]+m1[5]*m2[8],
+                        m1[6]*m2[0]+m1[7]*m2[3]+m1[8]*m2[6], m1[6]*m2[1]+m1[7]*m2[4]+m1[8]*m2[7], m1[6]*m2[2]+m1[7]*m2[5]+m1[8]*m2[8],
+                    ]
+                }
+
+                // Sobotka's Normalized Log2 Encoding (tf == 10)
+                fn agx_log2_resolve(val: f32) -> f32 {
+                    // Standard AgX Resolve Middle Grey
+                    let v = val / 0.18; 
+
+                    // Log2
+                    let log_v = v.max(1e-10).log2();
+
+                    // Clamp to Range [-10.0, 6.5]
+                    let clamped = log_v.clamp(-10.0, 6.5);
+
+                    // Normalize to [0.0, 1.0] (Total range 16.5 stops)
+                    (clamped + 10.0) / 16.5
+                }
+
+                // The AgX Base Sigmoid (Golden Curve)
+                fn agx_sigmoid(x: f32) -> f32 {
+                    let t = x.clamp(0.0, 1.0);
+                    let t2 = t * t;
+                    let t4 = t2 * t2;
+
+                    // Coefficients from AgX implementation
+                    0.01826068 
+                    + 0.90696317 * t 
+                    + 0.18342209 * t2 
+                    - 0.5284358  * (t2 * t) 
+                    + 0.6402758  * t4 
+                    - 0.3204968  * (t4 * t)
+                }
+
+                // ==========================================
+                // 4. MAIN PIPELINE
+                // ==========================================
+
+                // Pre-calculate matrices (Do this once outside the loop!)
+                // Default "AgX Kraken" settings from README:
+                // Attenuation: 0.2
+                let inset_mat = calc_inset_matrix(REC709_PRIMARIES, 0.2, 0.2, 0.2);
+                let outset_mat = mat3_invert(&inset_mat); // Restore gamut
+// const REC709_PRIMARIES: Chromaticities = Chromaticities {
+//     red: [0.64, 0.33],
+//     green: [0.30, 0.60],
+//     blue: [0.15, 0.06],
+//     white: [0.3127, 0.3290], // D65
+// };
+
+// ==========================================
+// 2. THE PIPELINE
+// ==========================================
+
+// Pre-calc Matrices (as before)
+// We calculate the matrices specifically for Rec.709 primaries.
+// This means we DO NOT need to convert to ARRI LogC. 
+// We can stay in Linear Rec.709, which is a lossless conversion from your XYZ D65.
+let inset_mat = calc_inset_matrix(REC709_PRIMARIES, 0.2, 0.2, 0.2);
+let outset_mat = mat3_invert(&inset_mat);
+
+image.data.iter_mut().for_each(|p| {
+    // 1. INPUT: XYZ D65 Linear -> Linear Rec.709
+    // Since your input is XYZ D65 Linear, and we built the AgX matrices 
+    // using Rec.709 primaries above, we must convert to Linear Rec.709 here.
+    let mut rgb = XyzD65::to_linear_srgb(*p);
+
+    // 2. Sanitize / Clip Negatives
+    // Linear conversions from XYZ can produce negatives for out-of-gamut colors.
+    // AgX math requires positive input.
+    rgb[0] = rgb[0].max(1e-6);
+    rgb[1] = rgb[1].max(1e-6);
+    rgb[2] = rgb[2].max(1e-6);
+
+    // 3. AgX Inset (Gamut Compression)
+    let inset = mat3_mul_vec3(&inset_mat, rgb);
+
+    // 4. Log2 Encoding + Sigmoid
+    // The library uses a specific normalization for Rec.709/sRGB inputs.
+    // Middle Grey (0.18) is the anchor.
+    let transformed = [
+        agx_sigmoid(agx_log2_resolve(inset[0])),
+        agx_sigmoid(agx_log2_resolve(inset[1])),
+        agx_sigmoid(agx_log2_resolve(inset[2])),
+    ];
+
+    // 5. AgX Outset (Gamut Restoration)
+    let outset = mat3_mul_vec3(&outset_mat, transformed);
+
+    // 6. OUTPUT: Linear Rec.709 -> XYZ D65 Linear
+    // We strictly clamp to 0.0 to avoid producing invalid XYZ.
+    let final_rgb = [
+        outset[0].max(0.0),
+        outset[1].max(0.0),
+        outset[2].max(0.0),
+    ];
+    
+    *p = Srgb::from_linear_srgb(final_rgb);
+});},
+        }
         return image
     }
 }

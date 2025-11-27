@@ -1,4 +1,4 @@
-use crate::wavelets::{Kernel, WaveletDecompose};
+use crate::wavelets::Kernel;
 use crate::conditional_paralell::prelude::*;
 use crate::cst::{xyz_to_oklab, oklab_to_xyz};
 use crate::nl_means;
