@@ -2,11 +2,11 @@
 
 [[pipeline_modules]]
 name = "Demosaic"
-algorithm = "markesteijn"
+algorithm = "fast"
 
-# [[pipeline_modules]]
-# name = "Crop"
-# factor = 1
+[[pipeline_modules]]
+name = "Crop"
+factor = 1
 # point = [0, 0]
 # size = [1, 1]
 # view_window = [1920, 1080]
@@ -23,24 +23,25 @@ name = "Exp"
 ev = 2
 
 [[pipeline_modules]]
-name = "Contrast"
-c = 1.5
+name = "CST"
+color_space = "CameraToWCS"
 
 [[pipeline_modules]]
-name = "CST"
-color_space = "CameraToXYZ"
+name = "Contrast"
+c = 1.2
 
-# [[pipeline_modules]]
-# name = "ChromaDenoise"
-# a = 1
-# b = 1
-# strength = 0.1
 
-# [[pipeline_modules]]
-# name = "LCH"
-# lc = 1
-# cc = 1.8
-# hc = 1
+# # [[pipeline_modules]]
+# # name = "ChromaDenoise"
+# # a = 1
+# # b = 1
+# # strength = 0.1
+
+[[pipeline_modules]]
+name = "LCH"
+lc = 1
+cc = 1
+hc = 1
 
 [[pipeline_modules]]
 name = "Sigmoid"
@@ -48,4 +49,4 @@ c = 6
 
 [[pipeline_modules]]
 name = "CST"
-color_space = "XYZTOsRGB"
+color_space = "WCSTOsRGB"

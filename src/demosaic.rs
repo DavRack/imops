@@ -1,14 +1,38 @@
+use std::time::Instant;
 use std::usize;
 
-use rawler::imgop;
 use rawler::imgop::{Dim2, Rect};
 use ndarray::{Array2, Array3};
 use rawler::pixarray::RgbF32;
 use crate::conditional_paralell::prelude::*;
 
-pub fn crop(dim: Dim2, crop_rect: Rect, data: Vec<f32>) -> (Vec<f32>, usize, usize) {
-    let nim = imgop::crop(&data, dim, crop_rect);
-    return (nim, crop_rect.d.w, crop_rect.d.h);
+pub fn crop(dim: Dim2, crop_rect: Rect, data: Vec<u16>) -> (Vec<u16>, usize, usize) {
+    let crop_w = crop_rect.d.w;
+    let crop_h = crop_rect.d.h;
+    let full_w = dim.w;
+    let start_x = crop_rect.p.x;
+    let start_y = crop_rect.p.y;
+
+    // 1. Allocation
+    // We reserve capacity. This does NOT zero the memory, so it is instant.
+    let mut output = Vec::with_capacity(crop_w * crop_h);
+
+    // 2. Row-by-Row Copy
+    // We iterate manually to avoid Iterator overhead, calculating offsets exactly like the unsafe version.
+    for i in 0..crop_h {
+        let row_idx = start_y + i;
+
+        // Calculate the slice range for the current row
+        let begin = row_idx * full_w + start_x;
+        let end = begin + crop_w;
+
+        // CRITICAL OPTIMIZATION:
+        // &data[begin..end] creates a temporary slice (checks bounds once).
+        // extend_from_slice uses internal memcpy to write to the uninitialized capacity of 'output'.
+        output.extend_from_slice(&data[begin..end]);
+    }
+
+    (output, crop_w, crop_h)
 }
 pub fn get_cfa(cfa: rawler::CFA, crop_rect: Rect) -> rawler::CFA {
     let x = crop_rect.p.x;
@@ -233,72 +257,35 @@ impl DemosaicAlgorithms{
         cfa: rawler::CFA,
         input: Vec<f32>,
     ) -> RgbF32 {
-        let mut rgb = RgbF32::new(width, height);
+        let new_width = width / 2;
+        let new_height = height / 2;
+        let mut rgb = RgbF32::new(new_width, new_height);
 
+        let c00 = cfa.color_at(0, 0);
+        let c01 = cfa.color_at(0, 1);
+        let c10 = cfa.color_at(1, 0);
+        let c11 = cfa.color_at(1, 1);
+
+        let a = Instant::now();
         rgb.data.par_iter_mut().enumerate().for_each(|(idx, pix)| {
-            let col = idx % width;
-            let row = (idx - col) / width;
+            let new_col = idx % new_width;
+            let new_row = idx / new_width;
 
-            match cfa.color_at(row, col) {
-                0 => { // Red pixel
-                    pix[0] = input[idx];
-                    // Interpolate Green
-                    let mut g_sum = 0.0;
-                    let mut g_count = 0;
-                    if row > 0 { g_sum += input[(row - 1) * width + col]; g_count += 1; }
-                    if row < height - 1 { g_sum += input[(row + 1) * width + col]; g_count += 1; }
-                    if col > 0 { g_sum += input[row * width + col - 1]; g_count += 1; }
-                    if col < width - 1 { g_sum += input[row * width + col + 1]; g_count += 1; }
-                    pix[1] = if g_count > 0 { g_sum / g_count as f32 } else { 0.0 };
+            let r = new_row * 2;
+            let c = new_col * 2;
 
-                    // Interpolate Blue
-                    let mut b_sum = 0.0;
-                    let mut b_count = 0;
-                    if row > 0 && col > 0 { b_sum += input[(row - 1) * width + col - 1]; b_count += 1; }
-                    if row > 0 && col < width - 1 { b_sum += input[(row - 1) * width + col + 1]; b_count += 1; }
-                    if row < height - 1 && col > 0 { b_sum += input[(row + 1) * width + col - 1]; b_count += 1; }
-                    if row < height - 1 && col < width - 1 { b_sum += input[(row + 1) * width + col + 1]; b_count += 1; }
-                    pix[2] = if b_count > 0 { b_sum / b_count as f32 } else { 0.0 };
-                }
-                1 => { // Green pixel
-                    pix[1] = input[idx];
-                    // Interpolate Red
-                    let mut r_sum = 0.0;
-                    let mut r_count = 0;
-                    if row > 0 { r_sum += input[(row - 1) * width + col]; r_count += 1; }
-                    if row < height - 1 { r_sum += input[(row + 1) * width + col]; r_count += 1; }
-                    pix[0] = if r_count > 0 { r_sum / r_count as f32 } else { 0.0 }; // Vertical or Horizontal depending on pattern
+            let tl_idx = r * width + c;
 
-                    // Interpolate Blue
-                    let mut b_sum = 0.0;
-                    let mut b_count = 0;
-                    if col > 0 { b_sum += input[row * width + col - 1]; b_count += 1; }
-                    if col < width - 1 { b_sum += input[row * width + col + 1]; b_count += 1; }
-                    pix[2] = if b_count > 0 { b_sum / b_count as f32 } else { 0.0 }; // Vertical or Horizontal depending on pattern
-                }
-                2 => { // Blue pixel
-                    pix[2] = input[idx];
-                    // Interpolate Green
-                    let mut g_sum = 0.0;
-                    let mut g_count = 0;
-                    if row > 0 { g_sum += input[(row - 1) * width + col]; g_count += 1; }
-                    if row < height - 1 { g_sum += input[(row + 1) * width + col]; g_count += 1; }
-                    if col > 0 { g_sum += input[row * width + col - 1]; g_count += 1; }
-                    if col < width - 1 { g_sum += input[row * width + col + 1]; g_count += 1; }
-                    pix[1] = if g_count > 0 { g_sum / g_count as f32 } else { 0.0 };
+            let mut values = [0.0, 0.0, 0.0];
 
-                    // Interpolate Red
-                    let mut r_sum = 0.0;
-                    let mut r_count = 0;
-                    if row > 0 && col > 0 { r_sum += input[(row - 1) * width + col - 1]; r_count += 1; }
-                    if row > 0 && col < width - 1 { r_sum += input[(row - 1) * width + col + 1]; r_count += 1; }
-                    if row < height - 1 && col > 0 { r_sum += input[(row + 1) * width + col - 1]; r_count += 1; }
-                    if row < height - 1 && col < width - 1 { r_sum += input[(row + 1) * width + col + 1]; r_count += 1; }
-                    pix[0] = if r_count > 0 { r_sum / r_count as f32 } else { 0.0 };
-                }
-                _ => {}
-            }
+            values[c00] = input[tl_idx];
+            values[c01] = input[tl_idx + 1];
+            values[c10] = input[tl_idx + width];
+            values[c11] = input[tl_idx + width + 1];
+
+            *pix = values;
         });
+        println!("debayer rgb creation: {}", Instant::now().duration_since(a).as_millis());
 
         rgb
     }

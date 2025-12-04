@@ -1,13 +1,17 @@
 use std::{any, usize};
+use std::time::Instant;
 
-use color::{ColorSpace, Oklch, Srgb, XyzD65};
+
+use color::{ColorSpace, Oklch, Srgb, XyzD65, AcesCg};
 use rawler::{imgop::xyz::Illuminant, pixarray::RgbF32, RawImage};
 // use sealed::Cache;
 use serde::{Deserialize, Serialize};
 use toml::map::Map;
+use crate::chromaCompresion::RgcParams;
 // use crate::color_p::gamut_clip_aces;
 use crate::mask::{Mask};
-use crate::{helpers::*, pixels, tone_mapping};
+use crate::tone_mapping::sigmoid;
+use crate::{chromaCompresion, helpers::*, pixels, tone_mapping};
 use crate::pixels::*;
 use crate::demosaic;
 
@@ -16,6 +20,9 @@ use crate::conditional_paralell::prelude::*;
 const R: usize = 0;
 const G: usize = 1;
 const B: usize = 2;
+
+// working color space
+type WCS = AcesCg;
 
 pub trait GenericModule {
     fn set_cache(&mut self, cache: PipelineImage);
@@ -90,6 +97,46 @@ impl<T> Module<T>{
     }
 }
 
+pub fn subtractive_saturation_acescg(rgb: [f32; 3], saturation: f32) -> [f32; 3] {
+    // 1. ACEScg Luminance Weights (AP1 Primaries)
+    // These are necessary to determine the "Achromatic Axis" (Visual Neutral).
+    const LUMA_WEIGHTS: [f32; 3] = [0.2722287168, 0.6740817658, 0.0536895174];
+
+    // 2. Safety Clamp
+    // We cannot take the log of 0 or negative numbers.
+    // 1e-5 prevents NaNs while preserving deep blacks.
+    let r = rgb[0].max(1e-5);
+    let g = rgb[1].max(1e-5);
+    let b = rgb[2].max(1e-5);
+
+    // 3. Convert Linear Transmission to Optical Density (The "CMY" conversion)
+    // D = -ln(T). Higher density = More dye = Less light.
+    let d_r = -r.ln(); // Density of Cyan (absorbs Red)
+    let d_g = -g.ln(); // Density of Magenta (absorbs Green)
+    let d_b = -b.ln(); // Density of Yellow (absorbs Blue)
+
+    // 4. Calculate Achromatic Density (The "Grey" point)
+    // We use a weighted average based on ACEScg luminance to preserve perceptual brightness.
+    // Note: In pure chemical physics, this might be an unweighted average, 
+    // but for image processing, weighting prevents hue shifts in perceived lightness.
+    let d_achromatic = (d_r * LUMA_WEIGHTS[0]) + 
+                       (d_g * LUMA_WEIGHTS[1]) + 
+                       (d_b * LUMA_WEIGHTS[2]);
+
+    // 5. Expand Density (Apply Saturation)
+    // We expand the distance of each channel's density from the neutral axis.
+    let d_r_sat = d_achromatic + (d_r - d_achromatic) * saturation;
+    let d_g_sat = d_achromatic + (d_g - d_achromatic) * saturation;
+    let d_b_sat = d_achromatic + (d_b - d_achromatic) * saturation;
+
+    // 6. Convert Density back to Linear Transmission
+    // T = e^(-D)
+    [
+        (-d_r_sat).exp(),
+        (-d_g_sat).exp(),
+        (-d_b_sat).exp()
+    ]
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct  LCH{
@@ -97,13 +144,76 @@ pub struct  LCH{
     pub cc: SubPixel,
     pub hc: SubPixel,
 }
+pub fn gamut_compress_smooth(pix: [SubPixel; 3]) -> [SubPixel; 3] {
+    // 1. ACEScg Luminance Coefficients
+    // These define the "axis" of brightness we desaturate towards.
+    let [r, g, b] = pix;
+    let luma = r * 0.2722287168 + g * 0.6740817658 + b * 0.0536895174;
+
+    // 2. Find the channel that is most "out of bounds"
+    let min_channel = r.min(g).min(b);
+
+    // 3. Define the Threshold (the "Knee")
+    // Values above this are linear. Values below are compressed.
+    // 0.04 (4%) is standard for linear rendering pipelines.
+    let threshold = 0.04;
+
+    // If the lowest channel is already safe, do nothing.
+    if min_channel >= threshold {
+        return [r, g, b];
+    }
+
+    // 4. Calculate the "Target" value for the minimum channel.
+    // Instead of hard-clipping to 0.0, we use an exponential decay.
+    // This ensures a smooth slope (C1 continuity) at the threshold.
+    let target_min = if min_channel < threshold {
+         threshold * ((min_channel - threshold) / threshold).exp()
+    } else {
+        min_channel
+    };
+
+    // 5. Calculate the Scale Factor (Saturation compression)
+    // We want to interpolate between the Original Color and Gray (Luma)
+    // such that 'min_channel' is pulled up to 'target_min'.
+    //
+    // Formula derivation: 
+    // NewColor = Luma + k * (OldColor - Luma)
+    // TargetMin = Luma + k * (MinChannel - Luma)
+    // k = (TargetMin - Luma) / (MinChannel - Luma)
+    
+    // Safety: If the pixel is pure black or negative luma, avoid div by zero
+    if luma <= 1e-9 {
+        return [0.0, 0.0, 0.0];
+    }
+    
+    // Calculate the distance of the lowest channel from the achromatic center
+    let chromatic_dist = min_channel - luma;
+    
+    // If the distance is basically zero, we can't compress, just return gray.
+    if chromatic_dist.abs() < 1e-9 {
+        return [luma, luma, luma];
+    }
+
+    // Calculate the compression factor needed
+    let scale = (target_min - luma) / chromatic_dist;
+
+    // 6. Apply the scaling to the vector (relative to Luma)
+    [
+        luma + scale * (r - luma),
+        luma + scale * (g - luma),
+        luma + scale * (b - luma)
+    ]
+}
 
 impl PipelineModule for Module<LCH> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         image.data.par_iter_mut().for_each(
             |p| {
-                let [l, c, h] = XyzD65::convert::<Oklch>(*p);
-                *p = Oklch::convert::<XyzD65>([l*self.config.lc, c*self.config.cc, h*self.config.hc])
+                // let pix = subtractive_saturation_acescg(*p, self.config.cc);
+
+                let [l, c, h] = WCS::convert::<Oklch>(*p);
+                let pix = Oklch::convert::<WCS>([l*self.config.lc, c*self.config.cc, h*self.config.hc]);
+                *p = pix;
             }
         );
         return image
@@ -197,13 +307,13 @@ pub struct Sigmoid {
     pub c: SubPixel
 }
 /// A 3-component vector representing color (XYZ or RGB).
-pub type Vec3 = [f32; 3];
+pub type Vec3 = [SubPixel; 3];
 
 /// A 3x3 Matrix stored in row-major order.
 /// [ m0, m1, m2,
 ///   m3, m4, m5,
 ///   m6, m7, m8 ]
-pub type Mat3 = [f32; 9];
+pub type Mat3 = [SubPixel; 9];
 const XYZ_TO_REC2020: Mat3 = [
          1.7166512, -0.3556708, -0.2533663,
         -0.6666844,  1.6164812,  0.0157685,
@@ -224,13 +334,13 @@ fn mat3_mul_vec3(m: &Mat3, v: &Vec3) -> Vec3 {
         m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
     ]
 }
-pub fn subtractive_desaturation(pixel_xyz: Vec3, amount: f32) -> Vec3 {
+pub fn subtractive_desaturation(pixel_xyz: Vec3, amount: SubPixel) -> Vec3 {
     // 1. Convert to Linear Rec.2020
     // (We use Rec.2020 as the working space for the channel split)
     let rgb = mat3_mul_vec3(&XYZ_TO_REC2020, &pixel_xyz);
 
     // 2. Epsilon to prevent -inf in log2 (Singularity at 0.0 light)
-    const EPSILON: f32 = 1e-8;
+    const EPSILON: SubPixel = 1e-8;
 
     // 3. Convert Linear Light -> Optical Density
     // Density = -log2(Light). 
@@ -267,15 +377,85 @@ pub fn subtractive_desaturation(pixel_xyz: Vec3, amount: f32) -> Vec3 {
 }
 
 #[inline(always)]
-fn aces_film(x: f32) -> f32 {
+fn aces_film(x: SubPixel) -> SubPixel {
     let a = 2.51;
     let b = 0.03;
     let c = 2.43;
     let d = 0.59;
     let e = 0.14;
-    (x * (a * x + b)) / (x * (c * x + d) + e).max(f32::EPSILON)
+    (x * (a * x + b)) / (x * (c * x + d) + e).max(SubPixel::EPSILON)
 }
+pub fn apply_filmic_saturation(pixel: [SubPixel; 3], saturation: SubPixel) -> [SubPixel; 3] {
+            let [r, g, b] = pixel;
 
+            // ACEScg (AP1) Luminance Weights
+            const W_R: SubPixel = 0.2722287168;
+            const W_G: SubPixel = 0.6740817658;
+            const W_B: SubPixel = 0.0536895174;
+
+            // 1. Calculate Perceived Luminance
+            let luma = r * W_R + g * W_G + b * W_B;
+
+            // 2. Stable Saturation Mixing (Lerp)
+            let s = saturation.max(0.0);
+            let inv_s = 1.0 - s;
+
+            // This is where negatives are born if s > 1.0 and channel < luma
+            let mut r_sat = r * s + luma * inv_s;
+            let mut g_sat = g * s + luma * inv_s;
+            let mut b_sat = b * s + luma * inv_s;
+
+            // 3. Subtractive Density (Only applies when adding saturation)
+            // (This step reduces brightness but doesn't fix negative signs)
+            if s > 1.0 {
+                let sat_gain = s - 1.0;
+                let density = 1.0 / (1.0 + sat_gain * 0.05);
+
+                r_sat *= density;
+                g_sat *= density;
+                b_sat *= density;
+            }
+
+            // 4. FIX: Soft Gamut Compression (The "Toe")
+            // If we pushed any channel below 0.0, we desaturate RELATIVE TO LUMA 
+            // to bring it back in gamut without shifting hue or hard clamping.
+
+            // Find the lowest channel value
+            // let min_channel = r_sat.min(g_sat).min(b_sat);
+
+            // // Threshold where we start compressing (linear above this, curved below)
+            // let threshold = 0.01; // Keep it low to preserve deep blacks
+
+            // if min_channel < threshold {
+            //     // A. Calculate where the minimum channel SHOULD be (The Soft Knee)
+            //     // If min < threshold, we curve it asymptotically towards 0.0
+            //     let target_min = if min_channel < threshold {
+            //         threshold * ((min_channel - threshold) / threshold).exp()
+            //     } else {
+            //         min_channel
+            //     };
+
+            //     // B. Calculate current saturation distance from Luma
+            //     // Note: We recalculate luma of the NEW saturated pixel to be safe,
+            //     // though theoretically, this operation preserves luma.
+            //     let luma_sat = r_sat * W_R + g_sat * W_G + b_sat * W_B;
+
+            //     let dist = min_channel - luma_sat;
+
+            //     // Avoid divide by zero if pixel is purely achromatic
+            //     if dist.abs() > 1e-9 {
+            //         // C. Calculate scale factor to pull the pixel back into gamut
+            //         let scale = (target_min - luma_sat) / dist;
+
+            //         // D. Apply scale (Luminance preserving desaturation)
+            //         r_sat = luma_sat + scale * (r_sat - luma_sat);
+            //         g_sat = luma_sat + scale * (g_sat - luma_sat);
+            //         b_sat = luma_sat + scale * (b_sat - luma_sat);
+            //     }
+            // }
+
+            [r_sat, g_sat, b_sat]
+        }
 impl PipelineModule for Module<Sigmoid> {
     fn process(&self, mut image: PipelineImage, _raw_image: &RawImage) -> PipelineImage {
         #[derive(Debug)]
@@ -284,117 +464,31 @@ impl PipelineModule for Module<Sigmoid> {
             Gemini,
             PlainSigmoid,
         }
-        let method = SigmoidMethod::PlainSigmoid;
+        let method = SigmoidMethod::Custom;
+
 
         match method {
             SigmoidMethod::PlainSigmoid => {
-                let max_current_value = image.data.iter().fold(0.0, |current_max, pixel| pixel.norm().max(current_max));
-                let scaled_one = (1.0/image.max_raw_value)*max_current_value;
-                let sigmoid_normalization_constant = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
-
-                fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-                    a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
-                }
-                const REC709_LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
-
-                fn sanitize_rgb(rgb: [f32; 3]) -> [f32; 3] {
-                    let min_val = rgb[0].min(rgb[1]).min(rgb[2]);
-
-                    // If all channels are positive, the color is valid. Return as is.
-                    if min_val >= 0.0 {
-                        return rgb;
-                    }
-
-                    // The color is out of gamut (negative). 
-                    // We need to desaturate it towards its own Luminance until it fits.
-                    let luma = dot(rgb, REC709_LUMA);
-
-                    // If the color is so weird it has negative luminance, just black it out.
-                    if luma <= 0.0 {
-                        return [0.0, 0.0, 0.0]; 
-                    }
-
-                    // Solve for x:  min_val + x * (luma - min_val) = 0
-                    // This finds the exact intersection with the gamut boundary.
-                    let sub = luma - min_val;
-                    if sub.abs() < 1e-6 { return [luma, luma, luma]; } // Avoid div by zero
-
-                    let ratio = -min_val / sub;
-
-                    [
-                        rgb[0] + ratio * (luma - rgb[0]),
-                        rgb[1] + ratio * (luma - rgb[1]),
-                        rgb[2] + ratio * (luma - rgb[2]),
-                    ]
-                }
-
                 image.data.iter_mut().for_each(|p|{
-                    let pix = *p;
-                    let lum = pix.luminance();
-                    let transformed_lum = tone_mapping::sigmoid(lum);
-                    let factor = transformed_lum/lum;
-                    let pix = pix.map(|x| (x * factor).clamp(0.0, 1.0));
-                    pix.iter().for_each(|x| if *x < 0.0 || *x > 1.0 { println!("{:?}, {:?}",x, *p)});
-                    let [l, c, h] = XyzD65::convert::<Oklch>(pix);
-                    let pix = Oklch::convert::<XyzD65>([l, c*(1.0-transformed_lum), h]);
-                    *p = pix
+                    *p = p.map(sigmoid)
                 });
             },
             SigmoidMethod::Custom => {
-                let max_current_value = image.data.iter().fold(0.0, |current_max, pixel| pixel.luminance().max(current_max));
-                let scaled_one = (1.0/image.max_raw_value)*max_current_value;
-                let sigmoid_normalization_constant = 1.0 + (1.0/(scaled_one*self.config.c)).powi(2);
 
-                fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-                    a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
-                }
-                                const REC709_LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
-
-                fn sanitize_rgb(rgb: [f32; 3]) -> [f32; 3] {
-                    let min_val = rgb[0].min(rgb[1]).min(rgb[2]);
-
-                    // If all channels are positive, the color is valid. Return as is.
-                    if min_val >= 0.0 {
-                        return rgb;
-                    }
-
-                    // The color is out of gamut (negative). 
-                    // We need to desaturate it towards its own Luminance until it fits.
-                    let luma = dot(rgb, REC709_LUMA);
-
-                    // If the color is so weird it has negative luminance, just black it out.
-                    if luma <= 0.0 {
-                        return [0.0, 0.0, 0.0]; 
-                    }
-
-                    // Solve for x:  min_val + x * (luma - min_val) = 0
-                    // This finds the exact intersection with the gamut boundary.
-                    let sub = luma - min_val;
-                    if sub.abs() < 1e-6 { return [luma, luma, luma]; } // Avoid div by zero
-
-                    let ratio = -min_val / sub;
-
-                    [
-                        rgb[0] + ratio * (luma - rgb[0]),
-                        rgb[1] + ratio * (luma - rgb[1]),
-                        rgb[2] + ratio * (luma - rgb[2]),
-                    ]
-                }
                 image.data.iter_mut().for_each(|p|{
-                    let lum = p.luminance();
-                    let new_lum = (sigmoid_normalization_constant / (1.0 + (1.0/(self.config.c*lum)))).powi(2);
-                    let [r, g, b] = *p;
-                    let factor = new_lum/lum;
-                    let pix = [r*factor, g*factor, b*factor];
-                    let n = new_lum;
-                    let [l, c, h] = XyzD65::convert::<Oklch>(pix);
-                    let pix = Oklch::to_linear_srgb([l, c*(1.0-n.powf(1.5)), h]);
-                    let pix = sanitize_rgb(pix);
-                    *p = Srgb::from_linear_srgb(pix)
+                    let pix = *p;
+                    // let pix = vibrance(pix, 3.5);
+                    let params = &RgcParams::default();
+                    let pix = chromaCompresion::gamut_compress_pixel(pix, params);
+                    let [_, _, h] = WCS::convert::<Oklch>(pix);
+                    let pix = pix.map(tone_mapping::sigmoid);
+                    let [l,c,_] = WCS::convert::<Oklch>(pix);
+                    let transformed_lum = pix.luminance();
+                    let pix = Oklch::convert::<WCS>([l, c*((-transformed_lum + 1.0).powf(0.5)), h]);
+                    *p = pix
                 });
             },
             SigmoidMethod::Gemini => {
-                use std::f32::consts::PI;
 
                 // ==========================================
                 // 1. STRUCTS & CONSTANTS
@@ -402,10 +496,10 @@ impl PipelineModule for Module<Sigmoid> {
 
                 #[derive(Clone, Copy, Debug)]
                 struct Chromaticities {
-                    red: [f32; 2],
-                    green: [f32; 2],
-                    blue: [f32; 2],
-                    white: [f32; 2],
+                    red: [SubPixel; 2],
+                    green: [SubPixel; 2],
+                    blue: [SubPixel; 2],
+                    white: [SubPixel; 2],
                 }
 
                 // Standard Rec.709 Primaries (sRGB)
@@ -420,7 +514,7 @@ impl PipelineModule for Module<Sigmoid> {
                 // 2. MATH HELPERS (From Camera-AgX-Lib.h)
                 // ==========================================
 
-                fn mat3_mul_vec3(m: &[f32; 9], v: [f32; 3]) -> [f32; 3] {
+                fn mat3_mul_vec3(m: &[SubPixel; 9], v: [SubPixel; 3]) -> [SubPixel; 3] {
                     [
                         m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
                         m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
@@ -430,7 +524,7 @@ impl PipelineModule for Module<Sigmoid> {
 
                 // Computes the XYZ conversion matrix from Primaries
                 // (Standard CIE 1931 algorithm)
-                fn primaries_to_xyz_mat(p: Chromaticities) -> [f32; 9] {
+                fn primaries_to_xyz_mat(p: Chromaticities) -> [SubPixel; 9] {
                     let [xr, yr] = p.red;
                     let [xg, yg] = p.green;
                     let [xb, yb] = p.blue;
@@ -459,7 +553,7 @@ impl PipelineModule for Module<Sigmoid> {
                 }
 
                 // Inverts a 3x3 Matrix (for Outset)
-                fn mat3_invert(m: &[f32; 9]) -> [f32; 9] {
+                fn mat3_invert(m: &[SubPixel; 9]) -> [SubPixel; 9] {
                     let det = m[0] * (m[4] * m[8] - m[5] * m[7]) -
                     m[1] * (m[3] * m[8] - m[5] * m[6]) +
                     m[2] * (m[3] * m[7] - m[4] * m[6]);
@@ -484,7 +578,7 @@ impl PipelineModule for Module<Sigmoid> {
 
                 // Sobotka's "Insetcalcmatrix" from Camera-AgX-Lib.h
                 // This dynamically calculates the compression matrix based on attenuation.
-                fn calc_inset_matrix(p: Chromaticities, att_r: f32, att_g: f32, att_b: f32) -> [f32; 9] {
+                fn calc_inset_matrix(p: Chromaticities, att_r: SubPixel, att_g: SubPixel, att_b: SubPixel) -> [SubPixel; 9] {
                     // 1. Calculate Scale factors (1 / (1-attenuation)^2)
                     let scale_r = 1.0 / (1.0 - att_r).powi(2);
                     let scale_g = 1.0 / (1.0 - att_g).powi(2);
@@ -530,7 +624,7 @@ impl PipelineModule for Module<Sigmoid> {
                 }
 
                 // Sobotka's Normalized Log2 Encoding (tf == 10)
-                fn agx_log2_resolve(val: f32) -> f32 {
+                fn agx_log2_resolve(val: SubPixel) -> SubPixel {
                     // Standard AgX Resolve Middle Grey
                     let v = val / 0.18; 
 
@@ -545,7 +639,7 @@ impl PipelineModule for Module<Sigmoid> {
                 }
 
                 // The AgX Base Sigmoid (Golden Curve)
-                fn agx_sigmoid(x: f32) -> f32 {
+                fn agx_sigmoid(x: SubPixel) -> SubPixel {
                     let t = x.clamp(0.0, 1.0);
                     let t2 = t * t;
                     let t4 = t2 * t2;
@@ -590,7 +684,7 @@ image.data.iter_mut().for_each(|p| {
     // 1. INPUT: XYZ D65 Linear -> Linear Rec.709
     // Since your input is XYZ D65 Linear, and we built the AgX matrices 
     // using Rec.709 primaries above, we must convert to Linear Rec.709 here.
-    let mut rgb = XyzD65::to_linear_srgb(*p);
+    let mut rgb = WCS::to_linear_srgb(*p);
 
     // 2. Sanitize / Clip Negatives
     // Linear conversions from XYZ can produce negatives for out-of-gamut colors.
@@ -724,37 +818,107 @@ pub struct CST {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub enum ColorSpaceMatrix {
     #[default]
-    CameraToXYZ,
-    XYZTOsRGB,
-    XYZTORGB,
+    CameraToWCS,
+    WCSTOsRGB,
+    WCSTORGB,
     RGBTOsRGB,
+}
+pub fn acescg_to_srgb_display_safe(pixel: [SubPixel; 3]) -> [SubPixel; 3] {
+    // 1. Matrix Convert: ACEScg (AP1) -> Linear sRGB (Rec.709)
+    // --------------------------------------------------------
+    let r_lin =  1.70485868 * pixel[0] - 0.62171602 * pixel[1] - 0.08329937 * pixel[2];
+    let g_lin = -0.13007725 * pixel[0] + 1.14073577 * pixel[1] - 0.01055984 * pixel[2];
+    let b_lin = -0.02396418 * pixel[0] - 0.12897547 * pixel[1] + 1.15301402 * pixel[2];
+
+    let mut rgb = [r_lin, g_lin, b_lin];
+
+    // 2. Gamut Mapping (Handle Negatives)
+    // --------------------------------------------------------
+    // Before compressing highlights, we must fix impossible colors (negatives).
+    // We use the same Luminance-Preserving Desaturation from the previous step.
+    let min_val = r_lin.min(g_lin).min(b_lin);
+
+    if min_val < 0.0 {
+        // Rec.709 Luminance weights
+        let luma = r_lin * 0.2126 + g_lin * 0.7152 + b_lin * 0.0722;
+        // Project towards Luma until min_val hits 0.0
+        let factor = luma / (luma - min_val + 1e-6);
+        
+        rgb[0] = luma + (rgb[0] - luma) * factor;
+        rgb[1] = luma + (rgb[1] - luma) * factor;
+        rgb[2] = luma + (rgb[2] - luma) * factor;
+    }
+
+    // 3. Tone Mapping (Handle Highs > 1.0) using Reinhard-Jodie
+    // --------------------------------------------------------
+    // Standard Reinhard (x / 1+x) desaturates too much.
+    // Luminance-only Reinhard (preserve ratios) clips colors ugly.
+    // "Jodie" mixes the two to approximate film saturation roll-off.
+
+    let [r, g, b] = rgb;
+    
+    // Recalculate luma (gamut mapping might have changed it slightly)
+    let luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+
+    // A. Apply Curve to Luminance only
+    let tone_mapped_luma = luma / (1.0 + luma);
+
+    // B. Apply Curve to RGB channels individually
+    let r_tm = r / (1.0 + r);
+    let g_tm = g / (1.0 + g);
+    let b_tm = b / (1.0 + b);
+
+    // C. The Jodie Mix
+    // We blend between A and B based on how saturated the pixel is.
+    // This prevents bright red becoming pink (desaturation) or clipping (hue skew).
+    
+    // Avoid div by zero
+    if luma > 1e-6 {
+        return [
+            tone_mapped_luma.lerp(r_tm, r_tm / r),
+            tone_mapped_luma.lerp(g_tm, g_tm / g),
+            tone_mapped_luma.lerp(b_tm, b_tm / b),
+        ];
+    }
+
+    // Fallback for black
+    [0.0, 0.0, 0.0]
+}
+
+// Helper trait for Linear Interpolation if you don't have one
+trait Lerp {
+    fn lerp(self, other: Self, t: Self) -> Self;
+}
+
+impl Lerp for SubPixel {
+    fn lerp(self, other: SubPixel, t: SubPixel) -> SubPixel {
+        self * (1.0 - t) + other * t
+    }
 }
 
 
 impl PipelineModule for Module<CST> {
     fn process(&self, mut image: PipelineImage, raw_image: &RawImage) -> PipelineImage {
         match self.config.color_space {
-            ColorSpaceMatrix::XYZTOsRGB => {
+            ColorSpaceMatrix::WCSTOsRGB => {
                 // let matrix = [
                 //     [3.240479,  -1.537150, -0.498535,],
                 //     [-0.969256,  1.875991,  0.041556,],
                 //     [0.055648,  -0.204043,  1.057311]
                 // ];
                 // let foward_matrix = rawler::imgop::matrix::normalize(matrix);
+                // image.data.par_iter_mut().for_each(|pixel|{
+                //     let pix = acescg_to_srgb_display_safe(*pixel);
+                //     let srgb = Srgb::from_linear_srgb(pix);
+                //     *pixel = srgb;
+                // });
                 image.data.par_iter_mut().for_each(|pixel|{
-                    let srgb = XyzD65::convert::<Srgb>(*pixel);
-                    // let srgb = gamut_clip_aces(srgb);
-                    // if srgb[0] < 0.0 || srgb[1] < 0.0 || srgb[2] < 0.0 {
-                    //     srgb[0] = if srgb[0] < 0.0 {1.0} else {0.0};
-                    //     srgb[1] = if srgb[1] < 0.0 {1.0} else {0.0};
-                    //     srgb[2] = if srgb[2] < 0.0 {1.0} else {0.0};
-                    // }
-                    *pixel = srgb.map(|subp| subp );
+                    *pixel = WCS::convert::<Srgb>(*pixel);
                 });
             },
-            ColorSpaceMatrix::XYZTORGB => {
+            ColorSpaceMatrix::WCSTORGB => {
                 image.data.par_iter_mut().for_each(|pixel|{
-                    let srgb = XyzD65::to_linear_srgb(*pixel);
+                    let srgb = WCS::to_linear_srgb(*pixel);
                     // let srgb = gamut_clip_aces(srgb);
                     *pixel = srgb.map(|subp| subp.abs() );
                 });
@@ -766,7 +930,7 @@ impl PipelineModule for Module<CST> {
                     *pixel = srgb.map(|subp| subp.abs() );
                 });
             },
-            ColorSpaceMatrix::CameraToXYZ => {
+            ColorSpaceMatrix::CameraToWCS => {
                 let d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
                 let components = d65.len() / 3;
                 let mut xyz2cam: [Pixel; 3] = [[0.0; 3]; 3];
@@ -779,11 +943,13 @@ impl PipelineModule for Module<CST> {
                 let foward_matrix = rawler::imgop::matrix::pseudo_inverse(xyz2cam_normalized);
                 image.data.par_iter_mut().for_each(|p|{
                     let [r, g, b] = *p;
-                    *p = [
+                    let pix = [
                         foward_matrix[0][0] * r + foward_matrix[0][1] * g + foward_matrix[0][2] * b,
                         foward_matrix[1][0] * r + foward_matrix[1][1] * g + foward_matrix[1][2] * b,
                         foward_matrix[2][0] * r + foward_matrix[2][1] * g + foward_matrix[2][2] * b,
-                    ]
+                    ];
+                    *p = XyzD65::convert::<WCS>(pix)
+
                 });
             },
         };
@@ -804,34 +970,44 @@ impl PipelineModule for Module<Demosaic> {
         raw_image: &RawImage,
     ) -> PipelineImage {
         let mut new_image = image;
-        let debayer_image: FormedImage;
-        let mut raw_image = raw_image.clone();
-        let _ = raw_image.apply_scaling();
-        if let rawler::RawImageData::Float(ref im) = raw_image.data {
+        let debayer_image: RgbF32;
+        let max_raw_value: f32;
+        if let rawler::RawImageData::Integer(ref im) = raw_image.data {
             let cfa = raw_image.camera.cfa.clone();
             let cfa = demosaic::get_cfa(cfa, raw_image.crop_area.unwrap());
-            let (nim, width, height) =
-                demosaic::crop(raw_image.dim(), raw_image.crop_area.unwrap(), im.to_vec());
+            let (nim, width, height) = demosaic::crop(
+                raw_image.dim(),
+                raw_image.crop_area.unwrap(),
+                im.to_vec()
+            );
+            let black_level = raw_image.blacklevel.as_bayer_array()[0];
+            let white_level = raw_image.whitelevel.as_bayer_array()[0];
+            let range = white_level - black_level;
+            let t = Instant::now();
+            let nim: Vec<f32> = nim.par_iter().map(|pix| {
+                (*pix as f32 - black_level) / range
+            }).collect();
+            println!("op: {}", Instant::now().duration_since(t).as_millis());
 
-            debayer_image = FormedImage {
-                raw_image: raw_image.clone(),
-                data: match self.config.algorithm.as_str() {
+            max_raw_value = nim
+            .par_iter()
+            .fold(|| f32::NEG_INFINITY, |acc, &x| acc.max(x))
+            .reduce(|| f32::NEG_INFINITY, |a, b| a.max(b));
+
+            debayer_image =
+                match self.config.algorithm.as_str() {
                     "markesteijn" => demosaic::DemosaicAlgorithms::markesteijn(width, height, cfa, nim),
+                    "linear" => demosaic::DemosaicAlgorithms::linear_interpolation(width, height, cfa, nim),
+                    "fast" => demosaic::DemosaicAlgorithms::fast(width, height, cfa, nim),
                     _ => panic!("Unknown demosaic algorithm"),
-                },
-            };
+                };
         } else {
             panic!("Don't know how to process non-integer raw files");
         }
 
-        let max_raw_value = debayer_image.data.data.iter().fold(0.0, |acc, pix|{
-            let [r, g, b] = pix;
-            r.max(*g).max(*b).max(acc)
-        });
-
-        new_image.data = debayer_image.data.data;
-        new_image.width = debayer_image.data.width;
-        new_image.height = debayer_image.data.height;
+        new_image.data = debayer_image.data;
+        new_image.width = debayer_image.width;
+        new_image.height = debayer_image.height;
         new_image.max_raw_value = max_raw_value;
         new_image
     }

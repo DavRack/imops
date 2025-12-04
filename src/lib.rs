@@ -15,3 +15,4 @@ pub mod pixels;
 pub mod pipeline;
 pub mod desaturation;
 pub mod tone_mapping;
+pub mod chromaCompresion;

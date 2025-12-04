@@ -3,9 +3,13 @@ pub type Pixel = [SubPixel; CHANNELS_PER_PIXEL];
 pub type ImageBuffer = Vec<Pixel>;
 
 pub const CHANNELS_PER_PIXEL: usize = 3;
-pub const R_RELATIVE_LUMINANCE: SubPixel = 0.2126;
-pub const G_RELATIVE_LUMINANCE: SubPixel = 0.7152;
-pub const B_RELATIVE_LUMINANCE: SubPixel = 0.0722;
+// pub const R_RELATIVE_LUMINANCE: SubPixel = 0.2126;
+// pub const G_RELATIVE_LUMINANCE: SubPixel = 0.7152;
+// pub const B_RELATIVE_LUMINANCE: SubPixel = 0.0722;
+// for acescg
+pub const R_RELATIVE_LUMINANCE: SubPixel = 0.2722287168;
+pub const G_RELATIVE_LUMINANCE: SubPixel = 0.6740817658;
+pub const B_RELATIVE_LUMINANCE: SubPixel = 0.0536895174;
 pub const MIDDLE_GRAY: SubPixel = 0.185;
 
 pub trait PixelOps {

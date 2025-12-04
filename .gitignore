@@ -2,6 +2,7 @@
 /data
 venv
 *.RAF
+*.ARW
 *.dng
 *.jpeg
 *.jpg

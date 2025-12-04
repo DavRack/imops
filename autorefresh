@@ -1,2 +1,2 @@
 #!/bin/bash
-find . src -type f -maxdepth 1 | entr "./$1 $2"
+find src imgconfig.toml -type f -maxdepth 1 | entr ./$1 $2
