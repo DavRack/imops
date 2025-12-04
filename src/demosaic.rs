@@ -13,24 +13,30 @@ pub fn crop(dim: Dim2, crop_rect: Rect, data: Vec<u16>) -> (Vec<u16>, usize, usi
     let start_x = crop_rect.p.x;
     let start_y = crop_rect.p.y;
 
-    // 1. Allocation
-    // We reserve capacity. This does NOT zero the memory, so it is instant.
-    let mut output = Vec::with_capacity(crop_w * crop_h);
+    let len = crop_w * crop_h;
+    let mut output = Vec::with_capacity(len);
 
-    // 2. Row-by-Row Copy
-    // We iterate manually to avoid Iterator overhead, calculating offsets exactly like the unsafe version.
-    for i in 0..crop_h {
-        let row_idx = start_y + i;
+    // 1. Prepare Memory (The only unsafe part)
+    // We set the length manually to avoid filling the array with zeros (which is slow).
+    // This creates a "view" of uninitialized memory that we can slice into.
+    unsafe { output.set_len(len); }
 
-        // Calculate the slice range for the current row
-        let begin = row_idx * full_w + start_x;
-        let end = begin + crop_w;
+    // 2. Parallel Copy
+    // We slice the OUTPUT into rows of width 'crop_w'.
+    // Rayon distributes these rows across threads.
+    output.par_chunks_mut(crop_w)
+        .enumerate() // Gives us the row index 'i' (0 to crop_h)
+        .for_each(|(i, out_row)| {
+            let src_row_idx = start_y + i;
+            
+            // Calculate source offsets
+            let begin = src_row_idx * full_w + start_x;
+            let end = begin + crop_w;
 
-        // CRITICAL OPTIMIZATION:
-        // &data[begin..end] creates a temporary slice (checks bounds once).
-        // extend_from_slice uses internal memcpy to write to the uninitialized capacity of 'output'.
-        output.extend_from_slice(&data[begin..end]);
-    }
+            // Parallel Memcpy
+            // 'copy_from_slice' checks lengths (safe) and uses memcpy (fast)
+            out_row.copy_from_slice(&data[begin..end]);
+        });
 
     (output, crop_w, crop_h)
 }
