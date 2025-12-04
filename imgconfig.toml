@@ -2,7 +2,8 @@
 
 [[pipeline_modules]]
 name = "Demosaic"
-algorithm = "markesteijn"
+algorithm = "fast"
+# algorithm = "markesteijn"
 
 [[pipeline_modules]]
 name = "Crop"
