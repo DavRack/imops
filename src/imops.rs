@@ -984,8 +984,9 @@ impl PipelineModule for Module<Demosaic> {
             let white_level = raw_image.whitelevel.as_bayer_array()[0];
             let range = white_level - black_level;
             let t = Instant::now();
+            let factor = 1.0/range;
             let nim: Vec<f32> = nim.par_iter().map(|pix| {
-                (*pix as f32 - black_level) / range
+                (*pix as f32 - black_level) * factor
             }).collect();
             println!("op: {}", Instant::now().duration_since(t).as_millis());
 
