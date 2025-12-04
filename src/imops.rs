@@ -978,17 +978,15 @@ impl PipelineModule for Module<Demosaic> {
             let (nim, width, height) = demosaic::crop(
                 raw_image.dim(),
                 raw_image.crop_area.unwrap(),
-                im.to_vec()
+                im
             );
             let black_level = raw_image.blacklevel.as_bayer_array()[0];
             let white_level = raw_image.whitelevel.as_bayer_array()[0];
             let range = white_level - black_level;
-            let t = Instant::now();
             let factor = 1.0/range;
             let nim: Vec<f32> = nim.par_iter().map(|pix| {
                 (*pix as f32 - black_level) * factor
             }).collect();
-            println!("op: {}", Instant::now().duration_since(t).as_millis());
 
             max_raw_value = nim
             .par_iter()

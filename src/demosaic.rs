@@ -6,7 +6,7 @@ use ndarray::{Array2, Array3};
 use rawler::pixarray::RgbF32;
 use crate::conditional_paralell::prelude::*;
 
-pub fn crop(dim: Dim2, crop_rect: Rect, data: Vec<u16>) -> (Vec<u16>, usize, usize) {
+pub fn crop(dim: Dim2, crop_rect: Rect, data: &Vec<u16>) -> (Vec<u16>, usize, usize) {
     let crop_w = crop_rect.d.w;
     let crop_h = crop_rect.d.h;
     let full_w = dim.w;
