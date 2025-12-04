@@ -53,42 +53,42 @@ impl DemosaicAlgorithms{
         }
         return final_image;
     }
-    // pub fn linear_interpolation(
-    //     width: usize,
-    //     height: usize,
-    //     cfa: rawler::CFA,
-    //     data: Vec<f32>,
-    // ) -> RgbF32 {
-    //     let w = width;
-    //     let h = height;
-    //     let mut final_image = RgbF32::new(w-2, h-2);
-    //     let f = |(indx, _)| {
-    //         let mut j: usize = indx%final_image.width;
-    //         let mut i: usize = (indx-j)/final_image.width;
-    //         j+=1;
-    //         i+=1;
+    pub fn linear_interpolation(
+        width: usize,
+        height: usize,
+        cfa: rawler::CFA,
+        data: Vec<f32>,
+    ) -> RgbF32 {
+        let w = width;
+        let h = height;
+        let mut final_image = RgbF32::new(w-2, h-2);
+        let f = |(indx, _)| {
+            let mut j: usize = indx%final_image.width;
+            let mut i: usize = (indx-j)/final_image.width;
+            j+=1;
+            i+=1;
 
-    //         let mut pixel_count = [0.0, 0.0, 0.0];
-    //         let mut pixel = [0.0, 0.0, 0.0];
+            let mut pixel_count = [0.0, 0.0, 0.0];
+            let mut pixel = [0.0, 0.0, 0.0];
 
-    //         for i2 in 0..3{
-    //             for j2 in 0..3{
-    //                 let index = ((i+i2-1)*width)+(j+j2-1);
-    //                 let channel = cfa.color_at((i+i2)-1, (j+j2)-1);
-    //                 pixel_count[channel] += 1.0;
-    //                 pixel[channel] += data[index];
-    //             }
-    //         }
-    //         [
-    //             pixel[0]/pixel_count[0],
-    //             pixel[1]/pixel_count[1],
-    //             pixel[2]/pixel_count[2],
-    //         ]
+            for i2 in 0..3{
+                for j2 in 0..3{
+                    let index = ((i+i2-1)*width)+(j+j2-1);
+                    let channel = cfa.color_at((i+i2)-1, (j+j2)-1);
+                    pixel_count[channel] += 1.0;
+                    pixel[channel] += data[index];
+                }
+            }
+            [
+                pixel[0]/pixel_count[0],
+                pixel[1]/pixel_count[1],
+                pixel[2]/pixel_count[2],
+            ]
 
-    //     };
-    //     final_image.data = final_image.data.iter().with_min_len(final_image.width).enumerate().map(f).collect();
-    //     return final_image;
-    // }
+        };
+        final_image.data = final_image.data.par_iter().with_min_len(final_image.width).enumerate().map(f).collect();
+        return final_image;
+    }
 
     pub fn pass(
         width: usize,
@@ -225,5 +225,81 @@ impl DemosaicAlgorithms{
         output.data = rgb;
 
         output
+    }
+
+    pub fn fast(
+        width: usize,
+        height: usize,
+        cfa: rawler::CFA,
+        input: Vec<f32>,
+    ) -> RgbF32 {
+        let mut rgb = RgbF32::new(width, height);
+
+        rgb.data.par_iter_mut().enumerate().for_each(|(idx, pix)| {
+            let col = idx % width;
+            let row = (idx - col) / width;
+
+            match cfa.color_at(row, col) {
+                0 => { // Red pixel
+                    pix[0] = input[idx];
+                    // Interpolate Green
+                    let mut g_sum = 0.0;
+                    let mut g_count = 0;
+                    if row > 0 { g_sum += input[(row - 1) * width + col]; g_count += 1; }
+                    if row < height - 1 { g_sum += input[(row + 1) * width + col]; g_count += 1; }
+                    if col > 0 { g_sum += input[row * width + col - 1]; g_count += 1; }
+                    if col < width - 1 { g_sum += input[row * width + col + 1]; g_count += 1; }
+                    pix[1] = if g_count > 0 { g_sum / g_count as f32 } else { 0.0 };
+
+                    // Interpolate Blue
+                    let mut b_sum = 0.0;
+                    let mut b_count = 0;
+                    if row > 0 && col > 0 { b_sum += input[(row - 1) * width + col - 1]; b_count += 1; }
+                    if row > 0 && col < width - 1 { b_sum += input[(row - 1) * width + col + 1]; b_count += 1; }
+                    if row < height - 1 && col > 0 { b_sum += input[(row + 1) * width + col - 1]; b_count += 1; }
+                    if row < height - 1 && col < width - 1 { b_sum += input[(row + 1) * width + col + 1]; b_count += 1; }
+                    pix[2] = if b_count > 0 { b_sum / b_count as f32 } else { 0.0 };
+                }
+                1 => { // Green pixel
+                    pix[1] = input[idx];
+                    // Interpolate Red
+                    let mut r_sum = 0.0;
+                    let mut r_count = 0;
+                    if row > 0 { r_sum += input[(row - 1) * width + col]; r_count += 1; }
+                    if row < height - 1 { r_sum += input[(row + 1) * width + col]; r_count += 1; }
+                    pix[0] = if r_count > 0 { r_sum / r_count as f32 } else { 0.0 }; // Vertical or Horizontal depending on pattern
+
+                    // Interpolate Blue
+                    let mut b_sum = 0.0;
+                    let mut b_count = 0;
+                    if col > 0 { b_sum += input[row * width + col - 1]; b_count += 1; }
+                    if col < width - 1 { b_sum += input[row * width + col + 1]; b_count += 1; }
+                    pix[2] = if b_count > 0 { b_sum / b_count as f32 } else { 0.0 }; // Vertical or Horizontal depending on pattern
+                }
+                2 => { // Blue pixel
+                    pix[2] = input[idx];
+                    // Interpolate Green
+                    let mut g_sum = 0.0;
+                    let mut g_count = 0;
+                    if row > 0 { g_sum += input[(row - 1) * width + col]; g_count += 1; }
+                    if row < height - 1 { g_sum += input[(row + 1) * width + col]; g_count += 1; }
+                    if col > 0 { g_sum += input[row * width + col - 1]; g_count += 1; }
+                    if col < width - 1 { g_sum += input[row * width + col + 1]; g_count += 1; }
+                    pix[1] = if g_count > 0 { g_sum / g_count as f32 } else { 0.0 };
+
+                    // Interpolate Red
+                    let mut r_sum = 0.0;
+                    let mut r_count = 0;
+                    if row > 0 && col > 0 { r_sum += input[(row - 1) * width + col - 1]; r_count += 1; }
+                    if row > 0 && col < width - 1 { r_sum += input[(row - 1) * width + col + 1]; r_count += 1; }
+                    if row < height - 1 && col > 0 { r_sum += input[(row + 1) * width + col - 1]; r_count += 1; }
+                    if row < height - 1 && col < width - 1 { r_sum += input[(row + 1) * width + col + 1]; r_count += 1; }
+                    pix[0] = if r_count > 0 { r_sum / r_count as f32 } else { 0.0 };
+                }
+                _ => {}
+            }
+        });
+
+        rgb
     }
 }
