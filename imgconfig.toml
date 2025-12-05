@@ -2,12 +2,12 @@
 
 [[pipeline_modules]]
 name = "Demosaic"
-algorithm = "fast"
-# algorithm = "markesteijn"
+algorithm = "markesteijn"
+# algorithm = "fast"
 
-[[pipeline_modules]]
-name = "Crop"
-factor = 1
+# [[pipeline_modules]]
+# name = "Crop"
+# factor = 1
 # point = [0, 0]
 # size = [1, 1]
 # view_window = [1920, 1080]
@@ -21,15 +21,15 @@ name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 2
+ev = 4
+
+[[pipeline_modules]]
+name = "Contrast"
+c = 1.25
 
 [[pipeline_modules]]
 name = "CST"
 color_space = "CameraToWCS"
-
-[[pipeline_modules]]
-name = "Contrast"
-c = 1.2
 
 
 # # [[pipeline_modules]]

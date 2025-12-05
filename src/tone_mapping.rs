@@ -1,11 +1,12 @@
+#[inline(always)]
 pub fn sigmoid(x: f32)-> f32{
     // let scaled_one = (1.0/raw_max_value)*max_image_value;
     // let sigmoid_normalization_constant = 1.0 + (1.0/(scaled_one*c)).powi(2);
     let c: f32 = 2.0;
-    let snc = 1.0+(1.0/(c*(16.0_f32-1.0).exp2()).powi(2));
+    // let snc = 1.0+(1.0/(c*(16.0_f32-1.0).exp2()).powi(2));
     // let sigmoid = |x:f32| (sigmoid_normalization_constant / (1.0 + (1.0/(c*x)))).powi(2);
 
-    return ((1.0 / (1.0 + (1.0/(c*x)))).powi(2))
+    return (1.0 / (1.0 + (1.0/(c*x)))).powi(2)
 }
 
 // fn camera_max_value(max_image_value: f32, max_raw_value: f32) -> f32 {

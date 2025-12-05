@@ -2,4 +2,4 @@
 # time cargo run --release
 cargo build --release --bin imops-cli &&
 sleep 1 &&
-time ./target/release/imops-cli "$1" && open result.jpg
+time ./target/release/imops-cli "$1" && tev result.jpg &

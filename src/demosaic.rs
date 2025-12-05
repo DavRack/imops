@@ -272,7 +272,6 @@ impl DemosaicAlgorithms{
         let c10 = cfa.color_at(1, 0);
         let c11 = cfa.color_at(1, 1);
 
-        let a = Instant::now();
         rgb.data.par_iter_mut().enumerate().for_each(|(idx, pix)| {
             let new_col = idx % new_width;
             let new_row = idx / new_width;
@@ -291,8 +290,6 @@ impl DemosaicAlgorithms{
 
             *pix = values;
         });
-        println!("debayer rgb creation: {}", Instant::now().duration_since(a).as_millis());
-
         rgb
     }
 }
