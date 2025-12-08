@@ -5,6 +5,9 @@ edition = "2021"
 description = "A Photo editing library for photographers"
 license = "MIT"
 
+[profile.release]
+lto = "fat"
+
 [lib]
 name = "pichromatic"
 path = "src/lib.rs"
