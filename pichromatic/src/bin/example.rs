@@ -17,15 +17,17 @@ fn main() {
     let wb_coeffs = raw_image.wb_coeffs;
     let wcs = ColorSpaceTag::AcesCg;
 
-    let mut image = Image::demosaic(raw_image, demosaic_algorithms::Markesteijn{});
     let t1 = Instant::now();
+
+    // image processing pipeline example, this insnt by any means a complete pipeline
+    // but the minimal steps to get a "correct" sRGB image from a raw file
+    let mut image = Image::demosaic(raw_image, demosaic_algorithms::Markesteijn{});
     let image = image.cfa_coeffs(wb_coeffs)
         .highlight_reconstruction(wb_coeffs)
-        .exp(1.0)
-        .contrast(1.25)
         .camera_cst(wcs, camera_color_matrix)
         .tone_map()
         .cst(ColorSpaceTag::Srgb);
+
     println!("pipeline time: {}ms", t1.elapsed().as_millis());
     println!("pipeline fps: {}fps", 1000/t1.elapsed().as_millis());
 
