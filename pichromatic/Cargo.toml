@@ -1,0 +1,19 @@
+[package]
+name = "pichromatic"
+version = "0.1.0"
+edition = "2021"
+description = "A Photo editing library for photographers"
+license = "MIT"
+
+[lib]
+name = "pichromatic"
+path = "src/lib.rs"
+
+[[bin]]
+name = "example"
+path = "src/bin/example.rs"
+
+[dependencies]
+color = "0.3.2"
+rawler = "*"
+rayon = "1.10.0"

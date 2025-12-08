@@ -1,0 +1,10 @@
+[package]
+name = "pichromatic-pipeline"
+version = "0.1.0"
+edition = "2021"
+description = "A raw photo developing pipeline "
+license = "MIT"
+
+[dependencies]
+# This line is the key:
+my-core = { version = "0.1.0", path = "../pichromatic" }

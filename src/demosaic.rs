@@ -1,4 +1,3 @@
-use std::time::Instant;
 use std::usize;
 
 use rawler::imgop::{Dim2, Rect};
