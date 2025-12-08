@@ -2,6 +2,7 @@ target
 /data
 venv
 *.RAF
+*.ppm
 *.ARW
 *.dng
 *.jpeg

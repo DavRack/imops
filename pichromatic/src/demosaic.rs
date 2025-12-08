@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use crate::pixel::{Image, ImageBuffer, SubPixel};
 use rawler::{RawImage, imgop::{Dim2, Rect}};
 use rayon::prelude::*;
@@ -31,7 +29,6 @@ pub fn demosaic(raw_image: RawImage, demosaic_algorithm: impl DemosaicAlgorithm)
 
         // 3. Fused Crop + Normalize
         // We go directly from Raw Integer -> Cropped Float
-        let t1 = Instant::now();
         nim = crop_and_normalize(
             raw_image.dim(),
             crop_area,
@@ -42,7 +39,6 @@ pub fn demosaic(raw_image: RawImage, demosaic_algorithm: impl DemosaicAlgorithm)
         // println!("crop/norm time: {}ms", t0.elapsed().as_millis());
 
         let debayer_image = demosaic_algorithm.demosaic(width, height, cfa, nim);
-        println!("debayer time: {}ms", t1.elapsed().as_millis());
 
         return debayer_image
     } else {

@@ -17,27 +17,15 @@ fn main() {
     let wb_coeffs = raw_image.wb_coeffs;
     let wcs = ColorSpaceTag::AcesCg;
 
+    let mut image = Image::demosaic(raw_image, demosaic_algorithms::Markesteijn{});
     let t1 = Instant::now();
-    let t = Instant::now();
-    let mut image = Image::demosaic(raw_image, demosaic_algorithms::Fast{});
-    println!("demosaic time: {}ms", t.elapsed().as_millis());
-    let t = Instant::now();
-    let image = image.cfa_coeffs(wb_coeffs);
-    let image = image.highlight_reconstruction(wb_coeffs);
-    println!("wb_coeffs time: {}ms", t.elapsed().as_millis());
-    let t = Instant::now();
-    let image = image.exp(1.0);
-    let image = image.contrast(1.25);
-    println!("exp time: {}ms", t.elapsed().as_millis());
-    let t = Instant::now();
-    let image = image.camera_cst(wcs, camera_color_matrix);
-    println!("cst time: {}ms", t.elapsed().as_millis());
-    let t = Instant::now();
-    let image = image.tone_map();
-    println!("tone_map time: {}ms", t.elapsed().as_millis());
-    let t = Instant::now();
-    let image = image.cst(ColorSpaceTag::Srgb);
-    println!("cst time: {}ms\n", t.elapsed().as_millis());
+    let image = image.cfa_coeffs(wb_coeffs)
+        .highlight_reconstruction(wb_coeffs)
+        .exp(1.0)
+        .contrast(1.25)
+        .camera_cst(wcs, camera_color_matrix)
+        .tone_map()
+        .cst(ColorSpaceTag::Srgb);
     println!("pipeline time: {}ms", t1.elapsed().as_millis());
     println!("pipeline fps: {}fps", 1000/t1.elapsed().as_millis());
 
