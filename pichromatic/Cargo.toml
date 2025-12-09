@@ -18,5 +18,4 @@ path = "src/bin/example.rs"
 
 [dependencies]
 color = "0.3.2"
-rawler = "*"
 rayon = "1.10.0"

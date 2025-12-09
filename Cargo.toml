@@ -12,6 +12,10 @@ name = "imops-cli"
 path = "src/bin/imops-cli.rs"
 
 [[bin]]
+name = "example"
+path = "src/bin/example.rs"
+
+[[bin]]
 name = "visual_tests"
 path = "src/bin/visual_tests.rs"
 required-features = ["visual_tests"]
@@ -24,6 +28,7 @@ inherits = "release"
 debug = true
 
 [dependencies]
+pichromatic = {version="0.1.0", path="pichromatic"}
 approx = "0.5.1"
 clap = {version="4.5.29", features = ["derive"]}
 color = "0.3.2"
