@@ -1,9 +1,10 @@
+pub mod cfa;
 pub mod cfa_coeffs;
 pub mod contrast;
 pub mod cst;
 pub mod demosaic;
 pub mod exp;
+pub mod highlight_reconstruction;
 pub mod lch;
 pub mod pixel;
 pub mod tone_map;
-pub mod highlight_reconstruction;

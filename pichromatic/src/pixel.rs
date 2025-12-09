@@ -1,8 +1,7 @@
 use color::{ColorSpaceTag};
-use rawler::rawimage::RawImage;
 
 use crate::{
-    cfa_coeffs::cfa_coeffs, contrast::contrast, cst::{camera_cst, cst}, demosaic::{self, DemosaicAlgorithm}, exp::exp, highlight_reconstruction::highlight_reconstruction, lch::lch, tone_map::sigmoid
+    cfa::CFA, cfa_coeffs::cfa_coeffs, contrast::contrast, cst::{camera_cst, cst}, demosaic::{self, DemosaicAlgorithm, Dim2, Rect}, exp::exp, highlight_reconstruction::highlight_reconstruction, lch::lch, tone_map::sigmoid
 };
 
 pub const CHANNELS_PER_PIXEL: usize = 3;
@@ -96,7 +95,23 @@ impl Image {
         return self
     }
 
-    pub fn demosaic(raw_image: RawImage, demosaic_algorithm: impl DemosaicAlgorithm) -> Image{
-        demosaic::demosaic(raw_image, demosaic_algorithm)
+    pub fn demosaic(
+        raw_image_data: &[u16],
+        image_dimensions: Dim2,
+        crop_area: Rect,
+        black_level: f32,
+        white_level: f32,
+        cfa: CFA,
+        demosaic_algorithm: impl DemosaicAlgorithm
+    ) -> Image{
+        return demosaic::demosaic(
+            raw_image_data,
+            image_dimensions,
+            crop_area,
+            black_level,
+            white_level,
+            cfa,
+            demosaic_algorithm
+        )
     }
 }

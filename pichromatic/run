@@ -1,5 +1,4 @@
 #!/bin/bash
 # time cargo run --release
 cargo build --release --bin example &&
-time ./target/release/example "$1" &&
-./view
+time ./target/release/example "$1" && ./view

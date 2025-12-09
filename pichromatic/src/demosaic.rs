@@ -1,49 +1,72 @@
 use crate::pixel::{Image, ImageBuffer, SubPixel};
-use rawler::{RawImage, imgop::{Dim2, Rect}};
+use crate::cfa::CFA;
+// use rawler::{RawImage, imgop::{Dim2, Rect}};
 use rayon::prelude::*;
 
-pub trait DemosaicAlgorithm {
-    fn demosaic(self, width: usize, height: usize, cfa: rawler::CFA, input: Vec<SubPixel>) -> Image;
+/// Descriptor of a two-dimensional area
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Dim2 {
+  pub w: usize,
+  pub h: usize,
 }
 
-pub fn demosaic(raw_image: RawImage, demosaic_algorithm: impl DemosaicAlgorithm) -> Image {
+
+/// A simple x/y point
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Point {
+  pub x: usize,
+  pub y: usize,
+}
+
+/// Rectangle by a point and dimension
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub struct Rect {
+  pub p: Point,
+  pub d: Dim2,
+}
+
+pub trait DemosaicAlgorithm {
+    fn demosaic(self, width: usize, height: usize, cfa: CFA, input: Vec<SubPixel>) -> Image;
+}
+
+pub fn demosaic(
+    raw_image_data: &[u16],
+    image_dimensions: Dim2,
+    crop_area: Rect,
+    black_level: f32,
+    white_level: f32,
+    cfa: CFA,
+    demosaic_algorithm: impl DemosaicAlgorithm
+) -> Image {
     // 1. Extract Metadata early
-    let crop_area = raw_image.crop_area.unwrap();
     let width = crop_area.d.w;
     let height = crop_area.d.h;
-    
+
     // Calculate normalization factors once
-    let black_level = raw_image.blacklevel.as_bayer_array()[0] as u16;
-    let white_level = raw_image.whitelevel.as_bayer_array()[0] as u16;
-    let range = (white_level - black_level) as f32;
+    let range = white_level - black_level;
     let factor = 1.0 / range;
 
     let nim: Vec<f32>;
 
-    if let rawler::RawImageData::Integer(ref im) = raw_image.data {
-        // 2. Adjust CFA for the crop offset
-        // We clone only if necessary. 
-        // Note: Make sure get_cfa handles the shift correctly based on crop_area.p
-        let cfa = raw_image.camera.cfa.clone(); 
-        let cfa = get_cfa(cfa, crop_area);
+    // 2. Adjust CFA for the crop offset
+    // We clone only if necessary. 
+    // Note: Make sure get_cfa handles the shift correctly based on crop_area.p
+    let cfa = get_cfa(cfa, crop_area);
 
-        // 3. Fused Crop + Normalize
-        // We go directly from Raw Integer -> Cropped Float
-        nim = crop_and_normalize(
-            raw_image.dim(),
-            crop_area,
-            im,
-            black_level,
-            factor
-        );
-        // println!("crop/norm time: {}ms", t0.elapsed().as_millis());
+    // 3. Fused Crop + Normalize
+    // We go directly from Raw Integer -> Cropped Float
+    nim = crop_and_normalize(
+        image_dimensions,
+        crop_area,
+        raw_image_data,
+        black_level,
+        factor
+    );
+    // println!("crop/norm time: {}ms", t0.elapsed().as_millis());
 
-        let debayer_image = demosaic_algorithm.demosaic(width, height, cfa, nim);
+    let debayer_image = demosaic_algorithm.demosaic(width, height, cfa, nim);
 
-        return debayer_image
-    } else {
-        panic!("Don't know how to process non-integer raw files");
-    }
+    return debayer_image
 }
 
 /// Fuses cropping, type conversion (u16->f32), and normalization into a single pass.
@@ -51,7 +74,7 @@ fn crop_and_normalize(
     dim: Dim2, 
     crop_rect: Rect, 
     data: &[u16], 
-    black_level: u16, 
+    black_level: f32, 
     factor: f32
 ) -> Vec<f32> {
     let crop_w = crop_rect.d.w;
@@ -75,15 +98,14 @@ fn crop_and_normalize(
             let src_slice = &data[begin..end];
 
             out_row.iter_mut().zip(src_slice).for_each(|(out_pix, &in_pix)|{
-                *out_pix = (in_pix - black_level) as f32 * factor;
+                *out_pix = (in_pix as f32 - black_level) * factor;
             });
-        }
-        );
+        });
 
     output
 }
 
-pub fn get_cfa(cfa: rawler::CFA, crop_rect: Rect) -> rawler::CFA {
+pub fn get_cfa(cfa: CFA, crop_rect: Rect) -> CFA {
     let x = crop_rect.p.x;
     let y = crop_rect.p.y;
     let new_cfa = cfa.shift(x, y);
@@ -95,13 +117,14 @@ pub mod demosaic_algorithms {
 
     pub struct Markesteijn{}
     pub struct Fast{}
+    pub struct SuperFast{}
 
     impl DemosaicAlgorithm for Markesteijn{
         fn demosaic(
             self,
             width: usize,
             height: usize,
-            cfa: rawler::CFA, // Changed to reference to avoid ownership issues, adjust as needed
+            cfa: CFA, // Changed to reference to avoid ownership issues, adjust as needed
             input: Vec<SubPixel> // Changed to slice to avoid moving/cloning
         ) -> Image {
             // demosaic_neon( width, height, &cfa, &input) // // 1. Allocate Result Buffer Once
@@ -179,7 +202,7 @@ pub mod demosaic_algorithms {
             self,
             width: usize,
             height: usize,
-            cfa: rawler::CFA,
+            cfa: CFA,
             input: Vec<SubPixel>,
         ) -> Image {
             let new_width = width / 2;
@@ -210,6 +233,66 @@ pub mod demosaic_algorithms {
                 *pix = values;
             });
             return Image{
+                data: rgb,
+                height: new_height,
+                width: new_width,
+                color_space: None
+            }
+        }
+    }
+
+    impl DemosaicAlgorithm for SuperFast {
+        fn demosaic(
+            self,
+            width: usize,
+            height: usize,
+            cfa: CFA,
+            input: Vec<SubPixel>,
+        ) -> Image {
+            // Target: 1/4th of the original width and height
+            // This results in an image 1/16th the size of the RAW file (Thumbnail/Preview size)
+            let new_width = width / 4;
+            let new_height = height / 4;
+
+            // Initialize output buffer
+            let mut rgb: ImageBuffer = vec![[0.0; 3]; new_width * new_height];
+
+            // Pre-calculate CFA color indices for the top-left 2x2 block
+            let c00 = cfa.color_at(0, 0);
+            let c01 = cfa.color_at(0, 1);
+            let c10 = cfa.color_at(1, 0);
+            let c11 = cfa.color_at(1, 1);
+
+            rgb.par_iter_mut().enumerate().for_each(|(idx, pix)| {
+                let new_col = idx % new_width;
+                let new_row = idx / new_width;
+
+                // STRIDE CALCULATION:
+                // We multiply by 4 to skip lines and columns.
+                // This selects the top-left pixel of every 4x4 block in the original image.
+                let r = new_row * 4;
+                let c = new_col * 4;
+
+                // Calculate the 1D index for the top-left corner of the block
+                let tl_idx = r * width + c;
+
+                let mut values = [0.0, 0.0, 0.0];
+
+                // We only read the immediate 2x2 neighbors to form a color.
+                // We ignore the surrounding pixels (skipping), which is what makes this "SuperFast".
+
+                // Check bounds to ensure we don't read past the buffer (optional safety for edge cases)
+                if tl_idx + width + 1 < input.len() {
+                    values[c00] = input[tl_idx];
+                    values[c01] = input[tl_idx + 1];
+                    values[c10] = input[tl_idx + width];
+                    values[c11] = input[tl_idx + width + 1];
+                }
+
+                *pix = values;
+            });
+
+            return Image {
                 data: rgb,
                 height: new_height,
                 width: new_width,

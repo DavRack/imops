@@ -1,27 +1,61 @@
-use pichromatic::demosaic::demosaic_algorithms;
+use pichromatic::cfa::CFA;
+use pichromatic::demosaic::{Dim2, Point, Rect, demosaic_algorithms};
 use pichromatic::pixel::{Image};
 use pichromatic::cst::ColorSpaceTag;
+use rawler::RawImageData;
 use rawler::imgop::xyz::Illuminant;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
+use rayon::prelude::*;
 
 fn main() {
+
     let input_path = "test_data/test.dng";
     let output_path = "result.ppm";
 
     // // Decode the file to extract the raw pixels and its associated metadata
     // let raw_image = RawImage::decode(&mut file).unwrap();
     let raw_image = rawler::decode_file(input_path).unwrap();
+    let t1 = Instant::now();
     let camera_color_matrix = raw_image.camera.color_matrix[&Illuminant::D65].clone();
     let wb_coeffs = raw_image.wb_coeffs;
+    let raw_image_dimentions = raw_image.dim();
+    let raw_image_crop_area = raw_image.crop_area.unwrap();
+    let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
+    let raw_image_black_level = raw_image.blacklevel.as_bayer_array()[0];
+    let raw_image_cfa = raw_image.camera.cfa.to_string();
+    let raw_image_data = match raw_image.data {
+        RawImageData::Integer(data) => data,
+        _ => panic!("non integer data")
+    };
+
     let wcs = ColorSpaceTag::AcesCg;
 
-    let t1 = Instant::now();
 
     // image processing pipeline example, this insnt by any means a complete pipeline
     // but the minimal steps to get a "correct" sRGB image from a raw file
-    let mut image = Image::demosaic(raw_image, demosaic_algorithms::Markesteijn{});
+    let mut image = Image::demosaic(
+        &raw_image_data,
+        Dim2{
+            w: raw_image_dimentions.w,
+            h: raw_image_dimentions.h
+        },
+        Rect{
+            p: Point {
+                x: raw_image_crop_area.p.x,
+                y: raw_image_crop_area.p.y
+            },
+            d: Dim2 {
+                w: raw_image_crop_area.d.w,
+                h: raw_image_crop_area.d.h
+            },
+        },
+        raw_image_black_level,
+        raw_image_white_level,
+        CFA::new(&raw_image_cfa),
+        demosaic_algorithms::Markesteijn{}
+    );
     let image = image.cfa_coeffs(wb_coeffs)
         .highlight_reconstruction(wb_coeffs)
         .camera_cst(wcs, camera_color_matrix)
@@ -37,7 +71,7 @@ fn main() {
 }
 
 fn to_u8(image: &mut Image) -> (Vec<[u8;3]>, usize, usize){
-    let new_image = image.data.iter().map(|pixel|{
+    let new_image = image.data.par_iter().map(|pixel|{
         pixel.map(|sub_pixel| (sub_pixel.clamp(0.0, 1.0) * 255.0) as u8)
     }).collect();
     return (new_image, image.width, image.height)
