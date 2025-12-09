@@ -1,10 +1,14 @@
 [package]
-name = "pichromatic-pipeline"
+name = "pichromatic_pipeline"
 version = "0.1.0"
 edition = "2021"
 description = "A raw photo developing pipeline "
 license = "MIT"
 
+[lib]
+name = "pichromatic_pipeline"
+path = "src/lib.rs"
+
 [dependencies]
-# This line is the key:
-my-core = { version = "0.1.0", path = "../pichromatic" }
+pichromatic = { version = "0.1.0", path = "../pichromatic" }
+serde = { version = "1.0.217", features = ["derive"] }

@@ -1,5 +1,4 @@
-use std::time::Instant;
-
+use crate::image::ImageMetadata;
 use crate::pixel::{Image, ImageBuffer, SubPixel};
 use crate::cfa::CFA;
 // use rawler::{RawImage, imgop::{Dim2, Rect}};
@@ -33,19 +32,11 @@ pub trait DemosaicAlgorithm {
 
 pub fn demosaic(
     raw_image_data: &[u16],
-    image_dimensions: Dim2,
-    crop_area: Rect,
-    black_level: f32,
-    white_level: f32,
-    cfa: CFA,
+    image_metadata: ImageMetadata,
     demosaic_algorithm: impl DemosaicAlgorithm
 ) -> Image {
-    // 1. Extract Metadata early
-    let width = crop_area.d.w;
-    let height = crop_area.d.h;
-
     // Calculate normalization factors once
-    let range = white_level - black_level;
+    let range = image_metadata.white_level.unwrap() - image_metadata.black_level.unwrap();
     let factor = 1.0 / range;
 
     let nim: Vec<f32>;
@@ -53,27 +44,35 @@ pub fn demosaic(
     // 2. Adjust CFA for the crop offset
     // We clone only if necessary. 
     // Note: Make sure get_cfa handles the shift correctly based on crop_area.p
-    let cfa = get_cfa(cfa, crop_area);
+    let cfa = get_cfa(
+        image_metadata.cfa.expect("A CFA must be set to demosaic raw images"),
+        image_metadata.crop_area.expect("Crop area must be set to demosaic raw images")
+    );
 
     // 3. Fused Crop + Normalize
     // We go directly from Raw Integer -> Cropped Float
     nim = crop_and_normalize(
-        image_dimensions,
-        crop_area,
+        image_metadata.width,
+        image_metadata.crop_area.expect("crop_area must be set to demosaic raw images"),
         raw_image_data,
-        black_level,
+        image_metadata.black_level.expect("black level must be set to demosaic raw images"),
         factor
     );
     // println!("crop/norm time: {}ms", t0.elapsed().as_millis());
 
-    let debayer_image = demosaic_algorithm.demosaic(width, height, cfa, nim);
+    let debayer_image = demosaic_algorithm.demosaic(
+        image_metadata.width,
+        image_metadata.height,
+        cfa,
+        nim
+    );
 
     return debayer_image
 }
 
 /// Fuses cropping, type conversion (u16->f32), and normalization into a single pass.
 fn crop_and_normalize(
-    dim: Dim2, 
+    width: usize, 
     crop_rect: Rect, 
     data: &[u16], 
     black_level: f32, 
@@ -81,7 +80,7 @@ fn crop_and_normalize(
 ) -> Vec<f32> {
     let crop_w = crop_rect.d.w;
     let crop_h = crop_rect.d.h;
-    let full_w = dim.w;
+    let full_w = width;
     let start_x = crop_rect.p.x;
     let start_y = crop_rect.p.y;
 

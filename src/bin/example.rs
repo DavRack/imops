@@ -1,5 +1,6 @@
 use pichromatic::cfa::CFA;
 use pichromatic::demosaic::{Dim2, Point, Rect, demosaic_algorithms};
+use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::{Image};
 use pichromatic::cst::ColorSpaceTag;
 use rawler::RawImageData;
@@ -25,6 +26,24 @@ fn main() {
     let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
     let raw_image_black_level = raw_image.blacklevel.as_bayer_array()[0];
     let raw_image_cfa = raw_image.camera.cfa.to_string();
+    let image_metadata = ImageMetadata{
+        width: raw_image_dimentions.w,
+        height: raw_image_dimentions.h,
+        crop_area: Some(Rect{
+            p: Point {
+                x: raw_image_crop_area.p.x,
+                y: raw_image_crop_area.p.y
+            },
+            d: Dim2 {
+                w: raw_image_crop_area.d.w,
+                h: raw_image_crop_area.d.h
+            },
+        }),
+        black_level: Some(raw_image_black_level),
+        white_level: Some(raw_image_white_level),
+        wb_coeffs: Some(wb_coeffs),
+        cfa: Some(CFA::new(&raw_image_cfa)),
+    };
     let raw_image_data = match raw_image.data {
         RawImageData::Integer(data) => data,
         _ => panic!("non integer data")
@@ -37,23 +56,7 @@ fn main() {
     // but the minimal steps to get a "correct" sRGB image from a raw file
     let mut image = Image::demosaic(
         &raw_image_data,
-        Dim2{
-            w: raw_image_dimentions.w,
-            h: raw_image_dimentions.h
-        },
-        Rect{
-            p: Point {
-                x: raw_image_crop_area.p.x,
-                y: raw_image_crop_area.p.y
-            },
-            d: Dim2 {
-                w: raw_image_crop_area.d.w,
-                h: raw_image_crop_area.d.h
-            },
-        },
-        raw_image_black_level,
-        raw_image_white_level,
-        CFA::new(&raw_image_cfa),
+        image_metadata,
         demosaic_algorithms::Markesteijn{}
     );
     let image = image.cfa_coeffs(wb_coeffs)

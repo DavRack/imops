@@ -8,3 +8,4 @@ pub mod highlight_reconstruction;
 pub mod lch;
 pub mod pixel;
 pub mod tone_map;
+pub mod image;
