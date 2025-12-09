@@ -1,2 +1,2 @@
 #!/bin/bash
-tev --no-new --auto-fit --hide-ui --watch result.jpg 2>/dev/null >/dev/null &
+tev --no-new --auto-fit --hide-ui --watch result.ppm 2>/dev/null >/dev/null &

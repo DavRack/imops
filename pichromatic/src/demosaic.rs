@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::pixel::{Image, ImageBuffer, SubPixel};
 use crate::cfa::CFA;
 // use rawler::{RawImage, imgop::{Dim2, Rect}};
@@ -85,6 +87,7 @@ fn crop_and_normalize(
 
     let len = crop_w * crop_h;
     let mut output = vec![0.0; len];
+    let bias = -black_level * factor;
 
     // Parallel Iteration over Output Rows
     output.par_chunks_exact_mut(crop_w)
@@ -98,10 +101,9 @@ fn crop_and_normalize(
             let src_slice = &data[begin..end];
 
             out_row.iter_mut().zip(src_slice).for_each(|(out_pix, &in_pix)|{
-                *out_pix = (in_pix as f32 - black_level) * factor;
+                *out_pix = (in_pix as f32).mul_add(factor, bias);
             });
         });
-
     output
 }
 
