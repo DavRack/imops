@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::image::ImageMetadata;
 use crate::pixel::{Image, ImageBuffer, SubPixel};
 use crate::cfa::CFA;
@@ -39,38 +41,29 @@ pub fn demosaic(
     let range = image_metadata.white_level.unwrap() - image_metadata.black_level.unwrap();
     let factor = 1.0 / range;
 
-    let nim: Vec<f32>;
-
-    // 2. Adjust CFA for the crop offset
-    // We clone only if necessary. 
-    // Note: Make sure get_cfa handles the shift correctly based on crop_area.p
     let cfa = get_cfa(
         image_metadata.cfa.expect("A CFA must be set to demosaic raw images"),
         image_metadata.crop_area.expect("Crop area must be set to demosaic raw images")
     );
 
-    // 3. Fused Crop + Normalize
-    // We go directly from Raw Integer -> Cropped Float
-    nim = crop_and_normalize(
+    let normalized_raw_data = crop_and_normalize(
         image_metadata.width,
         image_metadata.crop_area.expect("crop_area must be set to demosaic raw images"),
         raw_image_data,
         image_metadata.black_level.expect("black level must be set to demosaic raw images"),
         factor
     );
-    // println!("crop/norm time: {}ms", t0.elapsed().as_millis());
 
     let debayer_image = demosaic_algorithm.demosaic(
         image_metadata.width,
         image_metadata.height,
         cfa,
-        nim
+        normalized_raw_data
     );
-
     return debayer_image
 }
 
-/// Fuses cropping, type conversion (u16->f32), and normalization into a single pass.
+
 fn crop_and_normalize(
     width: usize, 
     crop_rect: Rect, 
@@ -88,8 +81,8 @@ fn crop_and_normalize(
     let mut output = vec![0.0; len];
     let bias = -black_level * factor;
 
-    // Parallel Iteration over Output Rows
-    output.par_chunks_exact_mut(crop_w)
+    // turns out in this specific loop is faster to NOT do a parallel iterator
+    output.chunks_exact_mut(crop_w)
         .enumerate()
         .for_each(|(i, out_row)| {
             let src_row_idx = start_y + i;
@@ -141,7 +134,7 @@ pub mod demosaic_algorithms {
                     let y_min = row.saturating_sub(1);
                     let y_max = (row + 1).min(height - 1);
 
-                    for (col, pixel_out) in row_pixels.iter_mut().enumerate() {
+                    row_pixels.iter_mut().enumerate().for_each(|(col, pixel_out)| {
                         // Get the raw Bayer color for this specific pixel (0=R, 1=G, 2=B)
                         let center_cfa_color = cfa.color_at(row, col);
 
@@ -185,7 +178,7 @@ pub mod demosaic_algorithms {
                                 }
                             }
                         }
-                    }
+                    });
                 });
 
             return Image{
