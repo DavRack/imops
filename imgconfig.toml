@@ -25,11 +25,11 @@ ev = 4
 
 [[pipeline_modules]]
 name = "Contrast"
-c = 1.25
+c = 1.75
 
 [[pipeline_modules]]
 name = "CST"
-color_space = "CameraToWCS"
+target_color_space = "XyzD65"
 
 
 # # [[pipeline_modules]]
@@ -41,13 +41,13 @@ color_space = "CameraToWCS"
 [[pipeline_modules]]
 name = "LCH"
 lc = 1
-cc = 1
+cc = 1.5
 hc = 1
 
 [[pipeline_modules]]
-name = "Sigmoid"
-c = 6
+name = "ToneMap"
+# c = 6
 
 [[pipeline_modules]]
 name = "CST"
-color_space = "WCSTOsRGB"
+target_color_space = "Srgb"

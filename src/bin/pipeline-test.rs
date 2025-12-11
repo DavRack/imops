@@ -3,7 +3,7 @@ use std::io::{BufWriter, Write};
 use std::time::Instant;
 use color::ColorSpaceTag;
 use pichromatic::cfa::CFA;
-use pichromatic::demosaic::{Dim2, Point, Rect, demosaic_algorithms};
+use pichromatic::demosaic::{Dim2, Point, Rect};
 use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::Image;
 use pichromatic_pipeline::config::PipelineConfig;

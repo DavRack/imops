@@ -12,4 +12,6 @@ path = "src/lib.rs"
 [dependencies]
 pichromatic = { version = "0.1.0", path = "../pichromatic" }
 serde = { version = "1.0.217", features = ["derive"] }
+toml = "0.8.20"
 rayon = "1.10.0"
+serde_plain = "1.0.2"

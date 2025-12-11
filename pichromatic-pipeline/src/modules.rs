@@ -141,17 +141,22 @@ impl PipelineModule for Module<CFACoeffs> {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct CST {
-    pub target_color_space: ColorSpaceTag,
+    pub target_color_space: String,
 }
 
 impl PipelineModule for Module<CST> {
     fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        let target_color_space: ColorSpaceTag = serde_plain::from_str(
+            &self.config.target_color_space
+        ).expect(
+            &format!("Color space not recognized: {}", self.config.target_color_space)
+        );
         return match image.metadata.color_space {
-            Some(_) => image.cst(self.config.target_color_space),
+            Some(_) => image.cst(target_color_space),
             None => image.camera_cst(
-                self.config.target_color_space,
+                target_color_space,
                 &image.metadata.calibration_matrix_d65.clone().expect(
                     "A calibration matrix must be set to perform a camera cst transform"
                 )
