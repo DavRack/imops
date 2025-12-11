@@ -8,7 +8,7 @@ use pichromatic::cfa::CFA;
 use pichromatic::demosaic::{Dim2, Point, Rect};
 use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::Image;
-use pichromatic_pipeline::config;
+use pichromatic_pipeline::config::{self, PipelineConfig};
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use rawler::RawImageData;
 use rawler::imgop::xyz::Illuminant;
@@ -30,6 +30,8 @@ fn main() -> io::Result<()> {
     let listener = UnixListener::bind(socket_path)?;
     println!("Listening on {}", socket_path);
 
+    let mut old_pipeline: Option<PipelineConfig> = None;
+
     // 3. Accept incoming connections in a loop
     for stream in listener.incoming() {
         match stream {
@@ -42,8 +44,28 @@ fn main() -> io::Result<()> {
                         let config = String::from_utf8_lossy(&buffer[..size]);
                         println!("Received:");
                         println!("{}", config);
-                        process_image(&mut raw_image, config.to_string(), output_path.to_string());
+                        let mut pipeline = config::parse_config(config.to_string());
+
+                        match old_pipeline{
+                            None => (),
+                            Some(old_pipeline) => {
+                                pipeline.pipeline_modules.iter_mut().for_each(|module| {
+                                    let hash = module.get_chained_hash();
+                                    let cache = old_pipeline.pipeline_modules.iter().find(|module|{
+                                        let old_hash = module.get_chained_hash();
+                                        old_hash == hash && module.get_cache().is_some()
+                                    });
+                                    match cache {
+                                        None => (),
+                                        Some(val) => module.set_cache(val.get_cache().unwrap()),
+                                    }
+                                });
+                            },
+                        }
+
+                        process_image(&mut raw_image, &mut pipeline, output_path.to_string());
                         println!("finish");
+                        old_pipeline = Some(pipeline);
                     }
                     Err(e) => eprintln!("Failed to read from client: {}", e),
                 }
@@ -56,8 +78,7 @@ fn main() -> io::Result<()> {
 
     Ok(())
 }
-fn process_image(image: &mut Image, config: String, output_path: String){
-    let pipeline = config::parse_config(config);
+fn process_image(image: &mut Image, pipeline: &mut PipelineConfig, output_path: String){
     let mut result1 = run_pixel_pipeline(image.clone(), pipeline);
     let (pixels, width, height) = to_u8(&mut result1);
     save_bmp(&output_path, width, height, pixels).unwrap();

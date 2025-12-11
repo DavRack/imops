@@ -1,5 +1,5 @@
 use color::ColorSpaceTag;
-
+use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::{cfa::CFA, demosaic::Rect, pixel::SubPixel};
 
 #[derive(Clone, Debug, Default)]
@@ -13,4 +13,12 @@ pub struct ImageMetadata {
     pub color_space: Option<ColorSpaceTag>,
     pub height: usize,
     pub width: usize,
+}
+
+impl ImageMetadata {
+    pub fn hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        format!("{:?}", self).hash(&mut hasher);
+        return hasher.finish()
+    }
 }

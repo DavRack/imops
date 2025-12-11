@@ -1,11 +1,14 @@
+use std::fmt::Debug;
+
 use pichromatic::demosaic::demosaic_algorithms;
 use serde::{Deserialize, Serialize};
 use pichromatic::pixel::{Image, SubPixel};
 use pichromatic::cst::ColorSpaceTag;
 
 pub trait GenericModule {
-    // fn set_cache(&mut self, cache: Image);
-    // fn get_cache(&self) -> Option<Image>;
+    fn set_cache(&mut self, cache: Image);
+    fn get_cache(&self) -> Option<Image>;
+    fn get_chained_hash(&self) -> u64;
     fn get_name(&self) -> String;
     // fn get_mask(&self) -> Option<Box<dyn Mask>>;
 }
@@ -14,20 +17,25 @@ pub trait PipelineModule: GenericModule{
     fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image;
 }
 
-impl<T> GenericModule for Module<T> {
-    // fn set_cache(&mut self, cache: Image) {
-    //     self.cache = Some(cache)
-    // }
-    // fn get_cache(&self) -> Option<Image>{
-    //     match &self.cache {
-    //         Some(cache) => Some(cache.clone()),
-    //         None => None,
-    //     }
-    // }
+impl<T> GenericModule for Module<T> where T: Debug{
+    fn set_cache(&mut self, cache: Image) {
+        self.cache = Some(cache)
+    }
+
+    fn get_cache(&self) -> Option<Image>{
+        match &self.cache {
+            Some(cache) => Some(cache.clone()),
+            None => None,
+        }
+    }
+
     fn get_name(&self) -> String {
         self.name.clone()
     }
 
+    fn get_chained_hash(&self) -> u64 {
+        return self.chained_hash
+    }
     // fn get_mask(&self) -> Option<Box<dyn Mask>> {
     //     if let Some(v) = &self.mask{
     //         let a = dyn_clone::clone_box(&**v);
@@ -38,9 +46,10 @@ impl<T> GenericModule for Module<T> {
     // }
 }
 
-pub struct Module<T>{
+pub struct Module<T: Debug>{
     pub name: String,
     pub cache: Option<Image>,
+    pub chained_hash: u64,
     pub config: T,
     // pub mask: Option<Box<dyn Mask>>
 }

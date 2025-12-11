@@ -53,6 +53,10 @@ impl PixelOps for Pixel{
 }
 
 impl Image {
+    pub fn hash(&self) -> u64{
+        return self.metadata.hash()
+    }
+
     pub fn lch(&mut self, lch_coefs: [SubPixel; 3]) -> &mut Image{
         let [l_coef, c_coef, h_coef] = lch_coefs;
         lch(
