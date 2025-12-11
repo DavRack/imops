@@ -17,5 +17,5 @@ name = "example"
 path = "src/bin/example.rs"
 
 [dependencies]
-color = "0.3.2"
+color = { version = "0.3.2", features = ["serde"] }
 rayon = "1.10.0"

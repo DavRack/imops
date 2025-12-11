@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use crate::image::ImageMetadata;
 use crate::pixel::{Image, ImageBuffer, SubPixel};
 use crate::cfa::CFA;
@@ -22,7 +20,7 @@ pub struct Point {
 }
 
 /// Rectangle by a point and dimension
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub struct Rect {
   pub p: Point,
   pub d: Dim2,
@@ -33,30 +31,22 @@ pub trait DemosaicAlgorithm {
 }
 
 pub fn demosaic(
-    raw_image_data: &[u16],
-    image_metadata: ImageMetadata,
+    image: Image,
     demosaic_algorithm: impl DemosaicAlgorithm
 ) -> Image {
-    // Calculate normalization factors once
-    let range = image_metadata.white_level.unwrap() - image_metadata.black_level.unwrap();
-    let factor = 1.0 / range;
 
     let cfa = get_cfa(
-        image_metadata.cfa.expect("A CFA must be set to demosaic raw images"),
-        image_metadata.crop_area.expect("Crop area must be set to demosaic raw images")
+        image.metadata.cfa.as_ref().expect("A CFA must be set to demosaic raw images"),
+        image.metadata.crop_area.expect("Crop area must be set to demosaic raw images")
     );
 
     let normalized_raw_data = crop_and_normalize(
-        image_metadata.width,
-        image_metadata.crop_area.expect("crop_area must be set to demosaic raw images"),
-        raw_image_data,
-        image_metadata.black_level.expect("black level must be set to demosaic raw images"),
-        factor
+        &image,
     );
 
     let debayer_image = demosaic_algorithm.demosaic(
-        image_metadata.width,
-        image_metadata.height,
+        image.metadata.width,
+        image.metadata.height,
         cfa,
         normalized_raw_data
     );
@@ -65,15 +55,16 @@ pub fn demosaic(
 
 
 fn crop_and_normalize(
-    width: usize, 
-    crop_rect: Rect, 
-    data: &[u16], 
-    black_level: f32, 
-    factor: f32
+    image: &Image, 
 ) -> Vec<f32> {
+    let crop_rect = image.metadata.crop_area.expect("crop_area must be set to demosaic raw images");
+    let white_level = image.metadata.white_level.expect("white level must be set to demosaic");
+    let black_level = image.metadata.black_level.expect("black level must be set to demosaic");
+    let range = white_level - black_level;
+    let factor = 1.0 / range;
     let crop_w = crop_rect.d.w;
     let crop_h = crop_rect.d.h;
-    let full_w = width;
+    let full_w = image.metadata.width;
     let start_x = crop_rect.p.x;
     let start_y = crop_rect.p.y;
 
@@ -90,7 +81,7 @@ fn crop_and_normalize(
             let end = begin + crop_w;
             
             // Slice the source row
-            let src_slice = &data[begin..end];
+            let src_slice = &image.raw_data[begin..end];
 
             out_row.iter_mut().zip(src_slice).for_each(|(out_pix, &in_pix)|{
                 *out_pix = (in_pix as f32).mul_add(factor, bias);
@@ -99,7 +90,7 @@ fn crop_and_normalize(
     output
 }
 
-pub fn get_cfa(cfa: CFA, crop_rect: Rect) -> CFA {
+pub fn get_cfa(cfa: &CFA, crop_rect: Rect) -> CFA {
     let x = crop_rect.p.x;
     let y = crop_rect.p.y;
     let new_cfa = cfa.shift(x, y);
@@ -181,11 +172,14 @@ pub mod demosaic_algorithms {
                     });
                 });
 
-            return Image{
-                data: rgb,
-                height: height,
-                width: width,
-                color_space: None
+            let mut image_metadata = ImageMetadata::default();
+            image_metadata.height = height;
+            image_metadata.width = width;
+
+            return Image {
+                rgb_data: rgb,
+                raw_data: vec![],
+                metadata: image_metadata,
             }
         }
     }
@@ -226,11 +220,14 @@ pub mod demosaic_algorithms {
 
                 *pix = values;
             });
-            return Image{
-                data: rgb,
-                height: new_height,
-                width: new_width,
-                color_space: None
+            let mut image_metadata = ImageMetadata::default();
+            image_metadata.height = new_height;
+            image_metadata.width = new_width;
+
+            return Image {
+                rgb_data: rgb,
+                raw_data: vec![],
+                metadata: image_metadata,
             }
         }
     }
@@ -286,11 +283,14 @@ pub mod demosaic_algorithms {
                 *pix = values;
             });
 
+            let mut image_metadata = ImageMetadata::default();
+            image_metadata.height = new_height;
+            image_metadata.width = new_width;
+
             return Image {
-                data: rgb,
-                height: new_height,
-                width: new_width,
-                color_space: None
+                rgb_data: rgb,
+                raw_data: vec![],
+                metadata: image_metadata,
             }
         }
     }

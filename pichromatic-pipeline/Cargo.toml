@@ -1,5 +1,5 @@
 [package]
-name = "pichromatic_pipeline"
+name = "pichromatic-pipeline"
 version = "0.1.0"
 edition = "2021"
 description = "A raw photo developing pipeline "
@@ -12,3 +12,4 @@ path = "src/lib.rs"
 [dependencies]
 pichromatic = { version = "0.1.0", path = "../pichromatic" }
 serde = { version = "1.0.217", features = ["derive"] }
+rayon = "1.10.0"

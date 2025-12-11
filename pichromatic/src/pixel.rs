@@ -16,12 +16,14 @@ pub const CHANNELS_PER_PIXEL: usize = 3;
 
 pub type SubPixel = f32;
 pub type Pixel = [SubPixel; CHANNELS_PER_PIXEL];
+
 pub type ImageBuffer = Vec<Pixel>;
+
+#[derive(Clone, Default)]
 pub struct Image {
-    pub data: ImageBuffer,
-    pub height: usize,
-    pub width: usize,
-    pub color_space: Option<ColorSpaceTag>
+    pub rgb_data: ImageBuffer,
+    pub raw_data: Vec<u16>,
+    pub metadata: ImageMetadata,
 }
 
 // pub const R_RELATIVE_LUMINANCE: SubPixel = 0.2126;
@@ -54,37 +56,37 @@ impl Image {
     pub fn lch(&mut self, lch_coefs: [SubPixel; 3]) -> &mut Image{
         let [l_coef, c_coef, h_coef] = lch_coefs;
         lch(
-            &mut self.data,
-            self.color_space.unwrap(),
+            &mut self.rgb_data,
+            self.metadata.color_space.unwrap(),
             l_coef, c_coef, h_coef
         );
         return self
     }
 
     pub fn exp(&mut self, ev: SubPixel) -> &mut Image{
-        exp( &mut self.data, ev);
+        exp( &mut self.rgb_data, ev);
         return self
     }
 
     pub fn cst(&mut self, target_cs: ColorSpaceTag) -> &mut Image{
         cst(
-            &mut self.data,
-            self.color_space.expect("Image needs to have a color space to perform a CST"),
+            &mut self.rgb_data,
+            self.metadata.color_space.expect("Image needs to have a color space to perform a CST"),
             target_cs,
         );
-        self.color_space = Some(target_cs);
+        self.metadata.color_space = Some(target_cs);
         return self
     }
 
-    pub fn camera_cst(&mut self, target_cs: ColorSpaceTag, camera_color_matrix: Vec<f32>) -> &mut Image{
-        camera_cst(&mut self.data, target_cs, camera_color_matrix);
-        self.color_space = Some(target_cs);
+    pub fn camera_cst(&mut self, target_cs: ColorSpaceTag, camera_color_matrix: &[f32]) -> &mut Image{
+        camera_cst(&mut self.rgb_data, target_cs, camera_color_matrix);
+        self.metadata.color_space = Some(target_cs);
         return self
     }
 
     pub fn tone_map(&mut self) -> &mut Image{
         sigmoid(
-            &mut self.data
+            &mut self.rgb_data
         );
         return self
     }
@@ -95,22 +97,20 @@ impl Image {
     }
 
     pub fn contrast(&mut self, value: SubPixel) -> &mut Image{
-        contrast(&mut self.data, value);
+        contrast(&mut self.rgb_data, value);
         return self
     }
     pub fn highlight_reconstruction(&mut self, wb_coeffs: [SubPixel; 4]) -> &mut Image{
-        highlight_reconstruction(&mut self.data, wb_coeffs);
+        highlight_reconstruction(&mut self.rgb_data, wb_coeffs);
         return self
     }
 
     pub fn demosaic(
-        raw_image_data: &[u16],
-        image_metadata: ImageMetadata,
+        self,
         demosaic_algorithm: impl DemosaicAlgorithm
     ) -> Image{
         return demosaic::demosaic(
-            raw_image_data,
-            image_metadata,
+            self,
             demosaic_algorithm
         )
     }

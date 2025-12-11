@@ -9,13 +9,12 @@ pub fn cst(image_buffer: &mut ImageBuffer, source_cs: ColorSpaceTag, target_cs: 
     });
 }
 
-pub fn camera_cst(image_buffer: &mut ImageBuffer, target_cs: ColorSpaceTag, camera_color_matrix: Vec<f32>){
-    let d65 = camera_color_matrix;
-    let components = d65.len() / 3;
+pub fn camera_cst(image_buffer: &mut ImageBuffer, target_cs: ColorSpaceTag, calibration_matrix_d65: &[f32]){
+    let components = calibration_matrix_d65.len() / 3;
     let mut xyz2cam: [Pixel; 3] = [[0.0; 3]; 3];
     for i in 0..components {
         for j in 0..3 {
-            xyz2cam[i][j] = d65[i * 3 + j];
+            xyz2cam[i][j] = calibration_matrix_d65[i * 3 + j];
         }
     }
     let xyz2cam_normalized = normalize_matrix(xyz2cam);

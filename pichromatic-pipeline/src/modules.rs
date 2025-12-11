@@ -1,73 +1,66 @@
+use pichromatic::demosaic::demosaic_algorithms;
 use serde::{Deserialize, Serialize};
-use pichromatic::pixel::Image;
+use pichromatic::pixel::{Image, SubPixel};
 use pichromatic::cst::ColorSpaceTag;
 
 pub trait GenericModule {
-    fn set_cache(&mut self, cache: Image);
-    fn get_cache(&self) -> Option<Image>;
+    // fn set_cache(&mut self, cache: Image);
+    // fn get_cache(&self) -> Option<Image>;
     fn get_name(&self) -> String;
-    fn get_mask(&self) -> Option<Box<dyn Mask>>;
+    // fn get_mask(&self) -> Option<Box<dyn Mask>>;
 }
 
 pub trait PipelineModule: GenericModule{
-    fn process(&self, image: Image, raw_image: &ImageMetadata) -> Image;
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image;
 }
 
-pub struct ImageMetadata {}
-
 impl<T> GenericModule for Module<T> {
-    fn set_cache(&mut self, cache: Image) {
-        self.cache = Some(cache)
-    }
-    fn get_cache(&self) -> Option<Image>{
-        match &self.cache {
-            Some(cache) => Some(cache.clone()),
-            None => None,
-        }
-    }
+    // fn set_cache(&mut self, cache: Image) {
+    //     self.cache = Some(cache)
+    // }
+    // fn get_cache(&self) -> Option<Image>{
+    //     match &self.cache {
+    //         Some(cache) => Some(cache.clone()),
+    //         None => None,
+    //     }
+    // }
     fn get_name(&self) -> String {
         self.name.clone()
     }
 
-    fn get_mask(&self) -> Option<Box<dyn Mask>> {
-        if let Some(v) = &self.mask{
-            let a = dyn_clone::clone_box(&**v);
-            return Some(a)
-        }else {
-            return None
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct FormedImage {
-    pub raw_image: RawImage,
-    pub data: RgbF32,
+    // fn get_mask(&self) -> Option<Box<dyn Mask>> {
+    //     if let Some(v) = &self.mask{
+    //         let a = dyn_clone::clone_box(&**v);
+    //         return Some(a)
+    //     }else {
+    //         return None
+    //     }
+    // }
 }
 
 pub struct Module<T>{
     pub name: String,
     pub cache: Option<Image>,
     pub config: T,
-    pub mask: Option<Box<dyn Mask>>
+    // pub mask: Option<Box<dyn Mask>>
 }
 
-impl<T> Module<T>{
-    pub fn from_toml<'a>(module: Map<String, toml::Value>) -> Box<Self>
-    where
-        T: Deserialize<'a> + Default,
-        Self: Sized
-    {
-        let cfg: T = module.clone().try_into::<T>().expect(any::type_name::<Self>());
-        let module = Module{
-            name: module["name"].to_string(),
-            cache: None,
-            config: cfg,
-            mask: None
-        };
-        Box::new(module)
-    }
-}
+// impl<T> Module<T>{
+//     pub fn from_toml<'a>(module: Map<String, toml::Value>) -> Box<Self>
+// where
+//         T: Deserialize<'a> + Default,
+//         Self: Sized
+//     {
+//         let cfg: T = module.clone().try_into::<T>().expect(any::type_name::<Self>());
+//         let module = Module{
+//             name: module["name"].to_string(),
+//             cache: None,
+//             config: cfg,
+//             mask: None
+//         };
+//         Box::new(module)
+//     }
+// }
 
 
 
@@ -79,11 +72,11 @@ pub struct  LCH{
 }
 
 impl PipelineModule for Module<LCH> {
-    fn process(&self, mut image: Image, _raw_image: &RawImage) -> Image {
-        return image.lch([
-            self.lc,
-            self.cc,
-            self.hc,
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+         image.lch([
+            self.config.lc,
+            self.config.cc,
+            self.config.hc,
         ])
     }
 }
@@ -93,9 +86,12 @@ pub struct HighlightReconstruction {
 }
 
 impl PipelineModule for Module<HighlightReconstruction> {
-    fn process(&self, mut image: Image, raw_image: &RawImage) -> Image {
-        let wb_coeffs = [0.0, 0.0, 0.0];
-        return image.highlight_reconstruction(wb_coeffs)
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return image.highlight_reconstruction(
+            image.metadata.wb_coeffs.expect(
+                "wb_coeffs needs to be set to perform highlight_reconstruction"
+            )
+        )
     }
 }
 
@@ -105,8 +101,8 @@ pub struct Exp {
 }
 
 impl PipelineModule for Module<Exp> {
-    fn process(&self, mut image: Image, _raw_image: &RawImage) -> Image {
-        return image.exp(self.ev)
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return image.exp(self.config.ev)
     }
 }
 
@@ -115,7 +111,7 @@ pub struct ToneMap {
 }
 
 impl PipelineModule for Module<ToneMap> {
-    fn process(&self, mut image: Image, _raw_image: &RawImage) -> Image {
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
         return image.tone_map()
     }
 }
@@ -126,8 +122,8 @@ pub struct Contrast {
 }
 
 impl PipelineModule for Module<Contrast> {
-    fn process(&self, mut image: Image, _raw_image: &RawImage) -> Image {
-        return image.contrast(self.c)
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return image.contrast(self.config.c)
     }
 }
 
@@ -136,22 +132,30 @@ pub struct CFACoeffs {
 }
 
 impl PipelineModule for Module<CFACoeffs> {
-    fn process(&self, mut image: Image, raw_image: &RawImage) -> Image {
-        let wb_coeffs = [0.0, 0.0, 0.0];
-        return image.cfa_coeffs(wb_coeffs)
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return image.cfa_coeffs(
+            image.metadata.wb_coeffs.expect(
+                "wb_coeffs needs to be set to perform highlight_reconstruction"
+            )
+        )
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CST {
     pub target_color_space: ColorSpaceTag,
 }
 
 impl PipelineModule for Module<CST> {
-    fn process(&self, mut image: Image, raw_image: &RawImage) -> Image {
-        return match image.color_space {
-            Some(_) => image.cst(self.target_color_space),
-            None => image.camera_cst(self.target_color_space, camera_color_matrix)
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return match image.metadata.color_space {
+            Some(_) => image.cst(self.config.target_color_space),
+            None => image.camera_cst(
+                self.config.target_color_space,
+                &image.metadata.calibration_matrix_d65.clone().expect(
+                    "A calibration matrix must be set to perform a camera cst transform"
+                )
+            )
         }
     }
 }
@@ -162,8 +166,16 @@ pub struct Demosaic {
 }
 
 impl PipelineModule for Module<Demosaic> {
-    fn process( &self, image: Image, raw_image: &RawImage) -> Image {
-        Image::demosaic(raw_image_data, image_dimensions, crop_area, black_level, white_level, cfa, demosaic_algorithm)
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        let new_image = Image::demosaic(
+            image.clone(),
+            demosaic_algorithms::Markesteijn{}
+        );
+        image.rgb_data = new_image.rgb_data;
+        image.metadata.width = new_image.metadata.width;
+        image.metadata.height = new_image.metadata.height;
+        image.metadata.color_space = None;
+        return image;
     }
 }
 
@@ -176,7 +188,7 @@ impl PipelineModule for Module<Demosaic> {
 // }
 
 // impl PipelineModule for Module<LocalExpousure> {
-//     fn process(&self, mut image: Image, _raw_image: &RawImage) -> Image {
+//     fn process(&self, mut image: Image, _image_metadata: &ImageMetadata) -> Image {
 //     }
 // }
 
@@ -190,7 +202,7 @@ impl PipelineModule for Module<Demosaic> {
 // }
 
 // impl PipelineModule for Module<ChromaDenoise> {
-//     fn process(&self, image: Image, _raw_image: &RawImage) -> Image {
+//     fn process(&self, image: Image, _image_metadata: &ImageMetadata) -> Image {
 //     }
 // }
 
@@ -200,7 +212,7 @@ impl PipelineModule for Module<Demosaic> {
 // }
 
 // impl PipelineModule for Module<Crop> {
-//     fn process(&self, mut image: Image, _raw_image: &RawImage) -> Image {
+//     fn process(&self, mut image: Image, _image_metadata: &ImageMetadata) -> Image {
 //     }
 // }
 

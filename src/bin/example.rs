@@ -19,7 +19,7 @@ fn main() {
     // let raw_image = RawImage::decode(&mut file).unwrap();
     let raw_image = rawler::decode_file(input_path).unwrap();
     let t1 = Instant::now();
-    let camera_color_matrix = raw_image.camera.color_matrix[&Illuminant::D65].clone();
+    let calibration_matrix_d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
     let wb_coeffs = raw_image.wb_coeffs;
     let raw_image_dimentions = raw_image.dim();
     let raw_image_crop_area = raw_image.crop_area.unwrap();
@@ -29,6 +29,7 @@ fn main() {
     let image_metadata = ImageMetadata{
         width: raw_image_dimentions.w,
         height: raw_image_dimentions.h,
+        color_space: None,
         crop_area: Some(Rect{
             p: Point {
                 x: raw_image_crop_area.p.x,
@@ -43,6 +44,7 @@ fn main() {
         white_level: Some(raw_image_white_level),
         wb_coeffs: Some(wb_coeffs),
         cfa: Some(CFA::new(&raw_image_cfa)),
+        calibration_matrix_d65: Some(calibration_matrix_d65.clone()),
     };
     let raw_image_data = match raw_image.data {
         RawImageData::Integer(data) => data,
@@ -51,17 +53,23 @@ fn main() {
 
     let wcs = ColorSpaceTag::AcesCg;
 
+    let mut image = Image{
+        raw_data: raw_image_data,
+        rgb_data: vec![],
+        metadata: image_metadata,
+    }.demosaic(demosaic_algorithms::Markesteijn{});
 
     // image processing pipeline example, this insnt by any means a complete pipeline
     // but the minimal steps to get a "correct" sRGB image from a raw file
-    let mut image = Image::demosaic(
-        &raw_image_data,
-        image_metadata,
-        demosaic_algorithms::Markesteijn{}
-    );
-    let image = image.cfa_coeffs(wb_coeffs)
+    // let mut image = Image::demosaic(
+    //     &raw_image_data,
+    //     &image_metadata,
+    //     demosaic_algorithms::Markesteijn{}
+    // );
+    let image = image
+        .cfa_coeffs(wb_coeffs)
         .highlight_reconstruction(wb_coeffs)
-        .camera_cst(wcs, camera_color_matrix)
+        .camera_cst(wcs, &calibration_matrix_d65)
         .tone_map()
         .cst(ColorSpaceTag::Srgb);
 
@@ -74,10 +82,10 @@ fn main() {
 }
 
 fn to_u8(image: &mut Image) -> (Vec<[u8;3]>, usize, usize){
-    let new_image = image.data.par_iter().map(|pixel|{
+    let new_image = image.rgb_data.par_iter().map(|pixel|{
         pixel.map(|sub_pixel| (sub_pixel.clamp(0.0, 1.0) * 255.0) as u8)
     }).collect();
-    return (new_image, image.width, image.height)
+    return (new_image, image.metadata.width, image.metadata.height)
 }
 
 

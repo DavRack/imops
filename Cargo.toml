@@ -23,6 +23,7 @@ required-features = ["visual_tests"]
 [profile.release]
 opt-level = 3
 lto = "fat"
+target-cpu = "native"
 
 [profile.profiling]
 inherits = "release"
@@ -30,6 +31,7 @@ debug = true
 
 [dependencies]
 pichromatic = {version="0.1.0", path="pichromatic"}
+pichromatic-pipeline = {version="0.1.0", path="pichromatic-pipeline"}
 approx = "0.5.1"
 clap = {version="4.5.29", features = ["derive"]}
 color = "0.3.2"
