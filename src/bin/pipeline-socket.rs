@@ -44,7 +44,7 @@ fn main() -> io::Result<()> {
                         println!("Received:");
                         println!("{}", config);
                         let mut pipeline = config::parse_config(config.to_string());
-                        process_image(&mut raw_image, &mut pipeline, output_path.to_string());
+                        raw_image = process_image(raw_image, &mut pipeline, output_path.to_string());
                     }
                     Err(e) => eprintln!("Failed to read from client: {}", e),
                 }
@@ -57,12 +57,13 @@ fn main() -> io::Result<()> {
 
     Ok(())
 }
-fn process_image(image: &mut Image, pipeline: &mut PipelineConfig, output_path: String){
+fn process_image(mut image: Image, pipeline: &mut PipelineConfig, output_path: String) -> Image{
     let t1 = Instant::now();
-    let mut result1 = run_pixel_pipeline(image.clone(), pipeline);
+    let mut result1 = run_pixel_pipeline(image, pipeline);
     println!("finish pipeline with total time: {:.2?}", t1.elapsed());
     let (pixels, width, height) = to_u8(&mut result1);
     save_bmp(&output_path, width, height, pixels).unwrap();
+    return result1
 }
 
 
