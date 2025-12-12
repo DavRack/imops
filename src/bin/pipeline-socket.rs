@@ -2,6 +2,7 @@ use std::io::{self, Read};
 use std::os::unix::net::UnixListener;
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 use filsimrs::file_helpers::{save_bmp, to_u8};
 use pichromatic::cfa::CFA;
@@ -30,8 +31,6 @@ fn main() -> io::Result<()> {
     let listener = UnixListener::bind(socket_path)?;
     println!("Listening on {}", socket_path);
 
-    let mut old_pipeline: Option<PipelineConfig> = None;
-
     // 3. Accept incoming connections in a loop
     for stream in listener.incoming() {
         match stream {
@@ -45,27 +44,7 @@ fn main() -> io::Result<()> {
                         println!("Received:");
                         println!("{}", config);
                         let mut pipeline = config::parse_config(config.to_string());
-
-                        match old_pipeline{
-                            None => (),
-                            Some(old_pipeline) => {
-                                pipeline.pipeline_modules.iter_mut().for_each(|module| {
-                                    let hash = module.get_chained_hash();
-                                    let cache = old_pipeline.pipeline_modules.iter().find(|module|{
-                                        let old_hash = module.get_chained_hash();
-                                        old_hash == hash && module.get_cache().is_some()
-                                    });
-                                    match cache {
-                                        None => (),
-                                        Some(val) => module.set_cache(val.get_cache().unwrap()),
-                                    }
-                                });
-                            },
-                        }
-
                         process_image(&mut raw_image, &mut pipeline, output_path.to_string());
-                        println!("finish");
-                        old_pipeline = Some(pipeline);
                     }
                     Err(e) => eprintln!("Failed to read from client: {}", e),
                 }
@@ -79,7 +58,9 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 fn process_image(image: &mut Image, pipeline: &mut PipelineConfig, output_path: String){
+    let t1 = Instant::now();
     let mut result1 = run_pixel_pipeline(image.clone(), pipeline);
+    println!("finish pipeline with total time: {:.2?}", t1.elapsed());
     let (pixels, width, height) = to_u8(&mut result1);
     save_bmp(&output_path, width, height, pixels).unwrap();
 }

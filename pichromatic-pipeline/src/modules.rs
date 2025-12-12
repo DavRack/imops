@@ -6,9 +6,6 @@ use pichromatic::pixel::{Image, SubPixel};
 use pichromatic::cst::ColorSpaceTag;
 
 pub trait GenericModule {
-    fn set_cache(&mut self, cache: Image);
-    fn get_cache(&self) -> Option<Image>;
-    fn get_chained_hash(&self) -> u64;
     fn get_name(&self) -> String;
     // fn get_mask(&self) -> Option<Box<dyn Mask>>;
 }
@@ -18,23 +15,8 @@ pub trait PipelineModule: GenericModule{
 }
 
 impl<T> GenericModule for Module<T> where T: Debug{
-    fn set_cache(&mut self, cache: Image) {
-        self.cache = Some(cache)
-    }
-
-    fn get_cache(&self) -> Option<Image>{
-        match &self.cache {
-            Some(cache) => Some(cache.clone()),
-            None => None,
-        }
-    }
-
     fn get_name(&self) -> String {
         self.name.clone()
-    }
-
-    fn get_chained_hash(&self) -> u64 {
-        return self.chained_hash
     }
     // fn get_mask(&self) -> Option<Box<dyn Mask>> {
     //     if let Some(v) = &self.mask{
@@ -49,7 +31,6 @@ impl<T> GenericModule for Module<T> where T: Debug{
 pub struct Module<T: Debug>{
     pub name: String,
     pub cache: Option<Image>,
-    pub chained_hash: u64,
     pub config: T,
     // pub mask: Option<Box<dyn Mask>>
 }
@@ -181,10 +162,27 @@ pub struct Demosaic {
 
 impl PipelineModule for Module<Demosaic> {
     fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
-        let new_image = Image::demosaic(
-            image.clone(),
-            demosaic_algorithms::Markesteijn{}
-        );
+        let new_image = match self.config.algorithm.to_lowercase().as_str() {
+            "markesteijn" => {
+                Image::demosaic(
+                    image.clone(),
+                    demosaic_algorithms::Markesteijn{},
+                )
+            },
+                "fast" => {
+                Image::demosaic(
+                    image.clone(),
+                    demosaic_algorithms::Fast{},
+                )
+            },
+            "superfast" => {
+                Image::demosaic(
+                    image.clone(),
+                    demosaic_algorithms::SuperFast{},
+                )
+            },
+            _ => panic!()
+        };
         image.rgb_data = new_image.rgb_data;
         image.metadata.width = new_image.metadata.width;
         image.metadata.height = new_image.metadata.height;

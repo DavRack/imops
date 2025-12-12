@@ -15,6 +15,7 @@ pub fn save_bmp(
     height: usize,
     pixels: Vec<[u8; 3]>, // Kept as requested
 ) -> std::io::Result<()> {
+    println!("image dimensions: {} != {}", width*height, pixels.len());
     assert_eq!(
         width * height,
         pixels.len(),

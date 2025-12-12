@@ -22,7 +22,7 @@ fn chained_hash<T>(module: &T, prev_hash: u64) -> u64 where T: Debug {
     return hasher.finish();
 }
 
-pub fn from_toml<'a, T>(module: Map<String, toml::Value>, prev_hash: u64) -> Box<dyn PipelineModule>
+pub fn from_toml<'a, T>(module: Map<String, toml::Value>) -> Box<dyn PipelineModule>
     where
     T: Deserialize<'a> + Default + 'static,
     T: Debug,
@@ -41,7 +41,6 @@ pub fn from_toml<'a, T>(module: Map<String, toml::Value>, prev_hash: u64) -> Box
     let module = Module{
         name: module["name"].to_string(),
         cache: None,
-        chained_hash: chained_hash(&cfg, prev_hash),
         config: cfg,
         // mask
     };
@@ -57,26 +56,22 @@ pub fn parse_config(config: String) -> PipelineConfig{
         pipeline_modules: vec![]
     };
 
-    let mut current_hash: u64 = 0;
-
     for module in data.pipeline_modules {
         let pipeline_module: Box<dyn PipelineModule> = match module["name"].as_str().unwrap() {
-            "HighlightReconstruction" =>    from_toml::<HighlightReconstruction>(module, current_hash),
+            "HighlightReconstruction" =>    from_toml::<HighlightReconstruction>(module),
             // "LocalExpousure" =>             from_toml::<LocalExpousure>(module),
             // "ChromaDenoise" =>              from_toml::<ChromaDenoise>(module),
-            "CFACoeffs" =>                  from_toml::<CFACoeffs>(module, current_hash),
-            "Contrast" =>                   from_toml::<Contrast>(module, current_hash),
-            "ToneMap" =>                    from_toml::<ToneMap>(module, current_hash),
+            "CFACoeffs" =>                  from_toml::<CFACoeffs>(module),
+            "Contrast" =>                   from_toml::<Contrast>(module),
+            "ToneMap" =>                    from_toml::<ToneMap>(module),
             // "Crop" =>                       from_toml::<Crop>(module),
-            "CST" =>                        from_toml::<CST>(module, current_hash),
-            "Exp" =>                        from_toml::<Exp>(module, current_hash),
-            "LCH" =>                        from_toml::<LCH>(module, current_hash),
+            "CST" =>                        from_toml::<CST>(module),
+            "Exp" =>                        from_toml::<Exp>(module),
+            "LCH" =>                        from_toml::<LCH>(module),
             // "LS" =>                         from_toml::<LS>(module),
-            "Demosaic" =>                   from_toml::<Demosaic>(module, current_hash),
+            "Demosaic" =>                   from_toml::<Demosaic>(module),
             v => panic!("wrong pipeline module name {:}", v)
         };
-        current_hash = pipeline_module.get_chained_hash();
-
         config.pipeline_modules.push(pipeline_module);
     }
     return config
