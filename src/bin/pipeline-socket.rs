@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use filsimrs::file_helpers::{save_bmp, to_u8};
 use pichromatic::cfa::CFA;
-use pichromatic::demosaic::{Dim2, Point, Rect};
+use pichromatic::demosaic::{Dim2, Point, Rect, crop_and_normalize};
 use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::Image;
 use pichromatic_pipeline::config::{self, PipelineConfig};
@@ -21,6 +21,7 @@ fn main() -> io::Result<()> {
     let socket_path = "/tmp/rust_listener.sock";
 
     let mut raw_image = get_raw_image(input_path.to_string());
+    let metadata = raw_image.metadata.clone();
 
     // 1. Cleanup: Remove the socket file if it already exists
     if Path::new(socket_path).exists() {
@@ -45,6 +46,7 @@ fn main() -> io::Result<()> {
                         println!("{}", config);
                         let mut pipeline = config::parse_config(config.to_string());
                         raw_image = process_image(raw_image, &mut pipeline, output_path.to_string());
+                        raw_image.metadata = metadata.clone();
                     }
                     Err(e) => eprintln!("Failed to read from client: {}", e),
                 }
@@ -57,7 +59,7 @@ fn main() -> io::Result<()> {
 
     Ok(())
 }
-fn process_image(mut image: Image, pipeline: &mut PipelineConfig, output_path: String) -> Image{
+fn process_image(image: Image, pipeline: &mut PipelineConfig, output_path: String) -> Image{
     let t1 = Instant::now();
     let mut result1 = run_pixel_pipeline(image, pipeline);
     println!("finish pipeline with total time: {:.2?}", t1.elapsed());
@@ -71,7 +73,7 @@ fn get_raw_image(input_path: String) -> Image{
 
     // // Decode the file to extract the raw pixels and its associated metadata
     // let raw_image = RawImage::decode(&mut file).unwrap();
-    let raw_image = rawler::decode_file(input_path).unwrap();
+    let mut raw_image = rawler::decode_file(input_path).unwrap();
     let calibration_matrix_d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
     let wb_coeffs = raw_image.wb_coeffs;
     let raw_image_dimentions = raw_image.dim();
@@ -79,8 +81,9 @@ fn get_raw_image(input_path: String) -> Image{
     let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
     let raw_image_black_level = raw_image.blacklevel.as_bayer_array()[0];
     let raw_image_cfa = raw_image.camera.cfa.to_string();
+    let _ = raw_image.apply_scaling();
     let raw_image_data = match raw_image.data {
-        RawImageData::Integer(data) => data,
+        RawImageData::Float(data) => data,
         _ => panic!(""),
     };
     let image_metadata = ImageMetadata{
@@ -104,10 +107,14 @@ fn get_raw_image(input_path: String) -> Image{
         color_space: None,
     };
 
-    let image = Image{
+    let mut image = Image{
         raw_data: raw_image_data,
         rgb_data: vec![],
         metadata: image_metadata,
     };
+    let normalized_raw_data = crop_and_normalize(
+        &image,
+    );
+    image.raw_data = normalized_raw_data;
     return image
 }

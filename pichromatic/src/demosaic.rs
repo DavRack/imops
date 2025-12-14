@@ -40,28 +40,20 @@ pub fn demosaic(
         image.metadata.crop_area.expect("Crop area must be set to demosaic raw images")
     );
 
-    let normalized_raw_data = crop_and_normalize(
-        &image,
-    );
-
     let debayer_image = demosaic_algorithm.demosaic(
         image.metadata.width,
         image.metadata.height,
         cfa,
-        normalized_raw_data
+        image.raw_data
     );
     return debayer_image
 }
 
 
-fn crop_and_normalize(
+pub fn crop_and_normalize(
     image: &Image, 
 ) -> Vec<f32> {
     let crop_rect = image.metadata.crop_area.expect("crop_area must be set to demosaic raw images");
-    let white_level = image.metadata.white_level.expect("white level must be set to demosaic");
-    let black_level = image.metadata.black_level.expect("black level must be set to demosaic");
-    let range = white_level - black_level;
-    let factor = 1.0 / range;
     let crop_w = crop_rect.d.w;
     let crop_h = crop_rect.d.h;
     let full_w = image.metadata.width;
@@ -70,7 +62,6 @@ fn crop_and_normalize(
 
     let len = crop_w * crop_h;
     let mut output = vec![0.0; len];
-    let bias = -black_level * factor;
 
     // turns out in this specific loop is faster to NOT do a parallel iterator
     output.chunks_exact_mut(crop_w)
@@ -84,7 +75,8 @@ fn crop_and_normalize(
             let src_slice = &image.raw_data[begin..end];
 
             out_row.iter_mut().zip(src_slice).for_each(|(out_pix, &in_pix)|{
-                *out_pix = (in_pix as f32).mul_add(factor, bias);
+                // *out_pix = (in_pix as f32).mul_add(factor, bias);
+                *out_pix = in_pix;
             });
         });
     output
@@ -254,33 +246,31 @@ pub mod demosaic_algorithms {
             let c10 = cfa.color_at(1, 0);
             let c11 = cfa.color_at(1, 1);
 
-            rgb.par_iter_mut().enumerate().for_each(|(idx, pix)| {
-                let new_col = idx % new_width;
-                let new_row = idx / new_width;
+            rgb.par_chunks_exact_mut(new_width).enumerate().for_each(|(idw, pixs)| {
+                pixs.iter_mut().enumerate().for_each(|(idi, pix)|{
+                    let idx = (new_width*idw)+idi;
+                    let new_col = idx % new_width;
+                    let new_row = idx / new_width;
 
-                // STRIDE CALCULATION:
-                // We multiply by 4 to skip lines and columns.
-                // This selects the top-left pixel of every 4x4 block in the original image.
-                let r = new_row * 4;
-                let c = new_col * 4;
+                    // STRIDE CALCULATION:
+                    // We multiply by 4 to skip lines and columns.
+                    // This selects the top-left pixel of every 4x4 block in the original image.
+                    let r = new_row * 4;
+                    let c = new_col * 4;
 
-                // Calculate the 1D index for the top-left corner of the block
-                let tl_idx = r * width + c;
+                    // Calculate the 1D index for the top-left corner of the block
+                    let tl_idx = r * width + c;
 
-                let mut values = [0.0, 0.0, 0.0];
+                    // We only read the immediate 2x2 neighbors to form a color.
+                    // We ignore the surrounding pixels (skipping), which is what makes this "SuperFast".
 
-                // We only read the immediate 2x2 neighbors to form a color.
-                // We ignore the surrounding pixels (skipping), which is what makes this "SuperFast".
+                    // Check bounds to ensure we don't read past the buffer (optional safety for edge cases)
+                    pix[c00] = input[tl_idx];
+                    pix[c01] = input[tl_idx + 1];
+                    pix[c10] = input[tl_idx + width];
+                    pix[c11] = input[tl_idx + width + 1];
 
-                // Check bounds to ensure we don't read past the buffer (optional safety for edge cases)
-                if tl_idx + width + 1 < input.len() {
-                    values[c00] = input[tl_idx];
-                    values[c01] = input[tl_idx + 1];
-                    values[c10] = input[tl_idx + width];
-                    values[c11] = input[tl_idx + width + 1];
-                }
-
-                *pix = values;
+                });
             });
 
             let mut image_metadata = ImageMetadata::default();

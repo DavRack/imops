@@ -22,7 +22,7 @@ pub type ImageBuffer = Vec<Pixel>;
 #[derive(Clone, Default)]
 pub struct Image {
     pub rgb_data: ImageBuffer,
-    pub raw_data: Vec<u16>,
+    pub raw_data: Vec<SubPixel>,
     pub metadata: ImageMetadata,
 }
 
