@@ -2,13 +2,13 @@ use std::time::Instant;
 
 use filsimrs::file_helpers::*;
 use pichromatic::{cfa::CFA, demosaic::{Dim2, Point, Rect, crop_and_normalize}, image::ImageMetadata, pixel::Image};
-use pichromatic_pipeline::{config::{self}, pipeline::run_pixel_pipeline};
+use pichromatic_pipeline::{config, pipeline::run_pixel_pipeline};
 use rawler::{RawImageData, imgop::xyz::Illuminant};
 
 fn main() {
 
-    let input_path = "test_data/test.dng";
-    let config_path = "imgconfig.toml";
+    let input_path = "test_data/raw_sample.NEF";
+    let config_path = "imgconfig.json";
     let output_path = "result.ppm";
 
     // // Decode the file to extract the raw pixels and its associated metadata
@@ -57,11 +57,13 @@ fn main() {
         &image,
     );
     image.raw_data = normalized_raw_data;
+    image.metadata.width = image.metadata.crop_area.unwrap().d.w;
+    image.metadata.height = image.metadata.crop_area.unwrap().d.h;
 
     let config_data = &std::fs::read_to_string(config_path).unwrap();
     let mut pipeline = config::parse_config(config_data.to_string());
 
-    let mut result1 = run_pixel_pipeline(image,&mut pipeline);
+    let mut result1 = run_pixel_pipeline(image, &mut pipeline);
     println!("total pipeline time: {}ms", t1.elapsed().as_millis());
     println!("total pipeline fps: {}fps", 1000/t1.elapsed().as_millis());
 

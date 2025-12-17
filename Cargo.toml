@@ -31,19 +31,8 @@ debug = true
 
 [dependencies]
 pichromatic = {version="0.1.0", path="pichromatic"}
-pichromatic-pipeline = {version="0.1.0", path="pichromatic-pipeline"}
-approx = "0.5.1"
-clap = {version="4.5.29", features = ["derive"]}
-color = "0.3.2"
-convolve-image = "0.4.0"
-dyn-clone = "1.0.19"
-image = "0.25.5"
-itertools = "0.14.0"
-ndarray = {version = "0.15.6", features = ["rayon", "matrixmultiply-threading"]}
+pichromatic-pipeline = {version="0.1.0", path="./pichromatic-pipeline"}
 rawler = "*"
-rayon = "1.10.0"
-serde = { version = "1.0.217", features = ["derive"] }
-toml = "0.8.20"
 
 # deps for viewer
 eframe = { version = "0.27", optional = true }
@@ -51,6 +40,5 @@ egui = { version = "0.27", optional = true }
 egui_plot = { version = "0.27", optional = true }
 
 [features]
-default = ["parallel"]
 parallel = []
 visual_tests = ["dep:eframe", "dep:egui", "dep:egui_plot"]

@@ -1,6 +1,9 @@
 // taken from rawler
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+
 pub const CFA_COLOR_R: usize = 0;
 pub const CFA_COLOR_G: usize = 1;
 pub const CFA_COLOR_B: usize = 2;
@@ -62,7 +65,8 @@ impl TryFrom<char> for CFAColor {
 /// initialized and ready to be used in processing. The color_at() implementation is
 /// designed to be fast so it can be called inside the inner loop of demosaic or other
 /// color-aware algorithms that work on pre-demosaic data
-#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[serde_as]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct CFA {
   /// CFA pattern as a String
   pub name: String,
@@ -72,6 +76,7 @@ pub struct CFA {
   pub height: usize,
   // Actual pattern. We use u8 here because usize would blow
   // the stack usage and we don't need that much bits.
+ #[serde_as(as = "[[_; 48]; 48]")]
   pattern: [[u8; 48]; 48],
 }
 

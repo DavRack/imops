@@ -1,7 +1,8 @@
-use std::time::Instant;
-use pichromatic::pixel::Image;
+use pichromatic::{cfa::CFA, demosaic::{Dim2, Point, Rect, crop_and_normalize}, image::ImageMetadata, pixel::Image};
+use rawler::{RawImageData, decoders::{RawDecodeParams}, imgop::xyz::Illuminant, rawsource::RawSource};
+use wasm_bindgen::prelude::*;
 
-use crate::config;
+use crate::config::{self, parse_config};
 
 pub fn run_pixel_pipeline(
     mut image: Image,
@@ -9,13 +10,198 @@ pub fn run_pixel_pipeline(
 ) -> Image {
     let modules = &mut pixel_pipeline.pipeline_modules;
 
-    let t1 = Instant::now();
     for module in modules.into_iter() {
-        let now = Instant::now();
         module.process(&mut image);
-        println!("{:} execution time: {:.2?}",module.get_name(), now.elapsed());
     }
-    println!("tot exec pipeline: {:.2?}", t1.elapsed());
     println!("\n");
     return image;
+}
+#[wasm_bindgen(getter_with_clone)]
+pub struct RGBImage {
+    pub data: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
+}
+
+#[wasm_bindgen(getter_with_clone)]
+#[derive(Clone)]
+pub struct WebRawImage {
+    pub data: Vec<f32>,
+    pub metadata: String,
+}
+
+impl From<Image> for WebRawImage {
+    fn from(value: Image) -> WebRawImage{
+        let metadata = serde_json::to_string(&value.metadata).expect(
+            "can't serialize image metadata"
+        );
+
+        return WebRawImage{
+            data: value.raw_data,
+            metadata: metadata
+        }
+    }
+}
+
+impl From<&WebRawImage> for Image {
+    fn from(value: &WebRawImage) -> Image{
+        let metadata: ImageMetadata = match serde_json::from_str(&value.metadata) {
+            Ok(data) => data,
+            Err(e) => {log(&e.to_string()); panic!()},
+        };
+
+        return Image{
+            raw_data: value.data.clone(),
+            rgb_data: vec![],
+            metadata: metadata,
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn get_raw_img(
+    file_bytes: Vec<u8>,
+) -> WebRawImage {
+    // 1. Decode the RAW bytes using rawloader
+    let decode_params = RawDecodeParams::default();
+    let mut file = RawSource::new_from_slice(file_bytes.as_slice());
+    let mut raw_image = rawler::decode(&mut file, &decode_params).expect(
+        "error decoding file"
+    );
+    
+    let calibration_matrix_d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
+    let wb_coeffs = raw_image.wb_coeffs.map(|v| if v.is_nan() {0.0} else {v});
+    let raw_image_dimentions = raw_image.dim();
+    let raw_image_crop_area = raw_image.crop_area.unwrap();
+    let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
+    let raw_image_black_level = raw_image.blacklevel.as_bayer_array()[0];
+    let raw_image_cfa = raw_image.camera.cfa.to_string();
+    let _ = raw_image.apply_scaling();
+    let raw_image_data = match raw_image.data {
+        RawImageData::Float(data) => data,
+        _ => panic!(""),
+    };
+    let image_metadata = ImageMetadata{
+        width: raw_image_dimentions.w,
+        height: raw_image_dimentions.h,
+        crop_area: Some(Rect{
+            p: Point {
+                x: raw_image_crop_area.p.x,
+                y: raw_image_crop_area.p.y
+            },
+            d: Dim2{
+                w: raw_image_crop_area.d.w,
+                h: raw_image_crop_area.d.h
+            },
+        }),
+        black_level: Some(raw_image_black_level),
+        white_level: Some(raw_image_white_level),
+        wb_coeffs: Some(wb_coeffs),
+        cfa: Some(CFA::new(&raw_image_cfa)),
+        calibration_matrix_d65: Some(calibration_matrix_d65),
+        color_space: None,
+    };
+
+    let mut image = Image{
+        raw_data: raw_image_data,
+        rgb_data: vec![],
+        metadata: image_metadata,
+    };
+    let normalized_raw_data = crop_and_normalize(
+        &image,
+    );
+    image.raw_data = normalized_raw_data;
+    image.metadata.width = image.metadata.crop_area.unwrap().d.w;
+    image.metadata.height = image.metadata.crop_area.unwrap().d.h;
+    log(&format!("{:?}",image.metadata.wb_coeffs));
+
+    let web_raw_image: WebRawImage = image.into();
+    
+    return web_raw_image
+}
+#[wasm_bindgen]
+extern "C" {
+    // Use `js_namespace` here to bind `console.log(..)` instead of just
+    // `log(..)`
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
+
+#[wasm_bindgen]
+pub fn run_wasm_pixel_pipeline(
+    web_raw_image: &WebRawImage,
+    pixel_pipeline: &str,
+) -> RGBImage {
+    // decode_buffer takes a reference to the bytes
+    let image: Image = Image::from(web_raw_image);
+    let mut pipeline = parse_config(pixel_pipeline.to_string());
+    let new_image = run_pixel_pipeline(image, &mut pipeline);
+    let out_image_data = new_image.rgb_data.iter().flatten().map(|p| {
+        (p*255.0) as u8
+    }).collect();
+    
+    return RGBImage{
+        data: out_image_data,
+        width: new_image.metadata.width,
+        height: new_image.metadata.height,
+    }
+}
+
+#[wasm_bindgen]
+pub fn crop_bayer_center(
+    image: &WebRawImage,
+    crop_factor: usize,
+) -> WebRawImage {
+    // 1. Handle base case (no crop)
+    if crop_factor <= 1 {
+        let image = image.clone();
+        return image
+    }
+    let mut image: Image = image.into();
+    let factor = crop_factor;
+    let width = image.metadata.width;
+    let height = image.metadata.height;
+
+    // 2. Calculate new dimensions
+    let new_width = (width / factor) & !1;
+    let new_height = (height / factor) & !1;
+
+    let mut result = Vec::with_capacity(new_width * new_height);
+
+    // 2. Iterate over the *destination* coordinates
+    for y in 0..new_height {
+        // Determine if we are in the top row (0) or bottom row (1) of a 2x2 block
+        let row_offset = y % 2;
+        // Determine which 2x2 block row we are pulling from in the source
+        // Example: If factor is 2, Dest Y 0->Src Y 0, Dest Y 1->Src Y 1, Dest Y 2->Src Y 4
+        let src_block_y = (y / 2) * factor;
+        let src_y = (src_block_y * 2) + row_offset;
+
+        // Pre-calculate row start to avoid multiplication in inner loop
+        let src_row_start_idx = src_y * width;
+
+        for x in 0..new_width {
+            // Determine if we are in the left col (0) or right col (1) of a 2x2 block
+            let col_offset = x % 2;
+
+            // Determine which 2x2 block col we are pulling from
+            let src_block_x = (x / 2) * factor;
+            let src_x = (src_block_x * 2) + col_offset;
+
+            // 3. Extract pixel
+            // This logic skips (factor-1) 2x2 blocks between every sample
+            let idx = src_row_start_idx + src_x;
+
+            // Safety check for production (optional if you trust your math/inputs)
+            if idx < image.raw_data.len() {
+                result.push(image.raw_data[idx]);
+            } else {
+                result.push(0.0); // Padding if math drifts at edges
+            }
+        }
+    }
+    image.raw_data = result;
+    image.metadata.width = new_width;
+    image.metadata.height = new_height;
+    return image.into()
 }

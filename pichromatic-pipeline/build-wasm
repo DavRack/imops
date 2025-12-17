@@ -1,0 +1,9 @@
+#!/bin/bash
+cargo build --target=wasm32-unknown-unknown --release &&
+~/.cargo/bin/wasm-bindgen --target web --out-dir pichromatic-pipeline ./target/wasm32-unknown-unknown/release/pichromatic_pipeline.wasm &&
+cp -r pichromatic-pipeline ~/programs/pichromatic-web/src/ &&
+rm -rf pichromatic-pipeline
+
+# cargo build --target=wasm32-unknown-unknown &&
+# ~/.cargo/bin/wasm-bindgen --target web --out-dir pichromatic-pipeline --keep-debug ./target/wasm32-unknown-unknown/debug/pichromatic_pipeline.wasm &&
+# cp -r pichromatic-pipeline ~/programs/pichromatic-web/src/

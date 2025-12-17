@@ -1,8 +1,9 @@
 use color::ColorSpaceTag;
+use serde::{Deserialize, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::{cfa::CFA, demosaic::Rect, pixel::SubPixel};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ImageMetadata {
     pub crop_area: Option<Rect>,
     pub cfa: Option<CFA>,

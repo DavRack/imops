@@ -1,6 +1,6 @@
 use std::{any, fmt::Debug};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use serde::{Deserialize, Serialize};
+use serde_json;
 use toml::map::Map;
 
 use crate::modules::{
@@ -15,27 +15,12 @@ pub struct PipelineConfig {
     pub pipeline_modules: Vec<Box<dyn PipelineModule>>
 }
 
-fn chained_hash<T>(module: &T, prev_hash: u64) -> u64 where T: Debug {
-    let mut hasher = DefaultHasher::new();
-    prev_hash.hash(&mut hasher);
-    format!("{:?}", module).hash(&mut hasher);
-    return hasher.finish();
-}
-
 pub fn from_toml<'a, T>(module: Map<String, toml::Value>) -> Box<dyn PipelineModule>
     where
     T: Deserialize<'a> + Default + 'static,
     T: Debug,
     Module<T>: PipelineModule
 {
-    // let mask: Option<Box<dyn Mask>> = match module.get("mask"){
-    //     Some(mask_cfg) => match mask_cfg["name"].as_str().unwrap(){
-    //         "LuminanceGradient" => Some(Box::new(mask_cfg.clone().try_into::<LuminanceGradient>().unwrap())),
-    //         "Constant" =>          Some(Box::new(mask_cfg.clone().try_into::<Constant>().unwrap())),
-    //         v => panic!("wrong mask function name: {:}", v),
-    //     },
-    //     None => None,
-    // };
 
     let cfg: T = module.clone().try_into::<T>().expect(any::type_name::<T>());
     let module = Module{
@@ -47,9 +32,26 @@ pub fn from_toml<'a, T>(module: Map<String, toml::Value>) -> Box<dyn PipelineMod
     Box::new(module)
 }
 
+pub fn from_json<'a, T>(module: Map<String, toml::Value>) -> Box<dyn PipelineModule>
+    where
+    T: Deserialize<'a> + Default + 'static,
+    T: Debug,
+    Module<T>: PipelineModule
+{
+    let cfg: T = module.clone().try_into::<T>().expect(any::type_name::<T>());
+    let module = Module{
+        name: module["name"].to_string(),
+        cache: None,
+        config: cfg,
+        // mask
+    };
+    Box::new(module)
+}
 
 pub fn parse_config(config: String) -> PipelineConfig{
-    let data: RawConfig = toml::from_str(config.as_str()).unwrap();
+    let data: RawConfig = toml::from_str(config.as_str()).or(
+        serde_json::from_str(config.as_str())
+    ).expect("cant decode config from string");
 
 
     let mut config = PipelineConfig{

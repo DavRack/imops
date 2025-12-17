@@ -181,6 +181,12 @@ impl PipelineModule for Module<Demosaic> {
                     demosaic_algorithms::SuperFast{},
                 )
             },
+            "supersuperfast" => {
+                Image::demosaic(
+                    image.clone(),
+                    demosaic_algorithms::SuperSuperFast{},
+                )
+            },
             _ => panic!()
         };
         image.rgb_data = new_image.rgb_data;

@@ -3,9 +3,10 @@ use crate::pixel::{Image, ImageBuffer, SubPixel};
 use crate::cfa::CFA;
 // use rawler::{RawImage, imgop::{Dim2, Rect}};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// Descriptor of a two-dimensional area
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Dim2 {
   pub w: usize,
   pub h: usize,
@@ -13,14 +14,14 @@ pub struct Dim2 {
 
 
 /// A simple x/y point
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Point {
   pub x: usize,
   pub y: usize,
 }
 
 /// Rectangle by a point and dimension
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Serialize, Deserialize)]
 pub struct Rect {
   pub p: Point,
   pub d: Dim2,
@@ -95,6 +96,7 @@ pub mod demosaic_algorithms {
     pub struct Markesteijn{}
     pub struct Fast{}
     pub struct SuperFast{}
+    pub struct SuperSuperFast{}
 
     impl DemosaicAlgorithm for Markesteijn{
         fn demosaic(
@@ -257,6 +259,67 @@ pub mod demosaic_algorithms {
                     // This selects the top-left pixel of every 4x4 block in the original image.
                     let r = new_row * 4;
                     let c = new_col * 4;
+
+                    // Calculate the 1D index for the top-left corner of the block
+                    let tl_idx = r * width + c;
+
+                    // We only read the immediate 2x2 neighbors to form a color.
+                    // We ignore the surrounding pixels (skipping), which is what makes this "SuperFast".
+
+                    // Check bounds to ensure we don't read past the buffer (optional safety for edge cases)
+                    pix[c00] = input[tl_idx];
+                    pix[c01] = input[tl_idx + 1];
+                    pix[c10] = input[tl_idx + width];
+                    pix[c11] = input[tl_idx + width + 1];
+
+                });
+            });
+
+            let mut image_metadata = ImageMetadata::default();
+            image_metadata.height = new_height;
+            image_metadata.width = new_width;
+
+            return Image {
+                rgb_data: rgb,
+                raw_data: vec![],
+                metadata: image_metadata,
+            }
+        }
+    }
+    impl DemosaicAlgorithm for SuperSuperFast {
+        fn demosaic(
+            self,
+            width: usize,
+            height: usize,
+            cfa: CFA,
+            input: Vec<SubPixel>,
+        ) -> Image {
+            // Target: 1/4th of the original width and height
+            // This results in an image 1/16th the size of the RAW file (Thumbnail/Preview size)
+            let factor = 8;
+            let new_width = width / factor;
+            let new_height = height / factor;
+
+            // Initialize output buffer
+            let mut rgb: ImageBuffer = vec![[0.0; 3]; new_width * new_height];
+
+            // Pre-calculate CFA color indices for the top-left 2x2 block
+            let c00 = cfa.color_at(0, 0);
+            let c01 = cfa.color_at(0, 1);
+            let c10 = cfa.color_at(1, 0);
+            let c11 = cfa.color_at(1, 1);
+
+            rgb.par_chunks_exact_mut(new_width).enumerate().for_each(|(idw, pixs)| {
+                pixs.iter_mut().enumerate().for_each(|(idi, pix)|{
+                    let idx = (new_width*idw)+idi;
+                    let new_col = idx % new_width;
+                    let new_row = idx / new_width;
+
+                    // STRIDE CALCULATION:
+                    // We multiply by 4 to skip lines and columns.
+                    // This selects the top-left pixel of every 4x4 block in the original image.
+                    let r = new_row * factor;
+                    let c = new_col * factor;
 
                     // Calculate the 1D index for the top-left corner of the block
                     let tl_idx = r * width + c;
