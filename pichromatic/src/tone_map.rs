@@ -1,4 +1,5 @@
-use crate::pixel::ImageBuffer;
+use crate::pixel::{ImageBuffer, PixelOps};
+use color::ColorSpaceTag::{Oklch, AcesCg, Oklab};
 use rayon::prelude::*;
 
 #[inline(always)]
@@ -10,8 +11,17 @@ pub fn square_sigmoid(x: f32)-> f32{
 pub fn sigmoid(image_buffer: &mut ImageBuffer){
     let params = &RgcParams::default();
     image_buffer.par_iter_mut().for_each(|pixel|{
-        let gemut_compressed_pixel = gamut_compress_pixel(*pixel, params);
-        *pixel = gemut_compressed_pixel.map(square_sigmoid);
+        let gamut_compressed_pixel = gamut_compress_pixel(*pixel, params);
+        // let s = square_sigmoid(m);
+        // let factor = s/m;
+        // println!("{} --- {}", s, m);
+        let [_, _ ,h] = AcesCg.convert(Oklch, gamut_compressed_pixel);
+        let p = gamut_compressed_pixel.map(|subp| square_sigmoid(subp));
+        let k = 1.0;
+        let s = p.luminance();
+        let m = 1.0-s.powf(k);
+        let [l, c, _] = AcesCg.convert(Oklch, p);
+        *pixel = Oklch.convert(AcesCg, [l, c*m, h]);
     });
 }
 

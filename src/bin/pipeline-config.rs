@@ -7,8 +7,8 @@ use rawler::{RawImageData, imgop::xyz::Illuminant};
 
 fn main() {
 
-    let input_path = "test_data/raw_sample.NEF";
-    let config_path = "imgconfig.json";
+    let input_path = "test_data/plaza.dng";
+    let config_path = "imgconfig.toml";
     let output_path = "result.ppm";
 
     // // Decode the file to extract the raw pixels and its associated metadata

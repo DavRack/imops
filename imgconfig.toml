@@ -2,7 +2,7 @@
 
 [[pipeline_modules]]
 name = "Demosaic"
-algorithm = "superfast"
+algorithm = "Markesteijn"
 # algorithm = "fast"
 
 # [[pipeline_modules]]
