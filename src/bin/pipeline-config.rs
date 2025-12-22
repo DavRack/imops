@@ -7,7 +7,7 @@ use rawler::{RawImageData, imgop::xyz::Illuminant};
 
 fn main() {
 
-    let input_path = "test_data/plaza.dng";
+    let input_path = "test_data/test.dng";
     let config_path = "imgconfig.toml";
     let output_path = "result.ppm";
 
@@ -63,11 +63,11 @@ fn main() {
     let config_data = &std::fs::read_to_string(config_path).unwrap();
     let mut pipeline = config::parse_config(config_data.to_string());
 
-    let mut result1 = run_pixel_pipeline(image, &mut pipeline);
+    run_pixel_pipeline(&mut image, &mut pipeline);
     println!("total pipeline time: {}ms", t1.elapsed().as_millis());
     println!("total pipeline fps: {}fps", 1000/t1.elapsed().as_millis());
 
-    let (pixels, width, height) = to_u8(&mut result1);
+    let (pixels, width, height) = to_u8(&mut image);
     save_bmp(output_path, width, height, pixels).unwrap();
 }
 

@@ -32,22 +32,6 @@ pub fn from_toml<'a, T>(module: Map<String, toml::Value>) -> Box<dyn PipelineMod
     Box::new(module)
 }
 
-pub fn from_json<'a, T>(module: Map<String, toml::Value>) -> Box<dyn PipelineModule>
-    where
-    T: Deserialize<'a> + Default + 'static,
-    T: Debug,
-    Module<T>: PipelineModule
-{
-    let cfg: T = module.clone().try_into::<T>().expect(any::type_name::<T>());
-    let module = Module{
-        name: module["name"].to_string(),
-        cache: None,
-        config: cfg,
-        // mask
-    };
-    Box::new(module)
-}
-
 pub fn parse_config(config: String) -> PipelineConfig{
     let data: RawConfig = toml::from_str(config.as_str()).or(
         serde_json::from_str(config.as_str())

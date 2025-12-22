@@ -8,7 +8,7 @@ license = "MIT"
 [lib]
 name = "pichromatic_pipeline"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "rlib", "staticlib"]
 
 [profile.release]
 lto = "fat"

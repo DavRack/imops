@@ -1,5 +1,5 @@
 use crate::pixel::{ImageBuffer, PixelOps};
-use color::ColorSpaceTag::{Oklch, AcesCg, Oklab};
+use color::ColorSpaceTag::{Oklch, AcesCg};
 use rayon::prelude::*;
 
 #[inline(always)]
@@ -17,7 +17,7 @@ pub fn sigmoid(image_buffer: &mut ImageBuffer){
         // println!("{} --- {}", s, m);
         let [_, _ ,h] = AcesCg.convert(Oklch, gamut_compressed_pixel);
         let p = gamut_compressed_pixel.map(|subp| square_sigmoid(subp));
-        let k = 1.0;
+        let k = 5.0;
         let s = p.luminance();
         let m = 1.0-s.powf(k);
         let [l, c, _] = AcesCg.convert(Oklch, p);
