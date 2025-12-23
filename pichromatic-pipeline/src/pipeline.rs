@@ -1,7 +1,7 @@
 use pichromatic::pixel::Image;
 use crate::config;
 
-pub fn run_pixel_pipeline(
+pub extern "C" fn run_pixel_pipeline(
     image: &mut Image,
     pixel_pipeline: &mut config::PipelineConfig,
 ){
