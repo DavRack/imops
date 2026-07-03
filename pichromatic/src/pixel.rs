@@ -109,6 +109,12 @@ impl Image {
         return self
     }
 
+    // ponytail: BM3D denoising implementation method
+    pub fn bm3d(&mut self, intensity: f32) -> &mut Image{
+        crate::bm3d::bm3d(&mut self.rgb_data, self.metadata.width, self.metadata.height, intensity);
+        return self
+    }
+
     pub fn demosaic(
         self,
         demosaic_algorithm: impl DemosaicAlgorithm

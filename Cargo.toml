@@ -22,7 +22,6 @@ required-features = ["visual_tests"]
 
 [profile.release]
 opt-level = 3
-target-cpu = "native"
 # lto = "fat"
 
 [profile.profiling]

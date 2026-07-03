@@ -9,3 +9,4 @@ pub mod lch;
 pub mod pixel;
 pub mod tone_map;
 pub mod image;
+pub mod bm3d;

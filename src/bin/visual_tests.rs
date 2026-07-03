@@ -1,5 +1,5 @@
 use pichromatic_pipeline::config::PipelineConfig;
-use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap};
+use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap, BM3D};
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use pichromatic::pixel::Image;
 use pichromatic::cfa::CFA;
@@ -55,15 +55,6 @@ fn main() {
                 config: CST { target_color_space: "XyzD65".to_string()},
             }),
             Box::new(Module {
-                name: "LHC".to_string(),
-                cache: None,
-                config: LCH{
-                    lc: 1.0,
-                    cc: 1.15,
-                    hc: 1.0,
-                },
-            }),
-            Box::new(Module {
                 name: "Sigmoid (Soft)".to_string(),
                 cache: None,
                 config: ToneMap {},
@@ -83,9 +74,29 @@ fn main() {
                 config: Demosaic { algorithm: "markesteijn".to_string() },
             }),
             Box::new(Module {
+                name: "Denoice".to_string(),
+                cache: None,
+                config: BM3D { intensity: 0.01},
+            }),
+            Box::new(Module {
                 name: "CFACoeffs".to_string(),
                 cache: None,
                 config: CFACoeffs { },
+            }),
+            Box::new(Module {
+                name: "HighlightReconstruction".to_string(),
+                cache: None,
+                config: HighlightReconstruction {},
+            }),
+            Box::new(Module {
+                name: "Exp".to_string(),
+                cache: None,
+                config: Exp { ev: 1.5},
+            }),
+            Box::new(Module {
+                name: "Contrast".to_string(),
+                cache: None,
+                config: Contrast { c: 1.75},
             }),
             Box::new(Module {
                 name: "CST".to_string(),

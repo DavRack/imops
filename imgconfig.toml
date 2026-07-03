@@ -3,6 +3,11 @@
 [[pipeline_modules]]
 name = "Demosaic"
 algorithm = "Markesteijn"
+
+[[pipeline_modules]]
+name = "BM3D"
+intensity = 0.05
+
 # algorithm = "fast"
 
 # [[pipeline_modules]]
@@ -17,6 +22,7 @@ name = "CFACoeffs"
 
 [[pipeline_modules]]
 name = "HighlightReconstruction"
+
 
 
 [[pipeline_modules]]

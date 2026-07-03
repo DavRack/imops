@@ -117,6 +117,18 @@ impl PipelineModule for Module<Contrast> {
     }
 }
 
+// ponytail: BM3D module
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct BM3D {
+    pub intensity: SubPixel,
+}
+
+impl PipelineModule for Module<BM3D> {
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return image.bm3d(self.config.intensity)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct CFACoeffs {
 }
