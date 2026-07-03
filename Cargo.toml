@@ -30,14 +30,16 @@ inherits = "release"
 debug = true
 
 [dependencies]
-pichromatic = {version="0.1.0", path="pichromatic"}
+pichromatic = {version="0.1.0", path="./pichromatic"}
 pichromatic-pipeline = {version="0.1.0", path="./pichromatic-pipeline"}
 rawler = "*"
+clap = {version="4.6.0", features=["derive"]}
 
 # deps for viewer
 eframe = { version = "0.27", optional = true }
 egui = { version = "0.27", optional = true }
 egui_plot = { version = "0.27", optional = true }
+clap_derive = "4.6.0"
 
 [features]
 parallel = []

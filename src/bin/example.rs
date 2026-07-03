@@ -8,7 +8,6 @@ use rawler::imgop::xyz::Illuminant;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
-use rayon::prelude::*;
 
 fn main() {
 
@@ -17,7 +16,7 @@ fn main() {
 
     // // Decode the file to extract the raw pixels and its associated metadata
     // let raw_image = RawImage::decode(&mut file).unwrap();
-    let raw_image = rawler::decode_file(input_path).unwrap();
+    let mut raw_image = rawler::decode_file(input_path).unwrap();
     let t1 = Instant::now();
     let calibration_matrix_d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
     let wb_coeffs = raw_image.wb_coeffs;
@@ -46,8 +45,10 @@ fn main() {
         cfa: Some(CFA::new(&raw_image_cfa)),
         calibration_matrix_d65: Some(calibration_matrix_d65.clone()),
     };
+
+    let _ = raw_image.apply_scaling();
     let raw_image_data = match raw_image.data {
-        RawImageData::Integer(data) => data,
+        RawImageData::Float(data) => data,
         _ => panic!("non integer data")
     };
 
@@ -82,7 +83,7 @@ fn main() {
 }
 
 fn to_u8(image: &mut Image) -> (Vec<[u8;3]>, usize, usize){
-    let new_image = image.rgb_data.par_iter().map(|pixel|{
+    let new_image = image.rgb_data.iter().map(|pixel|{
         pixel.map(|sub_pixel| (sub_pixel.clamp(0.0, 1.0) * 255.0) as u8)
     }).collect();
     return (new_image, image.metadata.width, image.metadata.height)
