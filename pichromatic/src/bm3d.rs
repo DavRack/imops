@@ -303,6 +303,7 @@ fn block_matching_joint(
     } else {
         params.max_dist_hard * 0.5
     };
+    let threshold_raw = threshold * 64.0;
 
     let mut ref_r = [0.0; 64];
     let mut ref_g = [0.0; 64];
@@ -329,20 +330,20 @@ fn block_matching_joint(
             if x == rx && y == ry {
                 continue;
             }
-            let d_r = compute_ssd_flat(&channels[0], w, x, y, &ref_r, threshold);
-            if d_r > threshold {
+            let d_r = compute_ssd_flat(&channels[0], w, x, y, &ref_r, threshold_raw);
+            if d_r > threshold_raw {
                 continue;
             }
-            let d_g = compute_ssd_flat(&channels[1], w, x, y, &ref_g, threshold - d_r);
-            if d_r + d_g > threshold {
+            let d_g = compute_ssd_flat(&channels[1], w, x, y, &ref_g, threshold_raw - d_r);
+            if d_r + d_g > threshold_raw {
                 continue;
             }
-            let d_b = compute_ssd_flat(&channels[2], w, x, y, &ref_b, threshold - (d_r + d_g));
-            let total_dist = d_r + d_g + d_b;
+            let d_b = compute_ssd_flat(&channels[2], w, x, y, &ref_b, threshold_raw - (d_r + d_g));
+            let total_dist_raw = d_r + d_g + d_b;
 
-            if total_dist < threshold && cand_count < MAX_CANDIDATES {
+            if total_dist_raw < threshold_raw && cand_count < MAX_CANDIDATES {
                 candidates[cand_count] = Match {
-                    dist: total_dist,
+                    dist: total_dist_raw / 64.0,
                     x: x as u16,
                     y: y as u16,
                 };
@@ -363,28 +364,30 @@ fn block_matching_joint(
     p2_limit
 }
 
+// ponytail: Optimized flat SSD computation without inner division & using slice pointers
 #[inline(always)]
 fn compute_ssd_flat(
     img: &[f32],
     w: usize,
     x: usize,
     y: usize,
-    ref_patch: &[f32],
-    stop_thr: f32,
+    ref_patch: &[f32; 64],
+    stop_thr_raw: f32,
 ) -> f32 {
     let mut dist = 0.0;
     for dy in 0..8 {
         let img_base = (y + dy) * w + x;
-        let ref_base = dy * 8;
+        let img_slice = &img[img_base..img_base + 8];
+        let ref_slice = &ref_patch[dy * 8..dy * 8 + 8];
         for dx in 0..8 {
-            let diff = img[img_base + dx] - ref_patch[ref_base + dx];
+            let diff = img_slice[dx] - ref_slice[dx];
             dist += diff * diff;
         }
-        if dist > stop_thr {
+        if dist > stop_thr_raw {
             return dist;
         }
     }
-    dist / BLOCK_AREA as f32
+    dist
 }
 
 #[inline(always)]
@@ -533,31 +536,39 @@ fn idct_2d_8x8(block: &mut [f32], coeffs: &[f32; 64]) {
     }
 }
 
+// ponytail: Unrolled 1D DCT for SIMD optimization
 #[inline]
 fn dct_1d_8(x: &mut [f32], coeffs: &[f32; 64]) {
     let mut tmp = [0.0; 8];
-    tmp.copy_from_slice(x);
-    for (k, x_k) in x[..8].iter_mut().enumerate() {
-        let mut s = 0.0;
+    tmp.copy_from_slice(&x[..8]);
+    for k in 0..8 {
         let row_start = k * 8;
-        for (n, &tmp_n) in tmp.iter().enumerate() {
-            s += tmp_n * coeffs[row_start + n];
-        }
-        *x_k = s;
+        x[k] = tmp[0] * coeffs[row_start]
+             + tmp[1] * coeffs[row_start + 1]
+             + tmp[2] * coeffs[row_start + 2]
+             + tmp[3] * coeffs[row_start + 3]
+             + tmp[4] * coeffs[row_start + 4]
+             + tmp[5] * coeffs[row_start + 5]
+             + tmp[6] * coeffs[row_start + 6]
+             + tmp[7] * coeffs[row_start + 7];
     }
 }
 
+// ponytail: Unrolled 1D IDCT for SIMD optimization
 #[inline]
 fn idct_1d_8(x: &mut [f32], coeffs: &[f32; 64]) {
     let mut tmp = [0.0; 8];
-    tmp.copy_from_slice(x);
-    for (n, x_n) in x[..8].iter_mut().enumerate() {
-        let mut s = 0.0;
+    tmp.copy_from_slice(&x[..8]);
+    for n in 0..8 {
         let row_start = n * 8;
-        for (k, &tmp_k) in tmp.iter().enumerate() {
-            s += tmp_k * coeffs[row_start + k];
-        }
-        *x_n = s;
+        x[n] = tmp[0] * coeffs[row_start]
+             + tmp[1] * coeffs[row_start + 1]
+             + tmp[2] * coeffs[row_start + 2]
+             + tmp[3] * coeffs[row_start + 3]
+             + tmp[4] * coeffs[row_start + 4]
+             + tmp[5] * coeffs[row_start + 5]
+             + tmp[6] * coeffs[row_start + 6]
+             + tmp[7] * coeffs[row_start + 7];
     }
 }
 
@@ -840,3 +851,68 @@ fn run_bm3d_step_chroma_only(
     }
     results
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn generate_test_image(width: usize, height: usize) -> Vec<[f32; 3]> {
+        let mut data = Vec::with_capacity(width * height);
+        for y in 0..height {
+            for x in 0..width {
+                let r = ((x as f32 * 0.12).sin() * 0.5 + 0.5) * 255.0;
+                let g = ((y as f32 * 0.17).cos() * 0.5 + 0.5) * 255.0;
+                let b = (((x + y) as f32 * 0.09).sin() * 0.5 + 0.5) * 255.0;
+                data.push([r / 255.0, g / 255.0, b / 255.0]);
+            }
+        }
+        data
+    }
+
+    #[test]
+    fn test_bm3d_regression() {
+        let mut img = generate_test_image(128, 128);
+        bm3d(&mut img, 128, 128, 0.1);
+        
+        let mut sum_r = 0.0;
+        let mut sum_g = 0.0;
+        let mut sum_b = 0.0;
+        for p in &img {
+            sum_r += p[0];
+            sum_g += p[1];
+            sum_b += p[2];
+        }
+        
+        println!("BM3D checksums 128x128: r={}, g={}, b={}", sum_r, sum_g, sum_b);
+        let diff_r = (sum_r - 9218.749_f32).abs();
+        let diff_g = (sum_g - 8340.485_f32).abs();
+        let diff_b = (sum_b - 8141.214_f32).abs();
+        assert!(diff_r < 1e-3, "r diff is {}", diff_r);
+        assert!(diff_g < 1e-3, "g diff is {}", diff_g);
+        assert!(diff_b < 1e-3, "b diff is {}", diff_b);
+    }
+
+    #[test]
+    fn test_chroma_bm3d_regression() {
+        let mut img = generate_test_image(128, 128);
+        chroma_bm3d(&mut img, 128, 128, 0.1);
+        
+        let mut sum_r = 0.0;
+        let mut sum_g = 0.0;
+        let mut sum_b = 0.0;
+        for p in &img {
+            sum_r += p[0];
+            sum_g += p[1];
+            sum_b += p[2];
+        }
+        
+        println!("CHROMA_BM3D checksums 128x128: r={}, g={}, b={}", sum_r, sum_g, sum_b);
+        let diff_r = (sum_r - 9216.999_f32).abs();
+        let diff_g = (sum_g - 8339.133_f32).abs();
+        let diff_b = (sum_b - 8139.4907_f32).abs();
+        assert!(diff_r < 1e-3, "r diff is {}", diff_r);
+        assert!(diff_g < 1e-3, "g diff is {}", diff_g);
+        assert!(diff_b < 1e-3, "b diff is {}", diff_b);
+    }
+}
+
