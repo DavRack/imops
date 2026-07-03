@@ -1,5 +1,5 @@
 use pichromatic_pipeline::config::PipelineConfig;
-use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap, BM3D};
+use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, Module, PipelineModule, ToneMap, BM3D, ChromaDenoise};
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use pichromatic::pixel::Image;
 use pichromatic::cfa::CFA;
@@ -42,7 +42,7 @@ fn main() {
             Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
-                config: Exp { ev: 1.5},
+                config: Exp { ev: 3.0},
             }),
             Box::new(Module {
                 name: "Contrast".to_string(),
@@ -76,7 +76,7 @@ fn main() {
             Box::new(Module {
                 name: "Denoice".to_string(),
                 cache: None,
-                config: BM3D { intensity: 0.01},
+                config: ChromaDenoise { intensity: 0.01},
             }),
             Box::new(Module {
                 name: "CFACoeffs".to_string(),
@@ -91,7 +91,7 @@ fn main() {
             Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
-                config: Exp { ev: 1.5},
+                config: Exp { ev: 3.0},
             }),
             Box::new(Module {
                 name: "Contrast".to_string(),

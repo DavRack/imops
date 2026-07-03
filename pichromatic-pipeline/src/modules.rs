@@ -222,19 +222,16 @@ impl PipelineModule for Module<Demosaic> {
 //     }
 // }
 
-// #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-// pub struct ChromaDenoise {
-// 	  pub a: SubPixel,
-//     pub b: SubPixel,
-//     pub strength: SubPixel,
-//     #[serde(default)]
-//     pub use_ai: bool,
-// }
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct ChromaDenoise {
+    pub intensity: SubPixel,
+}
 
-// impl PipelineModule for Module<ChromaDenoise> {
-//     fn process(&self, image: Image, _image_metadata: &ImageMetadata) -> Image {
-//     }
-// }
+impl PipelineModule for Module<ChromaDenoise> {
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return image.chroma_bm3d(self.config.intensity)
+    }
+}
 
 // #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 // pub struct  Crop{

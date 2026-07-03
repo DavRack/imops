@@ -115,6 +115,12 @@ impl Image {
         return self
     }
 
+    // ponytail: Chroma-only BM3D denoising
+    pub fn chroma_bm3d(&mut self, intensity: f32) -> &mut Image{
+        crate::bm3d::chroma_bm3d(&mut self.rgb_data, self.metadata.width, self.metadata.height, intensity);
+        return self
+    }
+
     pub fn demosaic(
         self,
         demosaic_algorithm: impl DemosaicAlgorithm

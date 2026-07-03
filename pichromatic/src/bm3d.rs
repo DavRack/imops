@@ -675,3 +675,168 @@ fn gaussian_blur_1ch(data: &[f32], width: usize, height: usize, sigma: f32) -> V
 
     out
 }
+
+// ponytail: chroma-only BM3D denoising
+pub fn chroma_bm3d(rgb_data: &mut Vec<[f32; 3]>, width: usize, height: usize, intensity: f32) {
+    let params = Bm3dParams::from_intensity(intensity);
+    let dct_tables = Arc::new(DctTables::new());
+
+    let (mut r, mut g, mut b) = split_channels(rgb_data);
+    let (y, cb, cr) = rgb_to_ycbcr(&r, &g, &b);
+    let channels = vec![y, cb, cr];
+
+    let patches_x = width.saturating_sub(BLOCK_SIZE) / STRIDE + 1;
+    let patches_y = height.saturating_sub(BLOCK_SIZE) / STRIDE + 1;
+    let total_work_units = (patches_x * patches_y) * 2;
+    let progress_counter = Arc::new(AtomicUsize::new(0));
+
+    let denoised_channels = bm3d_process_chroma_only(&channels, width, height, &params, &dct_tables, &progress_counter, total_work_units);
+
+    ycbcr_to_rgb_inplace(&denoised_channels[0], &denoised_channels[1], &denoised_channels[2], &mut r, &mut g, &mut b);
+    merge_channels_inplace(rgb_data, &r, &g, &b);
+}
+
+fn bm3d_process_chroma_only(
+    noisy_channels: &[Vec<f32>],
+    width: usize,
+    height: usize,
+    params: &Bm3dParams,
+    tables: &DctTables,
+    counter: &Arc<AtomicUsize>,
+    total_work: usize,
+) -> Vec<Vec<f32>> {
+    let basic_estimate = run_bm3d_step_chroma_only(
+        noisy_channels,
+        noisy_channels,
+        width,
+        height,
+        params,
+        true,
+        tables,
+        counter,
+        total_work,
+    );
+
+    run_bm3d_step_chroma_only(
+        noisy_channels,
+        &basic_estimate,
+        width,
+        height,
+        params,
+        false,
+        tables,
+        counter,
+        total_work,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_bm3d_step_chroma_only(
+    noisy: &[Vec<f32>],
+    guide: &[Vec<f32>],
+    width: usize,
+    height: usize,
+    params: &Bm3dParams,
+    is_step_1: bool,
+    tables: &DctTables,
+    counter: &Arc<AtomicUsize>,
+    _total_work: usize,
+) -> Vec<Vec<f32>> {
+    let w = width;
+    let h = height;
+    let count = w * h;
+
+    let mut numerators = Vec::new();
+    let mut denominators = Vec::new();
+    for _ in 0..3 {
+        numerators.push(Arc::new(AtomicAccumulator::new(count)));
+        denominators.push(Arc::new(AtomicAccumulator::new(count)));
+    }
+
+    let mut ref_patches = Vec::with_capacity((w / STRIDE) * (h / STRIDE));
+    for y in (0..h.saturating_sub(BLOCK_SIZE)).step_by(STRIDE) {
+        for x in (0..w.saturating_sub(BLOCK_SIZE)).step_by(STRIDE) {
+            ref_patches.push((x, y));
+        }
+    }
+
+    ref_patches.par_iter().for_each(|&(rx, ry)| {
+        counter.fetch_add(1, AtomicOrdering::Relaxed);
+
+        let mut group_locs_buf = [(0, 0); MAX_GROUP_SIZE];
+        let group_size =
+            block_matching_joint(guide, w, h, rx, ry, is_step_1, params, &mut group_locs_buf);
+        let group_locs = &group_locs_buf[0..group_size];
+
+        // Process chroma channels only (ch = 1 and ch = 2)
+        for ch in 1..3 {
+            let guide_ch = &guide[ch];
+            let noisy_ch = &noisy[ch];
+
+            let ch_sigma = params.sigma * params.chroma_sigma_scale;
+
+            let mut guide_stack = build_3d_group(guide_ch, w, group_locs);
+            let mut noisy_stack = if is_step_1 {
+                guide_stack.clone()
+            } else {
+                build_3d_group(noisy_ch, w, group_locs)
+            };
+
+            transform_3d(&mut guide_stack, group_size, tables);
+            if !is_step_1 {
+                transform_3d(&mut noisy_stack, group_size, tables);
+            }
+
+            let weight;
+            if is_step_1 {
+                let threshold = params.hard_th_lambda * ch_sigma;
+                let nonzero = hard_threshold(&mut guide_stack, threshold);
+                weight = if nonzero > 0 {
+                    1.0 / (nonzero as f32)
+                } else {
+                    1.0
+                };
+                noisy_stack = guide_stack;
+            } else {
+                weight = wiener_filter(&mut noisy_stack, &guide_stack, ch_sigma);
+            }
+
+            inverse_transform_3d(&mut noisy_stack, group_size, tables);
+
+            let num_acc = &numerators[ch];
+            let den_acc = &denominators[ch];
+
+            for (k, &(lx, ly)) in group_locs.iter().enumerate() {
+                let patch_offset = k * BLOCK_AREA;
+                for dy in 0..BLOCK_SIZE {
+                    let row_global = (ly + dy) * w + lx;
+                    let row_patch = dy * BLOCK_SIZE;
+                    for dx in 0..BLOCK_SIZE {
+                        let idx = row_global + dx;
+                        let val = noisy_stack[patch_offset + row_patch + dx];
+                        let w_val = tables.kaiser[row_patch + dx] * weight;
+                        num_acc.add(idx, val * w_val);
+                        den_acc.add(idx, w_val);
+                    }
+                }
+            }
+        }
+    });
+
+    let mut results = Vec::new();
+    // Luminance remains completely untouched (cloned directly from noisy)
+    results.push(noisy[0].clone());
+
+    for ch in 1..3 {
+        let num_vec = numerators[ch].to_vec();
+        let den_vec = denominators[ch].to_vec();
+        let final_ch = num_vec
+            .iter()
+            .zip(den_vec.iter())
+            .zip(noisy[ch].iter())
+            .map(|((&n, &d), &orig)| if d > 1e-6 { n / d } else { orig })
+            .collect();
+        results.push(final_ch);
+    }
+    results
+}

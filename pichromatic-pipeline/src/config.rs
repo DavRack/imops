@@ -4,7 +4,7 @@ use serde_json;
 use toml::map::Map;
 
 use crate::modules::{
-    CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap, BM3D};
+    CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap, BM3D, ChromaDenoise};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
@@ -46,7 +46,7 @@ pub fn parse_config(config: String) -> PipelineConfig{
         let pipeline_module: Box<dyn PipelineModule> = match module["name"].as_str().unwrap() {
             "HighlightReconstruction" =>    from_toml::<HighlightReconstruction>(module),
             // "LocalExpousure" =>             from_toml::<LocalExpousure>(module),
-            // "ChromaDenoise" =>              from_toml::<ChromaDenoise>(module),
+            "ChromaDenoise" =>              from_toml::<ChromaDenoise>(module),
             "CFACoeffs" =>                  from_toml::<CFACoeffs>(module),
             "Contrast" =>                   from_toml::<Contrast>(module),
             "ToneMap" =>                    from_toml::<ToneMap>(module),
