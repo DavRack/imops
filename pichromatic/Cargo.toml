@@ -12,9 +12,6 @@ lto = "fat"
 name = "pichromatic"
 path = "src/lib.rs"
 
-[[bin]]
-name = "example"
-path = "src/bin/example.rs"
 
 [dependencies]
 color = { version = "0.3.2", features = ["serde"] }

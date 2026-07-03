@@ -2,4 +2,4 @@
 # time cargo run --release
 cargo build --release --bin imops-cli &&
 time ./target/release/imops-cli "$1" &&
-./view
+./view result.jpg

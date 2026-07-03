@@ -3,9 +3,9 @@ name = "filsimrs"
 version = "0.1.0"
 edition = "2021"
 
-# [lib]
-# name = "imops"
-# path = "src/lib.rs"
+[lib]
+name = "imops"
+path = "src/lib.rs"
 
 [[bin]]
 name = "imops-cli"
@@ -34,6 +34,7 @@ pichromatic = {version="0.1.0", path="./pichromatic"}
 pichromatic-pipeline = {version="0.1.0", path="./pichromatic-pipeline"}
 rawler = "*"
 clap = {version="4.6.0", features=["derive"]}
+image = "0.24.9"
 
 # deps for viewer
 eframe = { version = "0.27", optional = true }

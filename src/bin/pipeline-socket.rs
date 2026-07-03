@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
-use filsimrs::file_helpers::{save_bmp, to_u8};
+use imops::file_helpers::{save_bmp, to_u8};
 use pichromatic::cfa::CFA;
 use pichromatic::demosaic::{Dim2, Point, Rect, crop_and_normalize};
 use pichromatic::image::ImageMetadata;
@@ -59,13 +59,13 @@ fn main() -> io::Result<()> {
 
     Ok(())
 }
-fn process_image(image: Image, pipeline: &mut PipelineConfig, output_path: String) -> Image{
+fn process_image(mut image: Image, pipeline: &mut PipelineConfig, output_path: String) -> Image{
     let t1 = Instant::now();
-    let mut result1 = run_pixel_pipeline(image, pipeline);
+    run_pixel_pipeline(&mut image, pipeline);
     println!("finish pipeline with total time: {:.2?}", t1.elapsed());
-    let (pixels, width, height) = to_u8(&mut result1);
+    let (pixels, width, height) = to_u8(&mut image);
     save_bmp(&output_path, width, height, pixels).unwrap();
-    return result1
+    return image
 }
 
 

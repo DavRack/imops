@@ -1,26 +1,25 @@
-use imops::config::PipelineConfig;
-use imops::imops::{CFACoeffs, CST, ChromaDenoise, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineImage, PipelineModule, Sigmoid};
+use pichromatic_pipeline::config::PipelineConfig;
+use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap};
+use pichromatic_pipeline::pipeline::run_pixel_pipeline;
+use pichromatic::pixel::Image;
+use pichromatic::cfa::CFA;
+use pichromatic::demosaic::{Dim2, Point, Rect as DemosaicRect, crop_and_normalize};
+use pichromatic::image::ImageMetadata;
 
-use imops::pipeline::run_pixel_pipeline;
-
-use rawler::{decode_file, RawImage};
+use rawler::{decode_file, RawImageData};
+use rawler::imgop::xyz::Illuminant;
 use std::time::Instant;
 use std::vec::Vec;
 
 use eframe::{egui, App, Frame, NativeOptions, run_native};
 use egui::{CentralPanel, ColorImage, Context, Rect, TextureHandle, Vec2, pos2, Sense};
 use image::{RgbImage, GenericImageView, DynamicImage};
-use imops::pixels::{ImageBuffer};
 
 fn main() {
     let raw_image_path = "test_data/maya.dng";
-    // let raw_image_path = "test_data/raw_sample.NEF";
-    // let raw_image_path = "test_data/test.dng";
 
     // 1. Load the raw image.
     let raw_image = decode_file(raw_image_path).expect("Failed to load raw image");
-
-    
 
     run_viewer("Pipeline Comparison", move || {
         // --- Define Pipeline 1: Softer Sigmoid ---
@@ -29,48 +28,31 @@ fn main() {
                 name: "Demosaic".to_string(),
                 cache: None,
                 config: Demosaic { algorithm: "markesteijn".to_string() },
-                mask: None,
             }),
             Box::new(Module {
                 name: "CFACoeffs".to_string(),
                 cache: None,
                 config: CFACoeffs { },
-                mask: None,
             }),
             Box::new(Module {
                 name: "HighlightReconstruction".to_string(),
                 cache: None,
                 config: HighlightReconstruction {},
-                mask: None,
             }),
             Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
                 config: Exp { ev: 1.5},
-                mask: None,
             }),
             Box::new(Module {
                 name: "Contrast".to_string(),
                 cache: None,
                 config: Contrast { c: 1.75},
-                mask: None,
             }),
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { color_space: imops::imops::ColorSpaceMatrix::CameraToXYZ},
-                mask: None,
-            }),
-            Box::new(Module {
-                name: "NR".to_string(),
-                cache: None,
-                config: ChromaDenoise{
-                    a: 0.0,
-                    b: 0.0,
-                    strength: 0.1,
-                    use_ai: false,
-                },
-                mask: None,
+                config: CST { target_color_space: "XyzD65".to_string()},
             }),
             Box::new(Module {
                 name: "LHC".to_string(),
@@ -80,19 +62,16 @@ fn main() {
                     cc: 1.15,
                     hc: 1.0,
                 },
-                mask: None,
             }),
             Box::new(Module {
                 name: "Sigmoid (Soft)".to_string(),
                 cache: None,
-                config: Sigmoid { c: 6.0 },
-                mask: None,
+                config: ToneMap {},
             }),
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { color_space: imops::imops::ColorSpaceMatrix::XYZTOsRGB},
-                mask: None,
+                config: CST { target_color_space: "Srgb".to_string()},
             })
         ];
 
@@ -102,58 +81,98 @@ fn main() {
                 name: "Demosaic".to_string(),
                 cache: None,
                 config: Demosaic { algorithm: "markesteijn".to_string() },
-                mask: None,
             }),
             Box::new(Module {
                 name: "CFACoeffs".to_string(),
                 cache: None,
                 config: CFACoeffs { },
-                mask: None,
             }),
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { color_space: imops::imops::ColorSpaceMatrix::CameraToXYZ},
-                mask: None,
+                config: CST { target_color_space: "XyzD65".to_string()},
             }),
             Box::new(Module {
                 name: "Sigmoid (Soft)".to_string(),
                 cache: None,
-                config: Sigmoid { c: 6.0 },
-                mask: None,
+                config: ToneMap {},
             }),
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { color_space: imops::imops::ColorSpaceMatrix::XYZTOsRGB},
-                mask: None,
+                config: CST { target_color_space: "Srgb".to_string()},
             })
         ];
 
-        // --- Process both pipelines starting from a default PipelineImage ---
         println!("Processing pipeline 1...");
         let now = Instant::now();
-        // let result1 = process_pipeline(img, &pipeline1, &raw_image);
-        let pipeline1 = PipelineConfig{
+        let mut image1 = get_image_from_raw(raw_image.clone());
+        let mut pipeline1 = PipelineConfig{
             pipeline_modules: pipeline1,
         };
-        let result1 = run_pixel_pipeline(raw_image.clone(), pipeline1);
+        run_pixel_pipeline(&mut image1, &mut pipeline1);
         println!("Pipeline 1 execution time: {}", now.elapsed().as_millis());
+        
         println!("Processing pipeline 2...");
         let now = Instant::now();
-        let pipeline2 = PipelineConfig{
+        let mut image2 = get_image_from_raw(raw_image.clone());
+        let mut pipeline2 = PipelineConfig{
             pipeline_modules: pipeline2,
         };
-        let result2 = run_pixel_pipeline(raw_image.clone(), pipeline2);
+        run_pixel_pipeline(&mut image2, &mut pipeline2);
         println!("Pipeline 2 execution time: {}", now.elapsed().as_millis());
 
-        // Compare the results of the two pipelines
-        (result1, result2)
+        (image1, image2)
     });
 
     println!("Visual tests finished.");
 }
 
+fn get_image_from_raw(mut raw_image: rawler::RawImage) -> Image {
+    let calibration_matrix_d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
+    let wb_coeffs = raw_image.wb_coeffs;
+    let raw_image_dimensions = raw_image.dim();
+    let raw_image_crop_area = raw_image.crop_area.unwrap();
+    let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
+    let raw_image_black_level = raw_image.blacklevel.as_bayer_array()[0];
+    let raw_image_cfa = raw_image.camera.cfa.to_string();
+    let _ = raw_image.apply_scaling();
+    let raw_image_data = match raw_image.data {
+        RawImageData::Float(data) => data,
+        _ => panic!("Expected float raw data"),
+    };
+    let image_metadata = ImageMetadata {
+        width: raw_image_dimensions.w,
+        height: raw_image_dimensions.h,
+        crop_area: Some(DemosaicRect {
+            p: Point {
+                x: raw_image_crop_area.p.x,
+                y: raw_image_crop_area.p.y
+            },
+            d: Dim2 {
+                w: raw_image_crop_area.d.w,
+                h: raw_image_crop_area.d.h
+            },
+        }),
+        black_level: Some(raw_image_black_level),
+        white_level: Some(raw_image_white_level),
+        wb_coeffs: Some(wb_coeffs),
+        cfa: Some(CFA::new(&raw_image_cfa)),
+        calibration_matrix_d65: Some(calibration_matrix_d65),
+        color_space: None,
+    };
+
+    let mut image = Image {
+        raw_data: raw_image_data,
+        rgb_data: vec![],
+        metadata: image_metadata,
+    };
+    let normalized_raw_data = crop_and_normalize(&image);
+    image.raw_data = normalized_raw_data;
+    image.metadata.width = image.metadata.crop_area.unwrap().d.w;
+    image.metadata.height = image.metadata.crop_area.unwrap().d.h;
+    image
+}
 
 pub struct ViewerApp {
     before_image: RgbImage,
@@ -298,6 +317,7 @@ impl App for ViewerApp {
                         self.slider_position = ((new_slider_x - image_rect.min.x) / image_rect.width()).clamp(0.0, 1.0);
                     }
                 }
+
                 if slider_response.hovered() {
                     ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                 }
@@ -306,33 +326,42 @@ impl App for ViewerApp {
     }
 }
 
-pub fn to_pipeline_image(img: &DynamicImage) -> PipelineImage {
+pub fn to_pipeline_image(img: &DynamicImage) -> Image {
     let (width, height) = img.dimensions();
     let rgb_img = img.to_rgb32f();
-    let mut data: ImageBuffer = Vec::with_capacity((width * height) as usize);
+    let mut rgb_data = Vec::with_capacity((width * height) as usize);
 
     for pixel in rgb_img.pixels() {
-        data.push([pixel[0], pixel[1], pixel[2]]);
+        rgb_data.push([pixel[0], pixel[1], pixel[2]]);
     }
 
-    PipelineImage {
-        data,
-        width: width as usize,
-        height: height as usize,
-        max_raw_value: 1.0, // Assuming image data is normalized to [0, 1] for PNG/JPEG
+    Image {
+        raw_data: vec![],
+        rgb_data,
+        metadata: ImageMetadata {
+            width: width as usize,
+            height: height as usize,
+            crop_area: None,
+            black_level: None,
+            white_level: None,
+            wb_coeffs: None,
+            cfa: None,
+            calibration_matrix_d65: None,
+            color_space: None,
+        },
     }
 }
 
-pub fn to_rgb_image(pipeline_image: &PipelineImage) -> RgbImage {
-    let mut rgb_image = RgbImage::new(pipeline_image.width as u32, pipeline_image.height as u32);
-    for (i, pixel_data) in pipeline_image.data.iter().enumerate() {
-        let x = (i % pipeline_image.width) as u32;
-        let y = (i / pipeline_image.width) as u32;
+pub fn to_rgb_image(image: &Image) -> RgbImage {
+    let mut rgb_image = RgbImage::new(image.metadata.width as u32, image.metadata.height as u32);
+    for (i, pixel_data) in image.rgb_data.iter().enumerate() {
+        let x = (i % image.metadata.width) as u32;
+        let y = (i / image.metadata.width) as u32;
         // Clamp values to [0, 1] and convert to u8
         let r = (pixel_data[0].max(0.0).min(1.0) * 255.0) as u8;
         let g = (pixel_data[1].max(0.0).min(1.0) * 255.0) as u8;
         let b = (pixel_data[2].max(0.0).min(1.0) * 255.0) as u8;
-        rgb_image.put_pixel(x, y,image::Rgb([r, g, b]));
+        rgb_image.put_pixel(x, y, image::Rgb([r, g, b]));
     }
     rgb_image
 }
@@ -342,7 +371,7 @@ pub fn run_viewer<F>(
     setup_fn: F,
 )
 where
-    F: FnOnce() -> (PipelineImage, PipelineImage) + 'static,
+    F: FnOnce() -> (Image, Image) + 'static,
 {
     let (pipeline_image_before, pipeline_image_after) = setup_fn();
 
@@ -364,15 +393,14 @@ pub fn run_module_viewer(
     raw_path: Option<&'static str>,
 ) {
     let input_image_path = input_path.unwrap_or("test_data/test1.tif");
-    let raw_image_path = raw_path.unwrap_or("test_data/raw_sample.NEF");
+    let _raw_image_path = raw_path.unwrap_or("test_data/raw_sample.NEF");
 
     run_viewer(window_title, move || {
         let img = image::open(input_image_path).expect("Failed to open input image");
         let pipeline_image_before = to_pipeline_image(&img);
 
-        let raw_image = decode_file(raw_image_path).expect("Failed to load raw sample image");
-
-        let pipeline_image_after = module.process(pipeline_image_before.clone(), &raw_image);
+        let mut pipeline_image_after = pipeline_image_before.clone();
+        module.process(&mut pipeline_image_after);
 
         (pipeline_image_before, pipeline_image_after)
     });
