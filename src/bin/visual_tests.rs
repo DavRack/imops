@@ -139,50 +139,8 @@ fn main() {
     println!("Visual tests finished.");
 }
 
-fn get_image_from_raw(mut raw_image: rawler::RawImage) -> Image {
-    let calibration_matrix_d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
-    let wb_coeffs = raw_image.wb_coeffs;
-    let raw_image_dimensions = raw_image.dim();
-    let raw_image_crop_area = raw_image.crop_area.unwrap();
-    let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
-    let raw_image_black_level = raw_image.blacklevel.as_bayer_array()[0];
-    let raw_image_cfa = raw_image.camera.cfa.to_string();
-    let _ = raw_image.apply_scaling();
-    let raw_image_data = match raw_image.data {
-        RawImageData::Float(data) => data,
-        _ => panic!("Expected float raw data"),
-    };
-    let image_metadata = ImageMetadata {
-        width: raw_image_dimensions.w,
-        height: raw_image_dimensions.h,
-        crop_area: Some(DemosaicRect {
-            p: Point {
-                x: raw_image_crop_area.p.x,
-                y: raw_image_crop_area.p.y
-            },
-            d: Dim2 {
-                w: raw_image_crop_area.d.w,
-                h: raw_image_crop_area.d.h
-            },
-        }),
-        black_level: Some(raw_image_black_level),
-        white_level: Some(raw_image_white_level),
-        wb_coeffs: Some(wb_coeffs),
-        cfa: Some(CFA::new(&raw_image_cfa)),
-        calibration_matrix_d65: Some(calibration_matrix_d65),
-        color_space: None,
-    };
-
-    let mut image = Image {
-        raw_data: raw_image_data,
-        rgb_data: vec![],
-        metadata: image_metadata,
-    };
-    let normalized_raw_data = crop_and_normalize(&image);
-    image.raw_data = normalized_raw_data;
-    image.metadata.width = image.metadata.crop_area.unwrap().d.w;
-    image.metadata.height = image.metadata.crop_area.unwrap().d.h;
-    image
+fn get_image_from_raw(raw_image: rawler::RawImage) -> Image {
+    pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image)
 }
 
 pub struct ViewerApp {

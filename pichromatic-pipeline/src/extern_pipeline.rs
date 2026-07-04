@@ -122,20 +122,41 @@ pub extern "C" fn crop_bayer_center(
     return Box::leak(Box::new(new_img))
 }
 
-fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
+pub fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     // 1. Decode the RAW bytes using rawloader
     let decode_params = RawDecodeParams::default();
     let mut file = RawSource::new_from_slice(file_bytes);
-    let mut raw_image = rawler::decode(&mut file, &decode_params).expect(
+    let raw_image = rawler::decode(&mut file, &decode_params).expect(
         "error decoding file"
     );
-    
-    let calibration_matrix_d65 = raw_image.camera.color_matrix[&Illuminant::D65].clone();
+    parse_raw_image(raw_image)
+}
+
+pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
     let wb_coeffs = raw_image.wb_coeffs.map(|v| if v.is_nan() {0.0} else {v});
-    let raw_image_dimentions = raw_image.dim();
+    
+    println!("DEBUG RAW: color_matrix keys = {:?}", raw_image.camera.color_matrix.keys());
+    let calibration_matrix_d65 = if let Some(matrix1) = raw_image.camera.color_matrix.get(&Illuminant::A) {
+        if let Some(matrix2) = raw_image.camera.color_matrix.get(&Illuminant::D65) {
+            interpolate_matrices(matrix1, matrix2, &wb_coeffs)
+        } else {
+            matrix1.clone()
+        }
+    } else if let Some(matrix2) = raw_image.camera.color_matrix.get(&Illuminant::D65) {
+        matrix2.clone()
+    } else if let Some((_, matrix)) = raw_image.camera.color_matrix.iter().next() {
+        matrix.clone()
+    } else {
+        vec![
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0,
+        ]
+    };
+    let raw_image_dimensions = raw_image.dim();
     let raw_image_crop_area = raw_image.crop_area.unwrap();
     println!("DEBUG RAW: dim = {}x{}, crop = ({},{}) {}x{}", 
-             raw_image_dimentions.w, raw_image_dimentions.h, 
+             raw_image_dimensions.w, raw_image_dimensions.h, 
              raw_image_crop_area.p.x, raw_image_crop_area.p.y, 
              raw_image_crop_area.d.w, raw_image_crop_area.d.h);
     let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
@@ -147,8 +168,8 @@ fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
         _ => panic!(""),
     };
     let image_metadata = ImageMetadata{
-        width: raw_image_dimentions.w,
-        height: raw_image_dimentions.h,
+        width: raw_image_dimensions.w,
+        height: raw_image_dimensions.h,
         crop_area: Some(Rect{
             p: Point {
                 x: raw_image_crop_area.p.x,
@@ -178,7 +199,7 @@ fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     image.raw_data = normalized_raw_data;
     image.metadata.width = image.metadata.crop_area.unwrap().d.w;
     image.metadata.height = image.metadata.crop_area.unwrap().d.h;
-    return image
+    image
 }
 
 #[no_mangle]
@@ -251,5 +272,47 @@ pub extern "C" fn free_rgb_buffer_c(ptr: *mut u8, len: usize) {
             let _ = Vec::from_raw_parts(ptr, len, len);
         }
     }
+}
+
+fn interpolate_matrices(
+    matrix1: &[f32],
+    matrix2: &[f32],
+    wb_coeffs: &[f32; 4],
+) -> Vec<f32> {
+    let xyz_a = [1.1507, 1.0, 0.2867];
+    let xyz_d65 = [0.9642, 1.0, 0.8251];
+    
+    let mut s1 = [0.0; 3];
+    let mut s2 = [0.0; 3];
+    for i in 0..3 {
+        s1[i] = matrix1[i * 3] * xyz_a[0] + matrix1[i * 3 + 1] * xyz_a[1] + matrix1[i * 3 + 2] * xyz_a[2];
+        s2[i] = matrix2[i * 3] * xyz_d65[0] + matrix2[i * 3 + 1] * xyz_d65[1] + matrix2[i * 3 + 2] * xyz_d65[2];
+    }
+    
+    let ratio1 = if s1[2] != 0.0 { s1[0] / s1[2] } else { 1.0 };
+    let ratio2 = if s2[2] != 0.0 { s2[0] / s2[2] } else { 1.0 };
+    
+    let ratio_s = if wb_coeffs[0] > 0.0 && wb_coeffs[2] > 0.0 {
+        wb_coeffs[2] / wb_coeffs[0]
+    } else {
+        ratio2
+    };
+    
+    let w = if ratio1 != ratio2 && ratio1 > 0.0 && ratio2 > 0.0 && ratio_s > 0.0 {
+        let val = (ratio_s.ln() - ratio2.ln()) / (ratio1.ln() - ratio2.ln());
+        val.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    
+    println!("DEBUG COLOR: ratio1 = {}, ratio2 = {}, ratio_s = {}, w = {}", ratio1, ratio2, ratio_s, w);
+    
+    let mut interpolated = vec![0.0; 9];
+    for i in 0..9 {
+        let val1 = if i < matrix1.len() { matrix1[i] } else { 0.0 };
+        let val2 = if i < matrix2.len() { matrix2[i] } else { 0.0 };
+        interpolated[i] = w * val1 + (1.0 - w) * val2;
+    }
+    interpolated
 }
 
