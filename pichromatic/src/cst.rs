@@ -91,3 +91,33 @@ pub fn normalize_matrix<const N: usize, const M: usize>(rgb2cam: [[f32; N]; M]) 
   }
   result
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_cst_identity_and_roundtrip() {
+    let mut pixels = vec![[0.5, 0.3, 0.8]];
+    cst(&mut pixels, ColorSpaceTag::AcesCg, ColorSpaceTag::Srgb);
+    cst(&mut pixels, ColorSpaceTag::Srgb, ColorSpaceTag::AcesCg);
+    
+    let diff_r = (pixels[0][0] - 0.5).abs();
+    let diff_g = (pixels[0][1] - 0.3).abs();
+    let diff_b = (pixels[0][2] - 0.8).abs();
+    
+    assert!(diff_r < 1e-4, "r diff is {}", diff_r);
+    assert!(diff_g < 1e-4, "g diff is {}", diff_g);
+    assert!(diff_b < 1e-4, "b diff is {}", diff_b);
+  }
+
+  #[test]
+  fn test_normalize_matrix() {
+    let mat = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]];
+    let normalized = normalize_matrix(mat);
+    for row in normalized {
+      let sum: f32 = row.iter().sum();
+      assert!((sum - 1.0).abs() < 1e-6);
+    }
+  }
+}

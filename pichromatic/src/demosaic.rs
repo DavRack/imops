@@ -348,3 +348,31 @@ pub mod demosaic_algorithms {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cfa::CFA;
+
+    #[test]
+    fn test_fast_demosaic_uniform() {
+        let width = 16;
+        let height = 16;
+        let cfa = CFA::new("RGGB");
+        let input = vec![0.5; width * height];
+        
+        let image = demosaic_algorithms::Fast{}.demosaic(width, height, cfa, input);
+        
+        assert_eq!(image.metadata.width, width / 2);
+        assert_eq!(image.metadata.height, height / 2);
+        
+        for pixel in &image.rgb_data {
+            let diff_r = (pixel[0] - 0.5).abs();
+            let diff_g = (pixel[1] - 0.5).abs();
+            let diff_b = (pixel[2] - 0.5).abs();
+            assert!(diff_r < 1e-4, "r is {}", pixel[0]);
+            assert!(diff_g < 1e-4, "g is {}", pixel[1]);
+            assert!(diff_b < 1e-4, "b is {}", pixel[2]);
+        }
+    }
+}

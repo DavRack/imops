@@ -324,3 +324,38 @@ impl fmt::Debug for PlaneColor {
     write!(f, "PlaneColors {{ {:?} }}", self.colors)
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_cfa_creation() {
+    let cfa = CFA::new("RGGB");
+    assert!(cfa.is_valid());
+    assert_eq!(cfa.width, 2);
+    assert_eq!(cfa.height, 2);
+    assert!(cfa.is_rgb());
+    assert!(!cfa.is_cygm());
+  }
+
+  #[test]
+  fn test_cfa_color_at() {
+    let cfa = CFA::new("RGGB");
+    assert_eq!(cfa.color_at(0, 0), CFAColor::RED as usize);
+    assert_eq!(cfa.color_at(0, 1), CFAColor::GREEN as usize);
+    assert_eq!(cfa.color_at(0, 2), CFAColor::RED as usize);
+    
+    assert_eq!(cfa.color_at(1, 0), CFAColor::GREEN as usize);
+    assert_eq!(cfa.color_at(1, 1), CFAColor::BLUE as usize);
+    assert_eq!(cfa.color_at(1, 2), CFAColor::GREEN as usize);
+  }
+
+  #[test]
+  fn test_cfa_shift() {
+    let cfa = CFA::new("RGGB");
+    let shifted = cfa.shift(1, 1);
+    assert_eq!(shifted.to_string(), "BGGR");
+    assert_eq!(shifted.color_at(0, 0), CFAColor::BLUE as usize);
+  }
+}
