@@ -39,7 +39,6 @@ image = "0.24.9"
 eframe = { version = "0.27", optional = true }
 egui = { version = "0.27", optional = true }
 egui_plot = { version = "0.27", optional = true }
-clap_derive = "4.6.0"
 
 [features]
 parallel = []
