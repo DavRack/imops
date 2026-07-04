@@ -16,9 +16,10 @@ extern "C" {
 pub extern "C" fn get_raw_img(
     file_bytes_ptr: *const u8,
     file_bytes_len: usize,
-) -> *const Image {
+) -> *mut Image {
     let file_bytes = unsafe { slice::from_raw_parts(file_bytes_ptr, file_bytes_len) };
-    &get_raw_img_internal(file_bytes)
+    let img = get_raw_img_internal(file_bytes);
+    Box::into_raw(Box::new(img))
 }
 
 #[wasm_bindgen]
@@ -133,6 +134,10 @@ fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     let wb_coeffs = raw_image.wb_coeffs.map(|v| if v.is_nan() {0.0} else {v});
     let raw_image_dimentions = raw_image.dim();
     let raw_image_crop_area = raw_image.crop_area.unwrap();
+    println!("DEBUG RAW: dim = {}x{}, crop = ({},{}) {}x{}", 
+             raw_image_dimentions.w, raw_image_dimentions.h, 
+             raw_image_crop_area.p.x, raw_image_crop_area.p.y, 
+             raw_image_crop_area.d.w, raw_image_crop_area.d.h);
     let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
     let raw_image_black_level = raw_image.blacklevel.as_bayer_array()[0];
     let raw_image_cfa = raw_image.camera.cfa.to_string();
@@ -174,5 +179,77 @@ fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     image.metadata.width = image.metadata.crop_area.unwrap().d.w;
     image.metadata.height = image.metadata.crop_area.unwrap().d.h;
     return image
+}
+
+#[no_mangle]
+pub extern "C" fn get_pixel_pipeline_c(
+    config_ptr: *const u8,
+    config_len: usize,
+) -> *mut PipelineConfig {
+    let config_bytes = unsafe { slice::from_raw_parts(config_ptr, config_len) };
+    let config_str = std::str::from_utf8(config_bytes).unwrap_or("");
+    println!("DEBUG RUST: get_pixel_pipeline_c config_str (len {}):\n{}", config_len, config_str);
+    let pipeline = config::parse_config(config_str.to_string());
+    Box::into_raw(Box::new(pipeline))
+}
+
+#[no_mangle]
+pub extern "C" fn run_pixel_pipeline_c(
+    image: *mut Image,
+    pixel_pipeline: *mut PipelineConfig,
+) -> *mut Image {
+    let mut image_obj = unsafe { &mut *image };
+    let mut pipeline_obj = unsafe { &mut *pixel_pipeline };
+    println!("DEBUG PIPELINE: Input image dim = {}x{}, raw_data len = {}", 
+             image_obj.metadata.width, image_obj.metadata.height, image_obj.raw_data.len());
+    run_pixel_pipeline(&mut image_obj, &mut pipeline_obj);
+    image
+}
+
+#[no_mangle]
+pub extern "C" fn get_image_rgb_data_c(
+    image: *mut Image,
+    out_width: *mut usize,
+    out_height: *mut usize,
+    out_len: *mut usize,
+) -> *const u8 {
+    let data = unsafe { &mut *image };
+    let width = data.metadata.width;
+    let height = data.metadata.height;
+    
+    let rgb_u8: Vec<u8> = data.rgb_data.iter().flatten().map(|sub_pixel| {
+        (sub_pixel.clamp(0.0, 1.0) * 255.0) as u8
+    }).collect();
+    
+    unsafe {
+        if !out_width.is_null() { *out_width = width; }
+        if !out_height.is_null() { *out_height = height; }
+        if !out_len.is_null() { *out_len = rgb_u8.len(); }
+    }
+    
+    Box::into_raw(rgb_u8.into_boxed_slice()) as *const u8
+}
+
+#[no_mangle]
+pub extern "C" fn free_image_c(image: *mut Image) {
+    if !image.is_null() {
+        unsafe { let _ = Box::from_raw(image); }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn free_pipeline_c(pipeline: *mut PipelineConfig) {
+    if !pipeline.is_null() {
+        unsafe { let _ = Box::from_raw(pipeline); }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn free_rgb_buffer_c(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() {
+        unsafe {
+            let _ = Vec::from_raw_parts(ptr, len, len);
+        }
+    }
 }
 

@@ -3098,6 +3098,7 @@ dependencies = [
  "serde_json",
  "serde_plain",
  "toml",
+ "uuid",
  "wasm-bindgen",
 ]
 

@@ -174,6 +174,8 @@ pub struct Demosaic {
 
 impl PipelineModule for Module<Demosaic> {
     fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        println!("DEBUG DEMOSAIC: starting algorithm = {}, width = {}, height = {}", 
+                 self.config.algorithm, image.metadata.width, image.metadata.height);
         let new_image = match self.config.algorithm.to_lowercase().as_str() {
             "markesteijn" => {
                 Image::demosaic(

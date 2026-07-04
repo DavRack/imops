@@ -21,4 +21,5 @@ serde_json = "*"
 toml = "0.8.20"
 rayon = "1.10.0"
 rawler = "*"
+uuid = { version = "*", features = ["js"] }
 wasm-bindgen = "*"

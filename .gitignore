@@ -1,6 +1,7 @@
 target
 /data
 venv
+.DS_Store
 *.RAF
 *.ppm
 *.ARW

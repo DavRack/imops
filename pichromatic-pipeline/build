@@ -1,0 +1,29 @@
+#!/bin/bash
+set -e
+
+# Change directory to the script's directory to ensure relative paths work
+cd "$(dirname "$0")"
+
+echo "=== Building for WASM ==="
+cargo build --target=wasm32-unknown-unknown --release
+~/.cargo/bin/wasm-bindgen --target web --out-dir pichromatic-pipeline ./target/wasm32-unknown-unknown/release/pichromatic_pipeline.wasm
+
+if [ -d ~/programs/pichromatic-web/src/ ]; then
+  echo "Copying WASM build to pichromatic-web..."
+  cp -r pichromatic-pipeline ~/programs/pichromatic-web/src/
+else
+  echo "Warning: ~/programs/pichromatic-web/src/ not found, skipped copy."
+fi
+rm -rf pichromatic-pipeline
+
+echo "=== Building for iOS (Device & Simulator) ==="
+cargo build --target=aarch64-apple-ios --release
+cargo build --target=aarch64-apple-ios-sim --release
+cargo build --target=x86_64-apple-ios --release
+
+# Force static linking by removing dynamic libraries from target directories
+rm -f ./target/aarch64-apple-ios/release/libpichromatic_pipeline.dylib
+rm -f ./target/aarch64-apple-ios-sim/release/libpichromatic_pipeline.dylib
+rm -f ./target/x86_64-apple-ios/release/libpichromatic_pipeline.dylib
+
+echo "=== All targets built successfully! ==="
