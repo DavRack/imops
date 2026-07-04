@@ -636,9 +636,9 @@ pub mod demosaic_algorithms {
 
                         // G interpolated in vert/hor directions using Hamilton-Adams method
                         let guha = cfa_buf[indx - V1] + (cfa_buf[indx] - cfa_buf[indx - V2]) * 0.5;
-                        let gdha = cfa_buf[indx + V1] + (cfa_buf[indx] - cfa_buf[indx - V2]) * 0.5;
+                        let gdha = cfa_buf[indx + V1] + (cfa_buf[indx] - cfa_buf[indx + V2]) * 0.5;
                         let glha = cfa_buf[indx - 1] + (cfa_buf[indx] - cfa_buf[indx - 2]) * 0.5;
-                        let grha = cfa_buf[indx + 1] + (cfa_buf[indx] - cfa_buf[indx - 2]) * 0.5;
+                        let grha = cfa_buf[indx + 1] + (cfa_buf[indx] - cfa_buf[indx + 2]) * 0.5;
 
                         // G interpolated in vert/hor directions using adaptive ratios
                         let guar = if (1.0 - cru).abs() < arthresh { cfa_buf[indx] * cru } else { guha };
@@ -1224,9 +1224,9 @@ pub mod demosaic_algorithms {
                                 + (dgrb_c[(indx + P1) >> 1] - dgrb_c[(indx - P3) >> 1]).abs());
                             let wtsw = 1.0 / (eps + (dgrb_c[(indx + P1) >> 1] - dgrb_c[(indx - P1) >> 1]).abs()
                                 + (dgrb_c[(indx + P1) >> 1] - dgrb_c[(indx + M3) >> 1]).abs()
-                                + (dgrb_c[(indx - P1) >> 1] - dgrb_c[(indx - P3) >> 1]).abs());
+                                + (dgrb_c[(indx - P1) >> 1] - dgrb_c[(indx + P3) >> 1]).abs());
                             let wtse = 1.0 / (eps + (dgrb_c[(indx + M1) >> 1] - dgrb_c[(indx - M1) >> 1]).abs()
-                                + (dgrb_c[(indx + M1) >> 1] - dgrb_c[(indx - P3) >> 1]).abs()
+                                + (dgrb_c[(indx + M1) >> 1] - dgrb_c[(indx + P3) >> 1]).abs()
                                 + (dgrb_c[(indx - M1) >> 1] - dgrb_c[(indx + M3) >> 1]).abs());
 
                             (wtnw * (1.325 * dgrb_c[(indx - M1) >> 1] - 0.175 * dgrb_c[(indx - M3) >> 1]
@@ -1234,7 +1234,7 @@ pub mod demosaic_algorithms {
                                 + wtne * (1.325 * dgrb_c[(indx - P1) >> 1] - 0.175 * dgrb_c[(indx - P3) >> 1]
                                     - 0.075 * dgrb_c[(indx - P1 + 2) >> 1] - 0.075 * dgrb_c[(indx - P1 + V2) >> 1])
                                 + wtsw * (1.325 * dgrb_c[(indx + P1) >> 1] - 0.175 * dgrb_c[(indx + P3) >> 1]
-                                    - 0.075 * dgrb_c[(indx + P1 - 2) >> 1] - 0.075 * dgrb_c[(indx + P1 - V2) >> 1])
+                                    - 0.075 * dgrb_c[(indx + P1 - 2) >> 1] - 0.075 * dgrb_c[(indx - M1) >> 1])
                                 + wtse * (1.325 * dgrb_c[(indx + M1) >> 1] - 0.175 * dgrb_c[(indx + M3) >> 1]
                                     - 0.075 * dgrb_c[(indx + M1 + 2) >> 1] - 0.075 * dgrb_c[(indx + M1 + V2) >> 1]))
                                 / (wtnw + wtne + wtsw + wtse)

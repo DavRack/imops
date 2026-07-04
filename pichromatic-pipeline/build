@@ -22,4 +22,11 @@ cargo build --target=aarch64-apple-ios --release
 # Force static linking by removing dynamic libraries from target directories
 rm -f ./target/aarch64-apple-ios/release/libpichromatic_pipeline.dylib
 
+if [ -d ../../iosRawManualCameraApp/iosManualRawCamera/ ]; then
+  echo "Copying static library to iosRawManualCameraApp..."
+  cp ./target/aarch64-apple-ios/release/libpichromatic_pipeline.a ../../iosRawManualCameraApp/iosManualRawCamera/
+else
+  echo "Warning: iosRawManualCameraApp directory not found, skipped copy."
+fi
+
 echo "=== All targets built successfully! ==="
