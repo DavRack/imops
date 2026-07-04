@@ -201,6 +201,12 @@ impl PipelineModule for Module<Demosaic> {
                     demosaic_algorithms::SuperSuperFast{},
                 )
             },
+            "amaze" => {
+                Image::demosaic(
+                    image.clone(),
+                    demosaic_algorithms::Amaze::default(),
+                )
+            },
             _ => panic!()
         };
         image.rgb_data = new_image.rgb_data;

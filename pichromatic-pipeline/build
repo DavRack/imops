@@ -16,14 +16,10 @@ else
 fi
 rm -rf pichromatic-pipeline
 
-echo "=== Building for iOS (Device & Simulator) ==="
+echo "=== Building for iOS (Device Only) ==="
 cargo build --target=aarch64-apple-ios --release
-cargo build --target=aarch64-apple-ios-sim --release
-cargo build --target=x86_64-apple-ios --release
 
 # Force static linking by removing dynamic libraries from target directories
 rm -f ./target/aarch64-apple-ios/release/libpichromatic_pipeline.dylib
-rm -f ./target/aarch64-apple-ios-sim/release/libpichromatic_pipeline.dylib
-rm -f ./target/x86_64-apple-ios/release/libpichromatic_pipeline.dylib
 
 echo "=== All targets built successfully! ==="

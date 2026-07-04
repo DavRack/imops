@@ -2,7 +2,7 @@
 
 [[pipeline_modules]]
 name = "Demosaic"
-algorithm = "Markesteijn"
+algorithm = "amaze"
 
 [[pipeline_modules]]
 name = "BM3D"
