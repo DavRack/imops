@@ -27,11 +27,11 @@ name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 3
+ev = 1
 
 [[pipeline_modules]]
 name = "Contrast"
-c = 1.7
+c = 1.1
 
 [[pipeline_modules]]
 name = "CST"
@@ -47,7 +47,7 @@ target_color_space = "XyzD65"
 [[pipeline_modules]]
 name = "LCH"
 lc = 1
-cc = 1.2
+cc = 1
 hc = 1
 
 [[pipeline_modules]]
