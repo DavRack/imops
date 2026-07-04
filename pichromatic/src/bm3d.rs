@@ -869,24 +869,33 @@ mod tests {
         data
     }
 
+    fn refined_sum(img: &[[f32; 3]], channel_idx: usize) -> f64 {
+        let mut sum = 0.0f64;
+        let mut c = 0.0f64;
+        for p in img {
+            let x = p[channel_idx] as f64;
+            let y = x - c;
+            let t = sum + y;
+            c = (t - sum) - y;
+            sum = t;
+        }
+        sum
+    }
+
     #[test]
     fn test_bm3d_regression() {
-        let mut img = generate_test_image(128, 128);
-        bm3d(&mut img, 128, 128, 0.1);
+        let size = 2048;
+        let mut img = generate_test_image(size, size);
+        bm3d(&mut img, size, size, 0.1);
         
-        let mut sum_r = 0.0;
-        let mut sum_g = 0.0;
-        let mut sum_b = 0.0;
-        for p in &img {
-            sum_r += p[0];
-            sum_g += p[1];
-            sum_b += p[2];
-        }
+        let sum_r = refined_sum(&img, 0);
+        let sum_g = refined_sum(&img, 1);
+        let sum_b = refined_sum(&img, 2);
         
-        println!("BM3D checksums 128x128: r={}, g={}, b={}", sum_r, sum_g, sum_b);
-        let diff_r = (sum_r - 9218.749_f32).abs();
-        let diff_g = (sum_g - 8340.485_f32).abs();
-        let diff_b = (sum_b - 8141.214_f32).abs();
+        println!("BM3D checksums 2048x2048: r={}, g={}, b={}", sum_r, sum_g, sum_b);
+        let diff_r = (sum_r - 2100157.872553965_f64).abs();
+        let diff_g = (sum_g - 2101402.3983787443_f64).abs();
+        let diff_b = (sum_b - 2098665.855843374_f64).abs();
         assert!(diff_r < 1e-3, "r diff is {}", diff_r);
         assert!(diff_g < 1e-3, "g diff is {}", diff_g);
         assert!(diff_b < 1e-3, "b diff is {}", diff_b);
@@ -894,22 +903,18 @@ mod tests {
 
     #[test]
     fn test_chroma_bm3d_regression() {
-        let mut img = generate_test_image(128, 128);
-        chroma_bm3d(&mut img, 128, 128, 0.1);
+        let size = 2048;
+        let mut img = generate_test_image(size, size);
+        chroma_bm3d(&mut img, size, size, 0.1);
         
-        let mut sum_r = 0.0;
-        let mut sum_g = 0.0;
-        let mut sum_b = 0.0;
-        for p in &img {
-            sum_r += p[0];
-            sum_g += p[1];
-            sum_b += p[2];
-        }
+        let sum_r = refined_sum(&img, 0);
+        let sum_g = refined_sum(&img, 1);
+        let sum_b = refined_sum(&img, 2);
         
-        println!("CHROMA_BM3D checksums 128x128: r={}, g={}, b={}", sum_r, sum_g, sum_b);
-        let diff_r = (sum_r - 9216.999_f32).abs();
-        let diff_g = (sum_g - 8339.133_f32).abs();
-        let diff_b = (sum_b - 8139.4907_f32).abs();
+        println!("CHROMA_BM3D checksums 2048x2048: r={}, g={}, b={}", sum_r, sum_g, sum_b);
+        let diff_r = (sum_r - 2099550.296127397_f64).abs();
+        let diff_g = (sum_g - 2100802.19310467_f64).abs();
+        let diff_b = (sum_b - 2098059.5297535257_f64).abs();
         assert!(diff_r < 1e-3, "r diff is {}", diff_r);
         assert!(diff_g < 1e-3, "g diff is {}", diff_g);
         assert!(diff_b < 1e-3, "b diff is {}", diff_b);

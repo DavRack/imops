@@ -5,7 +5,7 @@ name = "Demosaic"
 algorithm = "Markesteijn"
 
 [[pipeline_modules]]
-name = "ChromaDenoise"
+name = "BM3D"
 intensity = 0.01
 
 # algorithm = "fast"
