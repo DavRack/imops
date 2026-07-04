@@ -5,7 +5,7 @@ name = "Demosaic"
 algorithm = "amaze"
 
 [[pipeline_modules]]
-name = "BM3D"
+name = "ChromaDenoise"
 intensity = 0.01
 
 # algorithm = "fast"
@@ -27,7 +27,7 @@ name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 1
+ev = 2
 
 [[pipeline_modules]]
 name = "Contrast"
