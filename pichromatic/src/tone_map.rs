@@ -2,11 +2,16 @@ use crate::pixel::{ImageBuffer, PixelOps};
 use color::ColorSpaceTag::{Oklch, AcesCg};
 use rayon::prelude::*;
 
-#[inline(always)]
-pub fn square_sigmoid(x: f32)-> f32{
-    let c: f32 = 2.0;
+/// Constant multiplier to ensure 18% middle gray in maps to 18% gray out:
+/// c = 1.0 / (0.18_f32.sqrt() * (1.0 - 0.18_f32.sqrt())) = 4.0939303
+const C: f32 = 4.0939303;
 
-    return (1.0 / (1.0 + (1.0/(c*x)))).powi(2)
+#[inline(always)]
+pub fn square_sigmoid(x: f32) -> f32 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    (1.0 / (1.0 + (1.0 / (C * x)))).powi(2)
 }
 pub fn sigmoid(image_buffer: &mut ImageBuffer){
     let params = &RgcParams::default();
@@ -144,5 +149,22 @@ pub fn gamut_compress_pixel(rgb: [f32; 3], params: &RgcParams) -> [f32; 3] {
         ach - cdist[1] * abs_ach,
         ach - cdist[2] * abs_ach,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gray_preservation() {
+        let input = 0.18_f32;
+        let output = square_sigmoid(input);
+        assert!(
+            (output - input).abs() < 1e-5,
+            "18% gray shifted from {} to {}",
+            input,
+            output
+        );
+    }
 }
 

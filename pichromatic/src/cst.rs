@@ -12,13 +12,29 @@ pub fn cst(image_buffer: &mut ImageBuffer, source_cs: ColorSpaceTag, target_cs: 
 pub fn camera_cst(image_buffer: &mut ImageBuffer, target_cs: ColorSpaceTag, calibration_matrix_d65: &[f32]){
     let components = calibration_matrix_d65.len() / 3;
     let mut xyz2cam: [Pixel; 3] = [[0.0; 3]; 3];
-    for i in 0..components {
-        for j in 0..3 {
-            xyz2cam[i][j] = calibration_matrix_d65[i * 3 + j];
+    
+    // Compute the reference camera response under D65: [0.95042, 1.0, 1.08890]
+    let xyz_d65 = [0.95042, 1.0, 1.08890];
+    let mut rgb_d65 = [0.0; 3];
+    for i in 0..3 {
+        rgb_d65[i] = calibration_matrix_d65[i * 3] * xyz_d65[0]
+                   + calibration_matrix_d65[i * 3 + 1] * xyz_d65[1]
+                   + calibration_matrix_d65[i * 3 + 2] * xyz_d65[2];
+    }
+    
+    let mut multipliers = [1.0; 3];
+    for i in 0..3 {
+        if rgb_d65[i] > 0.0 {
+            multipliers[i] = 1.0 / rgb_d65[i];
         }
     }
-    let xyz2cam_normalized = normalize_matrix(xyz2cam);
-    let foward_matrix = pseudo_inverse_matrix(xyz2cam_normalized);
+    
+    for i in 0..components {
+        for j in 0..3 {
+            xyz2cam[i][j] = calibration_matrix_d65[i * 3 + j] * multipliers[i];
+        }
+    }
+    let foward_matrix = pseudo_inverse_matrix(xyz2cam);
     image_buffer.par_iter_mut().for_each(|pixel|{
         let [r, g, b] = *pixel;
         let xyzd65_pixel = [

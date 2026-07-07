@@ -13,3 +13,4 @@ venv
 *.svg
 *.tar.gz
 *.tif
+*.xmp

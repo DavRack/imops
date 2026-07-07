@@ -131,11 +131,8 @@ pub fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     );
     parse_raw_image(raw_image)
 }
-
 pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
     let wb_coeffs = raw_image.wb_coeffs.map(|v| if v.is_nan() {0.0} else {v});
-    
-    println!("DEBUG RAW: color_matrix keys = {:?}", raw_image.camera.color_matrix.keys());
     let calibration_matrix_d65 = if let Some(matrix1) = raw_image.camera.color_matrix.get(&Illuminant::A) {
         if let Some(matrix2) = raw_image.camera.color_matrix.get(&Illuminant::D65) {
             interpolate_matrices(matrix1, matrix2, &wb_coeffs)
