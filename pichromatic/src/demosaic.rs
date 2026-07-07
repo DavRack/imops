@@ -41,12 +41,19 @@ pub fn demosaic(
         image.metadata.crop_area.expect("Crop area must be set to demosaic raw images")
     );
 
-    let debayer_image = demosaic_algorithm.demosaic(
+    let mut original_metadata = image.metadata.clone();
+
+    let mut debayer_image = demosaic_algorithm.demosaic(
         image.metadata.width,
         image.metadata.height,
         cfa,
         image.raw_data
     );
+
+    original_metadata.width = debayer_image.metadata.width;
+    original_metadata.height = debayer_image.metadata.height;
+    debayer_image.metadata = original_metadata;
+
     return debayer_image
 }
 

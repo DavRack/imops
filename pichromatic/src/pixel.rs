@@ -130,4 +130,17 @@ impl Image {
             demosaic_algorithm
         )
     }
+
+    pub fn vignette(&mut self, strength: f32) -> &mut Image {
+        if let Some(ref opcode_list3) = self.metadata.opcode_list3 {
+            crate::vignette::apply_vignette_radial_correction(
+                &mut self.rgb_data,
+                self.metadata.width,
+                self.metadata.height,
+                opcode_list3,
+                strength,
+            );
+        }
+        self
+    }
 }

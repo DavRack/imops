@@ -4,7 +4,7 @@ use serde_json;
 use toml::map::Map;
 
 use crate::modules::{
-    CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap, BM3D, ChromaDenoise};
+    CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap, BM3D, ChromaDenoise, Vignette};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
@@ -57,6 +57,7 @@ pub fn parse_config(config: String) -> PipelineConfig{
             // "LS" =>                         from_toml::<LS>(module),
             "Demosaic" =>                   from_toml::<Demosaic>(module),
             "BM3D" =>                       from_toml::<BM3D>(module),
+            "Vignette" =>                   from_toml::<Vignette>(module),
             v => panic!("wrong pipeline module name {:}", v)
         };
         config.pipeline_modules.push(pipeline_module);

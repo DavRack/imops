@@ -251,3 +251,26 @@ impl PipelineModule for Module<ChromaDenoise> {
 //     }
 // }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Vignette {
+    #[serde(default = "default_strength")]
+    pub strength: f32,
+}
+
+fn default_strength() -> f32 {
+    1.0
+}
+
+impl Default for Vignette {
+    fn default() -> Self {
+        Self { strength: 1.0 }
+    }
+}
+
+impl PipelineModule for Module<Vignette> {
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return image.vignette(self.config.strength)
+    }
+}
+
+

@@ -1,12 +1,12 @@
 use pichromatic_pipeline::config::PipelineConfig;
-use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, Module, PipelineModule, ToneMap, BM3D, ChromaDenoise};
+use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, Module, PipelineModule, ToneMap, BM3D, ChromaDenoise, Vignette};
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use pichromatic::pixel::Image;
 use pichromatic::cfa::CFA;
 use pichromatic::demosaic::{Dim2, Point, Rect as DemosaicRect, crop_and_normalize};
 use pichromatic::image::ImageMetadata;
 
-use rawler::{decode_file, RawImageData};
+use rawler::RawImageData;
 use rawler::imgop::xyz::Illuminant;
 use std::time::Instant;
 use std::vec::Vec;
@@ -16,18 +16,23 @@ use egui::{CentralPanel, ColorImage, Context, Rect, TextureHandle, Vec2, pos2, S
 use image::{RgbImage, GenericImageView, DynamicImage};
 
 fn main() {
-    let raw_image_path = "test_data/maya.dng";
+    let raw_image_path = "test_data/IMG_5851.DNG";
 
-    // 1. Load the raw image.
-    let raw_image = decode_file(raw_image_path).expect("Failed to load raw image");
+    // 1. Load the raw image and its bytes
+    let file_bytes = std::fs::read(raw_image_path).expect("Failed to read raw image file");
+    let decode_params = rawler::decoders::RawDecodeParams::default();
+    let mut raw_file = rawler::rawsource::RawSource::new_from_slice(&file_bytes);
+    let raw_image = rawler::decode(&mut raw_file, &decode_params).expect("Failed to decode raw image");
 
-    run_viewer("Pipeline Comparison", move || {
-        // --- Define Pipeline 1: Softer Sigmoid ---
+    let file_bytes_clone = file_bytes.clone();
+
+    run_viewer("Vignette Correction Comparison", move || {
+        // --- Define Pipeline 1: Without Vignette Correction ---
         let pipeline1: Vec<Box<dyn PipelineModule>> = vec![
             Box::new(Module {
                 name: "Demosaic".to_string(),
                 cache: None,
-                config: Demosaic { algorithm: "markesteijn".to_string() },
+                config: Demosaic { algorithm: "amaze".to_string() },
             }),
             Box::new(Module {
                 name: "CFACoeffs".to_string(),
@@ -35,24 +40,19 @@ fn main() {
                 config: CFACoeffs { },
             }),
             Box::new(Module {
-                name: "HighlightReconstruction".to_string(),
-                cache: None,
-                config: HighlightReconstruction {},
-            }),
-            Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
-                config: Exp { ev: 3.0},
+                config: Exp { ev: 1.5},
             }),
             Box::new(Module {
                 name: "Contrast".to_string(),
                 cache: None,
-                config: Contrast { c: 1.75},
+                config: Contrast { c: 1.1},
             }),
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { target_color_space: "XyzD65".to_string()},
+                config: CST { target_color_space: "AcesCg".to_string()},
             }),
             Box::new(Module {
                 name: "Sigmoid (Soft)".to_string(),
@@ -66,17 +66,12 @@ fn main() {
             })
         ];
 
-        // --- Define Pipeline 2: Harder Sigmoid ---
+        // --- Define Pipeline 2: With Vignette Correction ---
         let pipeline2: Vec<Box<dyn PipelineModule>> = vec![
             Box::new(Module {
                 name: "Demosaic".to_string(),
                 cache: None,
-                config: Demosaic { algorithm: "markesteijn".to_string() },
-            }),
-            Box::new(Module {
-                name: "Denoice".to_string(),
-                cache: None,
-                config: ChromaDenoise { intensity: 0.01},
+                config: Demosaic { algorithm: "amaze".to_string() },
             }),
             Box::new(Module {
                 name: "CFACoeffs".to_string(),
@@ -84,24 +79,24 @@ fn main() {
                 config: CFACoeffs { },
             }),
             Box::new(Module {
-                name: "HighlightReconstruction".to_string(),
+                name: "Vignette".to_string(),
                 cache: None,
-                config: HighlightReconstruction {},
+                config: Vignette { strength: 1.0 },
             }),
             Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
-                config: Exp { ev: 3.0},
+                config: Exp { ev: 1.5},
             }),
             Box::new(Module {
                 name: "Contrast".to_string(),
                 cache: None,
-                config: Contrast { c: 1.75},
+                config: Contrast { c: 1.1},
             }),
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { target_color_space: "XyzD65".to_string()},
+                config: CST { target_color_space: "AcesCg".to_string()},
             }),
             Box::new(Module {
                 name: "Sigmoid (Soft)".to_string(),
@@ -117,21 +112,21 @@ fn main() {
 
         println!("Processing pipeline 1...");
         let now = Instant::now();
-        let mut image1 = get_image_from_raw(raw_image.clone());
+        let mut image1 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
         let mut pipeline1 = PipelineConfig{
             pipeline_modules: pipeline1,
         };
         run_pixel_pipeline(&mut image1, &mut pipeline1);
-        println!("Pipeline 1 execution time: {}", now.elapsed().as_millis());
+        println!("Pipeline 1 execution time: {}ms", now.elapsed().as_millis());
         
         println!("Processing pipeline 2...");
         let now = Instant::now();
-        let mut image2 = get_image_from_raw(raw_image.clone());
+        let mut image2 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
         let mut pipeline2 = PipelineConfig{
             pipeline_modules: pipeline2,
         };
         run_pixel_pipeline(&mut image2, &mut pipeline2);
-        println!("Pipeline 2 execution time: {}", now.elapsed().as_millis());
+        println!("Pipeline 2 execution time: {}ms", now.elapsed().as_millis());
 
         (image1, image2)
     });
@@ -139,8 +134,13 @@ fn main() {
     println!("Visual tests finished.");
 }
 
-fn get_image_from_raw(raw_image: rawler::RawImage) -> Image {
-    pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image)
+fn get_image_from_raw(raw_image: rawler::RawImage, file_bytes: &[u8]) -> Image {
+    let mut image = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image);
+    if let Some(parser) = pichromatic_pipeline::dng_metadata::DngMetadataParser::new(file_bytes) {
+        let dng_meta = parser.parse();
+        pichromatic_pipeline::extern_pipeline::consolidate_dng_metadata(&mut image, &dng_meta);
+    }
+    image
 }
 
 pub struct ViewerApp {
@@ -310,13 +310,7 @@ pub fn to_pipeline_image(img: &DynamicImage) -> Image {
         metadata: ImageMetadata {
             width: width as usize,
             height: height as usize,
-            crop_area: None,
-            black_level: None,
-            white_level: None,
-            wb_coeffs: None,
-            cfa: None,
-            calibration_matrix_d65: None,
-            color_space: None,
+            ..Default::default()
         },
     }
 }

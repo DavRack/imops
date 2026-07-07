@@ -426,4 +426,25 @@ mod tests {
         assert!(metadata.dng_version.is_some());
         assert_eq!(metadata.dng_version, Some([1, 3, 0, 0]));
     }
+
+    #[test]
+    fn test_vignette_correction() {
+        let file_path = "../test_data/IMG_5851.DNG";
+        let data = fs::read(file_path).expect("failed to read test DNG file");
+        let image = crate::extern_pipeline::get_raw_img_internal(&data);
+        
+        let demosaic_alg = pichromatic::demosaic::demosaic_algorithms::Amaze::default();
+        let mut image = image.demosaic(demosaic_alg);
+        
+        let index_corner = 0; // top-left corner
+        let val_before = image.rgb_data[index_corner];
+        
+        image.vignette(1.0);
+        
+        let val_after = image.rgb_data[index_corner];
+        println!("Corner pixel before: {:?}, after: {:?}", val_before, val_after);
+        assert!(val_after[0] > val_before[0]);
+        assert!(val_after[1] > val_before[1]);
+        assert!(val_after[2] > val_before[2]);
+    }
 }

@@ -8,6 +8,10 @@
       "name": "CFACoeffs"
     },
     {
+      "name": "Vignette",
+      "strength": 0.9
+    },
+    {
       "name": "HighlightReconstruction"
     },
     {

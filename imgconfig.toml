@@ -20,6 +20,10 @@ algorithm = "amaze"
 [[pipeline_modules]]
 name = "CFACoeffs"
 
+[[pipeline_modules]]
+name = "Vignette"
+strength = 0.9
+
 # [[pipeline_modules]]
 # name = "HighlightReconstruction"
 
