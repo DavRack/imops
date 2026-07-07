@@ -151,7 +151,7 @@ pub struct CST {
 impl PipelineModule for Module<CST> {
     fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
         let target_color_space: ColorSpaceTag = serde_plain::from_str(
-            &self.config.target_color_space
+            self.config.target_color_space.trim()
         ).expect(
             &format!("Color space not recognized: {}", self.config.target_color_space)
         );

@@ -34,8 +34,7 @@ c = 1.1
 
 [[pipeline_modules]]
 name = "CST"
-target_color_space = "XyzD65"
-
+target_color_space = "AcesCg"
 
 # # [[pipeline_modules]]
 # # name = "ChromaDenoise"
