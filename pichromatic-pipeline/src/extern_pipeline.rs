@@ -122,6 +122,49 @@ pub extern "C" fn crop_bayer_center(
     return Box::leak(Box::new(new_img))
 }
 
+fn is_identity_matrix(matrix: &Option<Vec<f32>>) -> bool {
+    if let Some(ref m) = matrix {
+        m.len() == 9 && 
+        (m[0] - 1.0).abs() < 1e-5 && (m[1] - 0.0).abs() < 1e-5 && (m[2] - 0.0).abs() < 1e-5 &&
+        (m[3] - 0.0).abs() < 1e-5 && (m[4] - 1.0).abs() < 1e-5 && (m[5] - 0.0).abs() < 1e-5 &&
+        (m[6] - 0.0).abs() < 1e-5 && (m[7] - 0.0).abs() < 1e-5 && (m[8] - 1.0).abs() < 1e-5
+    } else {
+        true
+    }
+}
+
+pub fn consolidate_dng_metadata(image: &mut Image, dng_meta: &crate::dng_metadata::DngMetadata) {
+    image.metadata.baseline_exposure = dng_meta.baseline_exposure;
+    image.metadata.opcode_list1 = dng_meta.opcode_list1.clone();
+    image.metadata.opcode_list2 = dng_meta.opcode_list2.clone();
+    image.metadata.opcode_list3 = dng_meta.opcode_list3.clone();
+    image.metadata.dng_version = dng_meta.dng_version;
+    image.metadata.dng_backward_version = dng_meta.dng_backward_version;
+    image.metadata.unique_camera_model = dng_meta.unique_camera_model.clone();
+    image.metadata.color_matrix1 = dng_meta.color_matrix1.clone();
+    image.metadata.color_matrix2 = dng_meta.color_matrix2.clone();
+    image.metadata.camera_calibration1 = dng_meta.camera_calibration1.clone();
+    image.metadata.camera_calibration2 = dng_meta.camera_calibration2.clone();
+    image.metadata.analog_balance = dng_meta.analog_balance.clone();
+    image.metadata.as_shot_neutral = dng_meta.as_shot_neutral.clone();
+    image.metadata.linear_response_limit = dng_meta.linear_response_limit;
+    image.metadata.shadow_scale = dng_meta.shadow_scale;
+    image.metadata.noise_profile = dng_meta.noise_profile.clone();
+    image.metadata.profile_name = dng_meta.profile_name.clone();
+    image.metadata.profile_tone_curve = dng_meta.profile_tone_curve.clone();
+    image.metadata.lens_info = dng_meta.lens_info.clone();
+    image.metadata.camera_serial_number = dng_meta.camera_serial_number.clone();
+
+    // Fallback consolidation for active calibration matrix:
+    if is_identity_matrix(&image.metadata.calibration_matrix_d65) {
+        if let Some(ref cm2) = dng_meta.color_matrix2 {
+            image.metadata.calibration_matrix_d65 = Some(cm2.clone());
+        } else if let Some(ref cm1) = dng_meta.color_matrix1 {
+            image.metadata.calibration_matrix_d65 = Some(cm1.clone());
+        }
+    }
+}
+
 pub fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     // 1. Decode the RAW bytes using rawloader
     let decode_params = RawDecodeParams::default();
@@ -129,7 +172,15 @@ pub fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     let raw_image = rawler::decode(&mut file, &decode_params).expect(
         "error decoding file"
     );
-    parse_raw_image(raw_image)
+    let mut image = parse_raw_image(raw_image);
+    
+    // 2. Extract DNG metadata directly from the bytes and consolidate
+    if let Some(parser) = crate::dng_metadata::DngMetadataParser::new(file_bytes) {
+        let dng_meta = parser.parse();
+        consolidate_dng_metadata(&mut image, &dng_meta);
+    }
+    
+    image
 }
 pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
     let wb_coeffs = raw_image.wb_coeffs.map(|v| if v.is_nan() {0.0} else {v});
@@ -183,6 +234,26 @@ pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
         cfa: Some(CFA::new(&raw_image_cfa)),
         calibration_matrix_d65: Some(calibration_matrix_d65),
         color_space: None,
+        baseline_exposure: None,
+        opcode_list1: None,
+        opcode_list2: None,
+        opcode_list3: None,
+        dng_version: None,
+        dng_backward_version: None,
+        unique_camera_model: None,
+        color_matrix1: None,
+        color_matrix2: None,
+        camera_calibration1: None,
+        camera_calibration2: None,
+        analog_balance: None,
+        as_shot_neutral: None,
+        linear_response_limit: None,
+        shadow_scale: None,
+        noise_profile: None,
+        profile_name: None,
+        profile_tone_curve: None,
+        lens_info: None,
+        camera_serial_number: None,
     };
 
     let mut image = Image{
