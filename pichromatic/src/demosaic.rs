@@ -457,12 +457,10 @@ pub mod demosaic_algorithms {
                     if y < z { lim(x, y, z) } else { lim(x, z, y) }
                 };
                 let clampnan = |x: f32, m: f32, m_max: f32| -> f32 {
-                    if x.is_infinite() {
-                        if x < m { m } else if x > m_max { m_max } else { x }
-                    } else if x.is_nan() {
+                    if x.is_nan() {
                         (m + m_max) * 0.5
                     } else {
-                        x
+                        x.clamp(m, m_max)
                     }
                 };
                 let interpolatef = |w: f32, a: f32, b: f32| -> f32 {
@@ -633,13 +631,13 @@ pub mod demosaic_algorithms {
                         let indx = rr * TS + cc;
 
                         let cru = cfa_buf[indx - V1] * (dirwts0[indx - V2] + dirwts0[indx])
-                            / (dirwts0[indx - V2] * (eps + cfa_buf[indx]) + dirwts0[indx] * (eps + cfa_buf[indx - V2]));
+                            / (dirwts0[indx - V2] * (eps + cfa_buf[indx]) + dirwts0[indx] * (eps + cfa_buf[indx - V2])).max(1e-10);
                         let crd = cfa_buf[indx + V1] * (dirwts0[indx + V2] + dirwts0[indx])
-                            / (dirwts0[indx + V2] * (eps + cfa_buf[indx]) + dirwts0[indx] * (eps + cfa_buf[indx + V2]));
+                            / (dirwts0[indx + V2] * (eps + cfa_buf[indx]) + dirwts0[indx] * (eps + cfa_buf[indx + V2])).max(1e-10);
                         let crl = cfa_buf[indx - 1] * (dirwts1[indx - 2] + dirwts1[indx])
-                            / (dirwts1[indx - 2] * (eps + cfa_buf[indx]) + dirwts1[indx] * (eps + cfa_buf[indx - 2]));
+                            / (dirwts1[indx - 2] * (eps + cfa_buf[indx]) + dirwts1[indx] * (eps + cfa_buf[indx - 2])).max(1e-10);
                         let crr = cfa_buf[indx + 1] * (dirwts1[indx + 2] + dirwts1[indx])
-                            / (dirwts1[indx + 2] * (eps + cfa_buf[indx]) + dirwts1[indx] * (eps + cfa_buf[indx + 2]));
+                            / (dirwts1[indx + 2] * (eps + cfa_buf[indx]) + dirwts1[indx] * (eps + cfa_buf[indx + 2])).max(1e-10);
 
                         // G interpolated in vert/hor directions using Hamilton-Adams method
                         let guha = cfa_buf[indx - V1] + (cfa_buf[indx] - cfa_buf[indx - V2]) * 0.5;
@@ -654,8 +652,8 @@ pub mod demosaic_algorithms {
                         let grar = if (1.0 - crr).abs() < arthresh { cfa_buf[indx] * crr } else { grha };
 
                         // adaptive weights for vertical/horizontal directions
-                        let hwt = dirwts1[indx - 1] / (dirwts1[indx - 1] + dirwts1[indx + 1]);
-                        let vwt = dirwts0[indx - V1] / (dirwts0[indx + V1] + dirwts0[indx - V1]);
+                        let hwt = dirwts1[indx - 1] / (dirwts1[indx - 1] + dirwts1[indx + 1]).max(1e-10);
+                        let vwt = dirwts0[indx - V1] / (dirwts0[indx + V1] + dirwts0[indx - V1]).max(1e-10);
 
                         // interpolated G via adaptive weights of cardinal evaluations
                         let gintvha = vwt * gdha + (1.0 - vwt) * guha;
@@ -802,8 +800,8 @@ pub mod demosaic_algorithms {
                         let dgrbhvarl = sqr(hcd[indx] - lave) + sqr(hcd[indx - 1] - lave) + sqr(hcd[indx - 2] - lave) + sqr(hcd[indx - 3] - lave);
                         let dgrbhvarr = sqr(hcd[indx] - rave) + sqr(hcd[indx + 1] - rave) + sqr(hcd[indx + 2] - rave) + sqr(hcd[indx + 3] - rave);
 
-                        let hwt = dirwts1[indx - 1] / (dirwts1[indx - 1] + dirwts1[indx + 1]);
-                        let vwt = dirwts0[indx - V1] / (dirwts0[indx + V1] + dirwts0[indx - V1]);
+                        let hwt = dirwts1[indx - 1] / (dirwts1[indx - 1] + dirwts1[indx + 1]).max(1e-10);
+                        let vwt = dirwts0[indx - V1] / (dirwts0[indx + V1] + dirwts0[indx - V1]).max(1e-10);
 
                         let vcdvar = epssq + vwt * dgrbvvard + (1.0 - vwt) * dgrbvvaru;
                         let hcdvar = epssq + hwt * dgrbhvarr + (1.0 - hwt) * dgrbhvarl;
@@ -816,8 +814,8 @@ pub mod demosaic_algorithms {
                         let vcdvar1 = epssq + vwt * dgrbvvard1 + (1.0 - vwt) * dgrbvvaru1;
                         let hcdvar1 = epssq + hwt * dgrbhvarr1 + (1.0 - hwt) * dgrbhvarl1;
 
-                        let varwt = hcdvar / (vcdvar + hcdvar);
-                        let diffwt = hcdvar1 / (vcdvar1 + hcdvar1);
+                        let varwt = hcdvar / (vcdvar + hcdvar).max(1e-10);
+                        let diffwt = hcdvar1 / (vcdvar1 + hcdvar1).max(1e-10);
 
                         if (0.5 - varwt) * (0.5 - diffwt) > 0.0 && (0.5f32 - diffwt).abs() < (0.5f32 - varwt).abs() {
                             hvwt[indx >> 1] = varwt;
@@ -1160,8 +1158,8 @@ pub mod demosaic_algorithms {
                                 cfa_buf[indx + 1] + (rbint[indx1] - rbint[indx1 + 1]) * 0.5
                             };
 
-                            let mut gintv = (dirwts0[indx - V1] * gd + dirwts0[indx + V1] * gu) / (dirwts0[indx + V1] + dirwts0[indx - V1]);
-                            let mut ginth = (dirwts1[indx - 1] * gr + dirwts1[indx + 1] * gl) / (dirwts1[indx - 1] + dirwts1[indx + 1]);
+                            let mut gintv = (dirwts0[indx - V1] * gd + dirwts0[indx + V1] * gu) / (dirwts0[indx + V1] + dirwts0[indx - V1]).max(1e-10);
+                            let mut ginth = (dirwts1[indx - 1] * gr + dirwts1[indx + 1] * gl) / (dirwts1[indx - 1] + dirwts1[indx + 1]).max(1e-10);
 
                             if gintv < rbint[indx1] {
                                 if 2.0 * gintv < rbint[indx1] {
@@ -1263,7 +1261,7 @@ pub mod demosaic_algorithms {
                         while indx < rr * TS + cc1 - 16 - (cc1 & 1) {
                             if col >= 0 && col < width as i32 && row >= 0 && row < height as i32 {
                                 let temp = 1.0 / (hvwt[(indx - V1) >> 1] + 2.0 - hvwt[(indx + 1) >> 1]
-                                    - hvwt[(indx - 1) >> 1] + hvwt[(indx + V1) >> 1]);
+                                    - hvwt[(indx - 1) >> 1] + hvwt[(indx + V1) >> 1]).max(1e-5);
 
                                 let r = clampnan(rgbgreen[indx]
                                     - ((hvwt[(indx - V1) >> 1]) * dgrb0[(indx - V1) >> 1]
@@ -1299,7 +1297,7 @@ pub mod demosaic_algorithms {
                         if (cc1 & 1) != 0 {
                             if col >= 0 && col < width as i32 && row >= 0 && row < height as i32 {
                                 let temp = 1.0 / (hvwt[(indx - V1) >> 1] + 2.0 - hvwt[(indx + 1) >> 1]
-                                    - hvwt[(indx - 1) >> 1] + hvwt[(indx + V1) >> 1]);
+                                    - hvwt[(indx - 1) >> 1] + hvwt[(indx + V1) >> 1]).max(1e-5);
 
                                 let r = clampnan(rgbgreen[indx]
                                     - ((hvwt[(indx - V1) >> 1]) * dgrb0[(indx - V1) >> 1]
@@ -1332,7 +1330,7 @@ pub mod demosaic_algorithms {
                             col += 1;
                             if col >= 0 && col < width as i32 && row >= 0 && row < height as i32 {
                                 let temp = 1.0 / (hvwt[(indx - V1) >> 1] + 2.0 - hvwt[(indx + 1) >> 1]
-                                    - hvwt[(indx - 1) >> 1] + hvwt[(indx + V1) >> 1]);
+                                    - hvwt[(indx - 1) >> 1] + hvwt[(indx + V1) >> 1]).max(1e-5);
 
                                 let r = clampnan(rgbgreen[indx]
                                     - ((hvwt[(indx - V1) >> 1]) * dgrb0[(indx - V1) >> 1]
