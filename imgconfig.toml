@@ -4,9 +4,9 @@
 name = "Demosaic"
 algorithm = "amaze"
 
-# [[pipeline_modules]]
-# name = "ChromaDenoise"
-# intensity = 0.01
+[[pipeline_modules]]
+name = "ChromaDenoise"
+intensity = 0.5
 
 # algorithm = "fast"
 
@@ -20,13 +20,16 @@ algorithm = "amaze"
 [[pipeline_modules]]
 name = "CFACoeffs"
 
+
 [[pipeline_modules]]
 name = "Vignette"
-strength = 0.9
+strength = 1.0
 
 # [[pipeline_modules]]
 # name = "HighlightReconstruction"
 
+[[pipeline_modules]]
+name = "BaselineExposureCompensation"
 
 [[pipeline_modules]]
 name = "Exp"
@@ -34,7 +37,7 @@ ev = 1
 
 [[pipeline_modules]]
 name = "Contrast"
-c = 1.1
+c = 1.5
 
 [[pipeline_modules]]
 name = "CST"
@@ -46,11 +49,11 @@ target_color_space = "AcesCg"
 # # b = 1
 # # strength = 0.1
 
-# [[pipeline_modules]]
-# name = "LCH"
-# lc = 1
-# cc = 1
-# hc = 1
+[[pipeline_modules]]
+name = "LCH"
+lc = 1
+cc = 1.2
+hc = 1
 
 [[pipeline_modules]]
 name = "ToneMap"

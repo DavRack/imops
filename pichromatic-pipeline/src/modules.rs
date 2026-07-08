@@ -97,6 +97,20 @@ impl PipelineModule for Module<Exp> {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct BaselineExposureCompensation {
+}
+
+impl PipelineModule for Module<BaselineExposureCompensation> {
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        let ev = image.metadata.baseline_exposure.unwrap_or(0.0);
+        if ev.abs() > 1e-6 {
+            return image.exp(ev)
+        }
+        image
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct ToneMap {
 }
 

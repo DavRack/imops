@@ -110,6 +110,9 @@ impl<'a> DngMetadataParser<'a> {
                         self.parse_ifd(sub_offset, metadata, visited);
                     }
                 }
+                34665 | 34853 => { // ExifIFD / GPSIFD — follow these linked IFDs
+                    self.parse_ifd(val_offset, metadata, visited);
+                }
                 50706 => { // DNGVersion
                     if typ == 1 && count == 4 {
                         let bytes = self.read_bytes(count, val_offset, &val_bytes);
@@ -149,7 +152,7 @@ impl<'a> DngMetadataParser<'a> {
                 50728 => { // AsShotNeutral
                     metadata.as_shot_neutral = Some(self.read_float_array(typ, count, val_offset, &val_bytes));
                 }
-                50729 => { // BaselineExposure
+                50730 => { // BaselineExposure (0xC62A)
                     if typ == 5 || typ == 10 {
                         if let Some(val) = self.read_rational(val_offset) {
                             metadata.baseline_exposure = Some(val);

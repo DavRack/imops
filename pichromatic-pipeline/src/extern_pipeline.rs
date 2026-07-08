@@ -327,6 +327,26 @@ pub extern "C" fn free_image_c(image: *mut Image) {
 }
 
 #[no_mangle]
+pub extern "C" fn get_image_metadata_c(image: *const Image) -> *mut std::os::raw::c_char {
+    if image.is_null() {
+        return std::ptr::null_mut();
+    }
+    let raw_metadata = unsafe { &*image };
+    let json_str = serde_json::to_string(&raw_metadata.metadata).unwrap_or_default();
+    let c_str = std::ffi::CString::new(json_str).unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
+    c_str.into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn free_string_c(ptr: *mut std::os::raw::c_char) {
+    if !ptr.is_null() {
+        unsafe {
+            let _ = std::ffi::CString::from_raw(ptr);
+        }
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn free_pipeline_c(pipeline: *mut PipelineConfig) {
     if !pipeline.is_null() {
         unsafe { let _ = Box::from_raw(pipeline); }
