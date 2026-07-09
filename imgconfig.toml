@@ -22,11 +22,12 @@ algorithm = "markesteijn"
 name = "CFACoeffs"
 
 [[pipeline_modules]]
-name = "HighlightReconstruction"
+name = "LumaGuidedChromaDenoise"
+radius = 4
+epsilon = 0.01
 
 [[pipeline_modules]]
-name = "ChromaDenoise"
-intensity = 0.9
+name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "Vignette"
