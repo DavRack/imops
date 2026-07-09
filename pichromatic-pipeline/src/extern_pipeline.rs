@@ -367,8 +367,8 @@ fn interpolate_matrices(
     matrix2: &[f32],
     wb_coeffs: &[f32; 4],
 ) -> Vec<f32> {
-    let xyz_a = [1.1507, 1.0, 0.2867];
-    let xyz_d65 = [0.9642, 1.0, 0.8251];
+    let xyz_a = [1.09850, 1.0, 0.35585];
+    let xyz_d65 = [0.95047, 1.0, 1.08883];
     
     let mut s1 = [0.0; 3];
     let mut s2 = [0.0; 3];

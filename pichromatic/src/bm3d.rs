@@ -433,11 +433,22 @@ impl DctTables {
                 idct_coeff[n * 8 + k] = scale * theta.cos();
             }
         }
+        fn bessel_i0(x: f32) -> f32 {
+            let mut sum = 1.0;
+            let mut term = 1.0;
+            for k in 1..=10 {
+                term *= (x / 2.0 / k as f32).powi(2);
+                sum += term;
+            }
+            sum
+        }
+        let beta = 2.0;
+        let i0_beta = bessel_i0(beta);
         let mut kaiser = vec![0.0; 64];
         for y in 0..8 {
             for x in 0..8 {
-                let wx = (std::f32::consts::PI * x as f32 / 7.0).sin();
-                let wy = (std::f32::consts::PI * y as f32 / 7.0).sin();
+                let wx = bessel_i0(beta * (1.0 - ((2.0 * x as f32 / 7.0) - 1.0).powi(2)).sqrt()) / i0_beta;
+                let wy = bessel_i0(beta * (1.0 - ((2.0 * y as f32 / 7.0) - 1.0).powi(2)).sqrt()) / i0_beta;
                 kaiser[y * 8 + x] = wx * wy;
             }
         }
@@ -617,9 +628,9 @@ fn split_channels(img: &[[f32; 3]]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
 
 fn merge_channels_inplace(img: &mut [[f32; 3]], r: &[f32], g: &[f32], b: &[f32]) {
     for i in 0..img.len() {
-        img[i][0] = r[i].clamp(0.0, 255.0) / 255.0;
-        img[i][1] = g[i].clamp(0.0, 255.0) / 255.0;
-        img[i][2] = b[i].clamp(0.0, 255.0) / 255.0;
+        img[i][0] = r[i].max(0.0) / 255.0;
+        img[i][1] = g[i].max(0.0) / 255.0;
+        img[i][2] = b[i].max(0.0) / 255.0;
     }
 }
 
@@ -893,9 +904,9 @@ mod tests {
         let sum_b = refined_sum(&img, 2);
         
         println!("BM3D checksums 2048x2048: r={}, g={}, b={}", sum_r, sum_g, sum_b);
-        let diff_r = (sum_r - 2100157.872553965_f64).abs();
-        let diff_g = (sum_g - 2101402.3983787443_f64).abs();
-        let diff_b = (sum_b - 2098665.855843374_f64).abs();
+        let diff_r = (sum_r - 2100044.776915211_f64).abs();
+        let diff_g = (sum_g - 2101586.5654235613_f64).abs();
+        let diff_b = (sum_b - 2098591.6187395807_f64).abs();
         assert!(diff_r < 1e-3, "r diff is {}", diff_r);
         assert!(diff_g < 1e-3, "g diff is {}", diff_g);
         assert!(diff_b < 1e-3, "b diff is {}", diff_b);
@@ -912,9 +923,9 @@ mod tests {
         let sum_b = refined_sum(&img, 2);
         
         println!("CHROMA_BM3D checksums 2048x2048: r={}, g={}, b={}", sum_r, sum_g, sum_b);
-        let diff_r = (sum_r - 2099550.296127397_f64).abs();
-        let diff_g = (sum_g - 2100802.19310467_f64).abs();
-        let diff_b = (sum_b - 2098059.5297535257_f64).abs();
+        let diff_r = (sum_r - 2099453.7840100583_f64).abs();
+        let diff_g = (sum_g - 2100897.820916853_f64).abs();
+        let diff_b = (sum_b - 2097984.2598643587_f64).abs();
         assert!(diff_r < 1e-3, "r diff is {}", diff_r);
         assert!(diff_g < 1e-3, "g diff is {}", diff_g);
         assert!(diff_b < 1e-3, "b diff is {}", diff_b);
