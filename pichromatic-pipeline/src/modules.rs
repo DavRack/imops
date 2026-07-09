@@ -657,6 +657,44 @@ impl PipelineModule for Module<ChromaDenoise> {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct LumaGuidedChromaDenoise {
+    pub radius: Parameter<usize>,
+    pub epsilon: Parameter<f32>,
+}
+
+impl Default for LumaGuidedChromaDenoise {
+    fn default() -> Self {
+        Self {
+            radius: Parameter::new(4, "Guided filter radius in pixels."),
+            epsilon: Parameter::new(0.01, "Guided filter edge-preservation epsilon (linear light)."),
+        }
+    }
+}
+
+impl PipelineModule for Module<LumaGuidedChromaDenoise> {
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        return image.chroma_denoise(self.config.radius.value, self.config.epsilon.value)
+    }
+
+    fn schema(&self) -> ModuleSchema {
+        ModuleSchema {
+            name: "LumaGuidedChromaDenoise".to_string(),
+            description: "Apply luma-guided chroma denoising.".to_string(),
+            fields: fields_from_config(&self.config),
+        }
+    }
+
+    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
+        let config: LumaGuidedChromaDenoise = module.try_into().expect("Invalid LumaGuidedChromaDenoise config");
+        Box::new(Module {
+            name: self.schema().name,
+            cache: None,
+            config,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Vignette {
     pub strength: Parameter<f32>,
 }
@@ -697,6 +735,7 @@ pub fn get_default_modules() -> Vec<Box<dyn PipelineModule>> {
     vec![
         Box::new(Module::<Demosaic>::default()),
         Box::new(Module::<ChromaDenoise>::default()),
+        Box::new(Module::<LumaGuidedChromaDenoise>::default()),
         Box::new(Module::<CFACoeffs>::default()),
         Box::new(Module::<Vignette>::default()),
         Box::new(Module::<HighlightReconstruction>::default()),

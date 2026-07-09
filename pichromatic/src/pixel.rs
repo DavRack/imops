@@ -121,6 +121,17 @@ impl Image {
         return self
     }
 
+    pub fn chroma_denoise(&mut self, radius: usize, epsilon: f32) -> &mut Image{
+        crate::chroma_denoise::chroma_denoise(
+            &mut self.rgb_data,
+            self.metadata.width,
+            self.metadata.height,
+            radius,
+            epsilon,
+        );
+        self
+    }
+
     pub fn demosaic(
         self,
         demosaic_algorithm: impl DemosaicAlgorithm

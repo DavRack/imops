@@ -1,8 +1,6 @@
 use pichromatic_pipeline::config::PipelineConfig;
 use pichromatic_pipeline::modules::{
-    BaselineExposureCompensation, CFACoeffs, CST, ChromaDenoise, Contrast, Demosaic,
-    DemosaicAlgorithmType, Exp, HighlightReconstruction, LCH, Module, Parameter, PipelineModule,
-    ToneMap, Vignette,
+    BaselineExposureCompensation, CFACoeffs, CST, ChromaDenoise, Contrast, Demosaic, DemosaicAlgorithmType, Exp, HighlightReconstruction, LCH, LumaGuidedChromaDenoise, Module, Parameter, PipelineModule, ToneMap, Vignette
 };
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use pichromatic::pixel::Image;
@@ -26,7 +24,10 @@ fn main() {
 
     let file_bytes_clone = file_bytes.clone();
 
-    run_viewer("Chroma Denoise Comparison", move || {
+    let pipeline1_label = "Pipeline 1";
+    let pipeline2_label = "Pipeline 2";
+
+    run_viewer("Chroma Denoise Comparison", pipeline1_label, pipeline2_label, move || {
         // --- Pipeline 1: exactly matches imgconfig.toml ---
         let pipeline1: Vec<Box<dyn PipelineModule>> = vec![
             Box::new(Module {
@@ -47,7 +48,7 @@ fn main() {
             Box::new(Module {
                 name: "ChromaDenoise".to_string(),
                 cache: None,
-                config: ChromaDenoise { intensity: Parameter::new(0.05, "") },
+                config: ChromaDenoise { intensity: Parameter::new(0.9, "") },
             }),
             Box::new(Module {
                 name: "Vignette".to_string(),
@@ -111,6 +112,11 @@ fn main() {
                 name: "HighlightReconstruction".to_string(),
                 cache: None,
                 config: HighlightReconstruction { },
+            }),
+            Box::new(Module {
+                name: "ChromaDenoise".to_string(),
+                cache: None,
+                config: LumaGuidedChromaDenoise { radius: Parameter::new( 4, ""), epsilon: Parameter::new(0.01, "") },
             }),
             Box::new(Module {
                 name: "Vignette".to_string(),
@@ -200,10 +206,12 @@ pub struct ViewerApp {
     offset_pixels: Vec2,
     original_image_dims: Vec2,
     slider_position: f32, // 0.0 to 1.0
+    label1: String,
+    label2: String,
 }
 
 impl ViewerApp {
-    pub fn new(before_image: RgbImage, after_image: RgbImage) -> Self {
+    pub fn new(before_image: RgbImage, after_image: RgbImage, label1: &str, label2: &str) -> Self {
         let (width, height) = before_image.dimensions();
         Self {
             before_image,
@@ -214,6 +222,8 @@ impl ViewerApp {
             offset_pixels: Vec2::ZERO,
             original_image_dims: Vec2::new(width as f32, height as f32),
             slider_position: 0.5,
+            label1: label1.to_string(),
+            label2: label2.to_string(),
         }
     }
 
@@ -315,6 +325,21 @@ impl App for ViewerApp {
                 let painter_clipped = painter.with_clip_rect(clip_rect);
                 painter_clipped.image(after_texture.id(), image_rect, uv_rect, egui::Color32::WHITE);
 
+                // --- Labels with white outline ---
+                let text_y = image_rect.min.y + 8.0;
+                let font_id = egui::FontId::proportional(16.0);
+                let outline = egui::Color32::WHITE;
+                let fill = egui::Color32::from_black_alpha(200);
+                for (label, align, bx) in [
+                    (&self.label1, egui::Align2::LEFT_TOP, image_rect.min.x + 8.0),
+                    (&self.label2, egui::Align2::RIGHT_TOP, image_rect.max.x - 8.0),
+                ] {
+                    for &(dx, dy) in &[(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+                        painter.text(pos2(bx + dx, text_y + dy), align, label, font_id.clone(), outline);
+                    }
+                    painter.text(pos2(bx, text_y), align, label, font_id.clone(), fill);
+                }
+
                 // Draw slider line
                 painter.line_segment(
                     [pos2(slider_x, image_rect.min.y), pos2(slider_x, image_rect.max.y)],
@@ -379,6 +404,8 @@ pub fn to_rgb_image(image: &Image) -> RgbImage {
 
 pub fn run_viewer<F>(
     window_title: &'static str,
+    label1: &str,
+    label2: &str,
     setup_fn: F,
 )
 where
@@ -389,16 +416,19 @@ where
     let before_rgb = to_rgb_image(&pipeline_image_before);
     let after_rgb = to_rgb_image(&pipeline_image_after);
 
+    let l1 = label1.to_string();
+    let l2 = label2.to_string();
     let native_options = NativeOptions::default();
     let _ = run_native(
         window_title,
         native_options,
-        Box::new(|_cc| Box::new(ViewerApp::new(before_rgb, after_rgb))),
+        Box::new(move |_cc| Box::new(ViewerApp::new(before_rgb, after_rgb, &l1, &l2))),
     );
 }
 
 pub fn run_module_viewer(
     window_title: &'static str,
+    label1: &str,
     module: Box<dyn PipelineModule>,
     input_path: Option<&'static str>,
     raw_path: Option<&'static str>,
@@ -406,7 +436,7 @@ pub fn run_module_viewer(
     let input_image_path = input_path.unwrap_or("test_data/test1.tif");
     let _raw_image_path = raw_path.unwrap_or("test_data/raw_sample.NEF");
 
-    run_viewer(window_title, move || {
+    run_viewer(window_title, label1, label1, move || {
         let img = image::open(input_image_path).expect("Failed to open input image");
         let pipeline_image_before = to_pipeline_image(&img);
 

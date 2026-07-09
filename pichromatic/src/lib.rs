@@ -1,5 +1,6 @@
 pub mod cfa;
 pub mod cfa_coeffs;
+pub mod chroma_denoise;
 pub mod contrast;
 pub mod cst;
 pub mod demosaic;
