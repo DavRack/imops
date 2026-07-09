@@ -24,13 +24,12 @@ algorithm = "markesteijn"
 [[pipeline_modules]]
 name = "CFACoeffs"
 
+[[pipeline_modules]]
+name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "Vignette"
 strength = 1.0
-
-# [[pipeline_modules]]
-# name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "BaselineExposureCompensation"
@@ -41,7 +40,7 @@ ev = 1
 
 [[pipeline_modules]]
 name = "Contrast"
-c = 1.2
+c = 1.5
 
 [[pipeline_modules]]
 name = "CST"
@@ -56,7 +55,7 @@ target_color_space = "AcesCg"
 [[pipeline_modules]]
 name = "LCH"
 lc = 1
-cc = 1.2
+cc = 1.3
 hc = 1
 
 [[pipeline_modules]]
