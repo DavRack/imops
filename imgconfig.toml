@@ -8,9 +8,6 @@ algorithm = "markesteijn"
 # name = "Demosaic"
 # algorithm = "amaze"
 
-# [[pipeline_modules]]
-# name = "ChromaDenoise"
-# intensity = 0.01
 
 # algorithm = "fast"
 
@@ -26,6 +23,10 @@ name = "CFACoeffs"
 
 [[pipeline_modules]]
 name = "HighlightReconstruction"
+
+[[pipeline_modules]]
+name = "ChromaDenoise"
+intensity = 0.9
 
 [[pipeline_modules]]
 name = "Vignette"

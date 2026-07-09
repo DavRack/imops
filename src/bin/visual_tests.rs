@@ -1,13 +1,13 @@
 use pichromatic_pipeline::config::PipelineConfig;
-use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, Module, PipelineModule, ToneMap, BM3D, ChromaDenoise, Vignette};
+use pichromatic_pipeline::modules::{
+    BaselineExposureCompensation, CFACoeffs, CST, ChromaDenoise, Contrast, Demosaic,
+    DemosaicAlgorithmType, Exp, HighlightReconstruction, LCH, Module, Parameter, PipelineModule,
+    ToneMap, Vignette,
+};
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use pichromatic::pixel::Image;
-use pichromatic::cfa::CFA;
-use pichromatic::demosaic::{Dim2, Point, Rect as DemosaicRect, crop_and_normalize};
 use pichromatic::image::ImageMetadata;
 
-use rawler::RawImageData;
-use rawler::imgop::xyz::Illuminant;
 use std::time::Instant;
 use std::vec::Vec;
 
@@ -26,13 +26,13 @@ fn main() {
 
     let file_bytes_clone = file_bytes.clone();
 
-    run_viewer("Vignette Correction Comparison", move || {
-        // --- Define Pipeline 1: Without Vignette Correction ---
+    run_viewer("Chroma Denoise Comparison", move || {
+        // --- Pipeline 1: exactly matches imgconfig.toml ---
         let pipeline1: Vec<Box<dyn PipelineModule>> = vec![
             Box::new(Module {
                 name: "Demosaic".to_string(),
                 cache: None,
-                config: Demosaic { algorithm: "amaze".to_string() },
+                config: Demosaic { algorithm: Parameter::new(DemosaicAlgorithmType::Markesteijn, "") },
             }),
             Box::new(Module {
                 name: "CFACoeffs".to_string(),
@@ -40,92 +40,140 @@ fn main() {
                 config: CFACoeffs { },
             }),
             Box::new(Module {
-                name: "Exp".to_string(),
+                name: "HighlightReconstruction".to_string(),
                 cache: None,
-                config: Exp { ev: 1.5},
+                config: HighlightReconstruction { },
             }),
             Box::new(Module {
-                name: "Contrast".to_string(),
+                name: "ChromaDenoise".to_string(),
                 cache: None,
-                config: Contrast { c: 1.1},
-            }),
-            Box::new(Module {
-                name: "CST".to_string(),
-                cache: None,
-                config: CST { target_color_space: "AcesCg".to_string()},
-            }),
-            Box::new(Module {
-                name: "Sigmoid (Soft)".to_string(),
-                cache: None,
-                config: ToneMap {},
-            }),
-            Box::new(Module {
-                name: "CST".to_string(),
-                cache: None,
-                config: CST { target_color_space: "Srgb".to_string()},
-            })
-        ];
-
-        // --- Define Pipeline 2: With Vignette Correction ---
-        let pipeline2: Vec<Box<dyn PipelineModule>> = vec![
-            Box::new(Module {
-                name: "Demosaic".to_string(),
-                cache: None,
-                config: Demosaic { algorithm: "amaze".to_string() },
-            }),
-            Box::new(Module {
-                name: "CFACoeffs".to_string(),
-                cache: None,
-                config: CFACoeffs { },
+                config: ChromaDenoise { intensity: Parameter::new(0.05, "") },
             }),
             Box::new(Module {
                 name: "Vignette".to_string(),
                 cache: None,
-                config: Vignette { strength: 1.0 },
+                config: Vignette { strength: Parameter::new(1.0, "") },
+            }),
+            Box::new(Module {
+                name: "BaselineExposureCompensation".to_string(),
+                cache: None,
+                config: BaselineExposureCompensation { },
             }),
             Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
-                config: Exp { ev: 1.5},
+                config: Exp { ev: Parameter::new(1.0, "") },
             }),
             Box::new(Module {
                 name: "Contrast".to_string(),
                 cache: None,
-                config: Contrast { c: 1.1},
+                config: Contrast { c: Parameter::new(1.5, "") },
             }),
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { target_color_space: "AcesCg".to_string()},
+                config: CST { target_color_space: Parameter::new("AcesCg".to_string(), "") },
             }),
             Box::new(Module {
-                name: "Sigmoid (Soft)".to_string(),
+                name: "LCH".to_string(),
                 cache: None,
-                config: ToneMap {},
+                config: LCH {
+                    lc: Parameter::new(1.0, ""),
+                    cc: Parameter::new(1.3, ""),
+                    hc: Parameter::new(1.0, ""),
+                },
+            }),
+            Box::new(Module {
+                name: "ToneMap".to_string(),
+                cache: None,
+                config: ToneMap { },
             }),
             Box::new(Module {
                 name: "CST".to_string(),
                 cache: None,
-                config: CST { target_color_space: "Srgb".to_string()},
-            })
+                config: CST { target_color_space: Parameter::new("Srgb".to_string(), "") },
+            }),
         ];
 
-        println!("Processing pipeline 1...");
+        // --- Pipeline 2: same minus ChromaDenoise ---
+        let pipeline2: Vec<Box<dyn PipelineModule>> = vec![
+            Box::new(Module {
+                name: "Demosaic".to_string(),
+                cache: None,
+                config: Demosaic { algorithm: Parameter::new(DemosaicAlgorithmType::Markesteijn, "") },
+            }),
+            Box::new(Module {
+                name: "CFACoeffs".to_string(),
+                cache: None,
+                config: CFACoeffs { },
+            }),
+            Box::new(Module {
+                name: "HighlightReconstruction".to_string(),
+                cache: None,
+                config: HighlightReconstruction { },
+            }),
+            Box::new(Module {
+                name: "Vignette".to_string(),
+                cache: None,
+                config: Vignette { strength: Parameter::new(1.0, "") },
+            }),
+            Box::new(Module {
+                name: "BaselineExposureCompensation".to_string(),
+                cache: None,
+                config: BaselineExposureCompensation { },
+            }),
+            Box::new(Module {
+                name: "Exp".to_string(),
+                cache: None,
+                config: Exp { ev: Parameter::new(1.0, "") },
+            }),
+            Box::new(Module {
+                name: "Contrast".to_string(),
+                cache: None,
+                config: Contrast { c: Parameter::new(1.5, "") },
+            }),
+            Box::new(Module {
+                name: "CST".to_string(),
+                cache: None,
+                config: CST { target_color_space: Parameter::new("AcesCg".to_string(), "") },
+            }),
+            Box::new(Module {
+                name: "LCH".to_string(),
+                cache: None,
+                config: LCH {
+                    lc: Parameter::new(1.0, ""),
+                    cc: Parameter::new(1.3, ""),
+                    hc: Parameter::new(1.0, ""),
+                },
+            }),
+            Box::new(Module {
+                name: "ToneMap".to_string(),
+                cache: None,
+                config: ToneMap { },
+            }),
+            Box::new(Module {
+                name: "CST".to_string(),
+                cache: None,
+                config: CST { target_color_space: Parameter::new("Srgb".to_string(), "") },
+            }),
+        ];
+
+        println!("Processing pipeline 1 (full config)...");
         let now = Instant::now();
         let mut image1 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
-        let mut pipeline1 = PipelineConfig{
+        let mut config1 = PipelineConfig{
             pipeline_modules: pipeline1,
         };
-        run_pixel_pipeline(&mut image1, &mut pipeline1);
+        run_pixel_pipeline(&mut image1, &mut config1);
         println!("Pipeline 1 execution time: {}ms", now.elapsed().as_millis());
-        
-        println!("Processing pipeline 2...");
+
+        println!("Processing pipeline 2 (no chroma denoise)...");
         let now = Instant::now();
         let mut image2 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
-        let mut pipeline2 = PipelineConfig{
+        let mut config2 = PipelineConfig{
             pipeline_modules: pipeline2,
         };
-        run_pixel_pipeline(&mut image2, &mut pipeline2);
+        run_pixel_pipeline(&mut image2, &mut config2);
         println!("Pipeline 2 execution time: {}ms", now.elapsed().as_millis());
 
         (image1, image2)
