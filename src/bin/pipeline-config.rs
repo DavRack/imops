@@ -1,9 +1,7 @@
 use std::time::Instant;
 
 use imops::file_helpers::*;
-use pichromatic::{cfa::CFA, demosaic::{Dim2, Point, Rect, crop_and_normalize}, image::ImageMetadata, pixel::Image};
 use pichromatic_pipeline::{config, pipeline::run_pixel_pipeline};
-use rawler::{RawImageData, imgop::xyz::Illuminant};
 
 fn main() {
 

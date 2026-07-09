@@ -1,14 +1,8 @@
 use imops::file_helpers::*;
 use std::time::Instant;
-use pichromatic::cfa::CFA;
-use pichromatic::demosaic::{Dim2, Point, Rect, crop_and_normalize};
-use pichromatic::image::ImageMetadata;
-use pichromatic::pixel::Image;
 use pichromatic_pipeline::config::PipelineConfig;
 use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, DemosaicAlgorithmType, Exp, HighlightReconstruction, LCH, Module, Parameter, PipelineModule, ToneMap};
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
-use rawler::RawImageData;
-use rawler::imgop::xyz::Illuminant;
 
 fn main() {
     let input_path = "test_data/test.dng";

@@ -1,10 +1,6 @@
-use pichromatic::cfa::CFA;
-use pichromatic::demosaic::{Dim2, Point, Rect, demosaic_algorithms};
-use pichromatic::image::ImageMetadata;
+use pichromatic::demosaic::demosaic_algorithms;
 use pichromatic::pixel::{Image};
 use pichromatic::cst::ColorSpaceTag;
-use rawler::RawImageData;
-use rawler::imgop::xyz::Illuminant;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
@@ -18,7 +14,7 @@ fn main() {
     // let raw_image = RawImage::decode(&mut file).unwrap();
     let raw_image = rawler::decode_file(input_path).unwrap();
     let t1 = Instant::now();
-    let mut image = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image);
+    let image = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image);
     let wb_coeffs = image.metadata.wb_coeffs.unwrap();
     let calibration_matrix_d65 = image.metadata.calibration_matrix_d65.clone().unwrap();
 

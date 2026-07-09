@@ -5,14 +5,9 @@ use std::path::Path;
 use std::time::Instant;
 
 use imops::file_helpers::{save_bmp, to_u8};
-use pichromatic::cfa::CFA;
-use pichromatic::demosaic::{Dim2, Point, Rect, crop_and_normalize};
-use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::Image;
 use pichromatic_pipeline::config::{self, PipelineConfig};
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
-use rawler::RawImageData;
-use rawler::imgop::xyz::Illuminant;
 
 fn main() -> io::Result<()> {
 
