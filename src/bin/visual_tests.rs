@@ -14,7 +14,7 @@ use egui::{CentralPanel, ColorImage, Context, Rect, TextureHandle, Vec2, pos2, S
 use image::{RgbImage, GenericImageView, DynamicImage};
 
 fn main() {
-    let raw_image_path = "test_data/IMG_5851.DNG";
+    let raw_image_path = "test_data/dark.DNG";
 
     // 1. Load the raw image and its bytes
     let file_bytes = std::fs::read(raw_image_path).expect("Failed to read raw image file");
@@ -46,9 +46,9 @@ fn main() {
                 config: HighlightReconstruction { },
             }),
             Box::new(Module {
-                name: "ChromaDenoise".to_string(),
+                name: "LumaGuidedChromaDenoise".to_string(),
                 cache: None,
-                config: ChromaDenoise { intensity: Parameter::new(0.9, "") },
+                config: LumaGuidedChromaDenoise { radius: Parameter::new( 4, ""), epsilon: Parameter::new(0.5, "") },
             }),
             Box::new(Module {
                 name: "Vignette".to_string(),
@@ -114,7 +114,7 @@ fn main() {
                 config: HighlightReconstruction { },
             }),
             Box::new(Module {
-                name: "ChromaDenoise".to_string(),
+                name: "LumaGuidedChromaDenoise".to_string(),
                 cache: None,
                 config: LumaGuidedChromaDenoise { radius: Parameter::new( 4, ""), epsilon: Parameter::new(0.01, "") },
             }),
