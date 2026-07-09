@@ -1,10 +1,5 @@
-use std::{any, fmt::Debug};
 use serde::{Deserialize, Serialize};
-use serde_json;
-use toml::map::Map;
-
-use crate::modules::{
-    BaselineExposureCompensation, CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap, BM3D, ChromaDenoise, Vignette};
+use crate::modules::{get_default_modules, PipelineModule};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
@@ -15,54 +10,25 @@ pub struct PipelineConfig {
     pub pipeline_modules: Vec<Box<dyn PipelineModule>>
 }
 
-pub fn from_toml<'a, T>(module: Map<String, toml::Value>) -> Box<dyn PipelineModule>
-    where
-    T: Deserialize<'a> + Default + 'static,
-    T: Debug,
-    Module<T>: PipelineModule
-{
-
-    let cfg: T = module.clone().try_into::<T>().expect(any::type_name::<T>());
-    let module = Module{
-        name: module["name"].to_string(),
-        cache: None,
-        config: cfg,
-        // mask
-    };
-    Box::new(module)
-}
-
-pub fn parse_config(config: String) -> PipelineConfig{
+pub fn parse_config(config: String) -> PipelineConfig {
     let data: RawConfig = toml::from_str(config.as_str()).or(
         serde_json::from_str(config.as_str())
     ).expect("cant decode config from string");
 
-
-    let mut config = PipelineConfig{
+    let mut config = PipelineConfig {
         pipeline_modules: vec![]
     };
 
+    let default_modules = get_default_modules();
+
     for module in data.pipeline_modules {
-        let pipeline_module: Box<dyn PipelineModule> = match module["name"].as_str().unwrap() {
-            "HighlightReconstruction" =>    from_toml::<HighlightReconstruction>(module),
-            // "LocalExpousure" =>             from_toml::<LocalExpousure>(module),
-            "ChromaDenoise" =>              from_toml::<ChromaDenoise>(module),
-            "CFACoeffs" =>                  from_toml::<CFACoeffs>(module),
-            "Contrast" =>                   from_toml::<Contrast>(module),
-            "ToneMap" =>                    from_toml::<ToneMap>(module),
-            // "Crop" =>                       from_toml::<Crop>(module),
-            "CST" =>                        from_toml::<CST>(module),
-            "Exp" =>                        from_toml::<Exp>(module),
-            "LCH" =>                        from_toml::<LCH>(module),
-            // "LS" =>                         from_toml::<LS>(module),
-            "Demosaic" =>                   from_toml::<Demosaic>(module),
-            "BM3D" =>                       from_toml::<BM3D>(module),
-            "Vignette" =>                   from_toml::<Vignette>(module),
-            "BaselineExposureCompensation" => from_toml::<BaselineExposureCompensation>(module),
-            v => panic!("wrong pipeline module name {:}", v)
-        };
+        let name = module["name"].as_str().expect("Module must have a name field");
+        let template = default_modules.iter()
+            .find(|m| m.schema().name == name)
+            .expect(&format!("wrong pipeline module name {}", name));
+        let pipeline_module = template.create(module);
+
         config.pipeline_modules.push(pipeline_module);
     }
     return config
 }
-

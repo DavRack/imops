@@ -2,11 +2,15 @@
 
 [[pipeline_modules]]
 name = "Demosaic"
-algorithm = "amaze"
+algorithm = "markesteijn"
 
-[[pipeline_modules]]
-name = "ChromaDenoise"
-intensity = 0.5
+# [[pipeline_modules]]
+# name = "Demosaic"
+# algorithm = "amaze"
+
+# [[pipeline_modules]]
+# name = "ChromaDenoise"
+# intensity = 0.01
 
 # algorithm = "fast"
 
@@ -37,7 +41,7 @@ ev = 1
 
 [[pipeline_modules]]
 name = "Contrast"
-c = 1.5
+c = 1.2
 
 [[pipeline_modules]]
 name = "CST"

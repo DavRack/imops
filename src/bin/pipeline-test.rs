@@ -5,7 +5,7 @@ use pichromatic::demosaic::{Dim2, Point, Rect, crop_and_normalize};
 use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::Image;
 use pichromatic_pipeline::config::PipelineConfig;
-use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, Exp, HighlightReconstruction, LCH, Module, PipelineModule, ToneMap};
+use pichromatic_pipeline::modules::{CFACoeffs, CST, Contrast, Demosaic, DemosaicAlgorithmType, Exp, HighlightReconstruction, LCH, Module, Parameter, PipelineModule, ToneMap};
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use rawler::RawImageData;
 use rawler::imgop::xyz::Illuminant;
@@ -22,7 +22,7 @@ fn main() {
         Box::new(Module {
             name: "Demosaic".to_string(),
             cache: None,
-            config: Demosaic{ algorithm: "markesteijn".to_string() },
+            config: Demosaic{ algorithm: Parameter::new(DemosaicAlgorithmType::Markesteijn, "") },
         }),
         Box::new(Module {
             name: "CFACoeffs".to_string(),
@@ -37,25 +37,25 @@ fn main() {
         Box::new(Module {
             name: "Exp".to_string(),
             cache: None,
-            config: Exp { ev: 1.75},
+            config: Exp { ev: Parameter::new(1.75, "")},
         }),
         Box::new(Module {
             name: "Contrast".to_string(),
             cache: None,
-            config: Contrast { c: 1.75},
+            config: Contrast { c: Parameter::new(1.75, "")},
         }),
         Box::new(Module {
             name: "CST".to_string(),
             cache: None,
-            config: CST { target_color_space: "XyzD65".to_string()},
+            config: CST { target_color_space: Parameter::new("XyzD65".to_string(), "")},
         }),
         Box::new(Module {
             name: "LHC".to_string(),
             cache: None,
             config: LCH{
-                lc: 1.0,
-                cc: 1.3,
-                hc: 1.0,
+                lc: Parameter::new(1.0, ""),
+                cc: Parameter::new(1.3, ""),
+                hc: Parameter::new(1.0, ""),
             },
         }),
         Box::new(Module {
@@ -66,7 +66,7 @@ fn main() {
         Box::new(Module {
             name: "CST".to_string(),
             cache: None,
-            config: CST { target_color_space: "Srgb".to_string()},
+            config: CST { target_color_space: Parameter::new("Srgb".to_string(), "")},
         })
     ];
     let mut pipeline1 = PipelineConfig{

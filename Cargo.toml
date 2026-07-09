@@ -20,6 +20,10 @@ name = "visual_tests"
 path = "src/bin/visual_tests.rs"
 required-features = ["visual_tests"]
 
+[[bin]]
+name = "print-pipeline-schema"
+path = "src/bin/print-pipeline-schema.rs"
+
 [profile.release]
 opt-level = 3
 # lto = "fat"
@@ -34,6 +38,8 @@ pichromatic-pipeline = {version="0.1.0", path="./pichromatic-pipeline"}
 rawler = "*"
 clap = {version="4.6.0", features=["derive"]}
 image = "0.24.9"
+serde_json = "*"
+
 
 # deps for viewer
 eframe = { version = "0.27", optional = true }
