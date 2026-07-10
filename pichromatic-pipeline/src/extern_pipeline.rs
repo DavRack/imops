@@ -12,14 +12,65 @@ extern "C" {
     fn log(s: &str);
 }
 
+use std::sync::OnceLock;
+use std::sync::Mutex;
+
+static LAST_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn set_last_error(msg: String) {
+    let mutex = LAST_ERROR.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = mutex.lock() {
+        *guard = Some(msg);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn get_last_error_c() -> *mut std::os::raw::c_char {
+    let mutex = LAST_ERROR.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = mutex.lock() {
+        if let Some(ref msg) = *guard {
+            if let Ok(c_str) = std::ffi::CString::new(msg.clone()) {
+                return c_str.into_raw();
+            }
+        }
+    }
+    std::ptr::null_mut()
+}
+
+fn catch_panic<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce() -> R + std::panic::UnwindSafe,
+{
+    match std::panic::catch_unwind(f) {
+        Ok(res) => Some(res),
+        Err(err) => {
+            let msg = if let Some(s) = err.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = err.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown Rust panic".to_string()
+            };
+            set_last_error(msg);
+            None
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn get_raw_img(
     file_bytes_ptr: *const u8,
     file_bytes_len: usize,
 ) -> *mut Image {
-    let file_bytes = unsafe { slice::from_raw_parts(file_bytes_ptr, file_bytes_len) };
-    let img = get_raw_img_internal(file_bytes);
-    Box::into_raw(Box::new(img))
+    if file_bytes_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let ptr_val = file_bytes_ptr as usize;
+    catch_panic(move || {
+        let file_bytes = unsafe { slice::from_raw_parts(ptr_val as *const u8, file_bytes_len) };
+        let img = get_raw_img_internal(file_bytes);
+        Box::into_raw(Box::new(img))
+    }).unwrap_or(std::ptr::null_mut())
 }
 
 #[wasm_bindgen]
@@ -275,11 +326,17 @@ pub extern "C" fn get_pixel_pipeline_c(
     config_ptr: *const u8,
     config_len: usize,
 ) -> *mut PipelineConfig {
-    let config_bytes = unsafe { slice::from_raw_parts(config_ptr, config_len) };
-    let config_str = std::str::from_utf8(config_bytes).unwrap_or("");
-    println!("DEBUG RUST: get_pixel_pipeline_c config_str (len {}):\n{}", config_len, config_str);
-    let pipeline = config::parse_config(config_str.to_string());
-    Box::into_raw(Box::new(pipeline))
+    if config_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let ptr_val = config_ptr as usize;
+    catch_panic(move || {
+        let config_bytes = unsafe { slice::from_raw_parts(ptr_val as *const u8, config_len) };
+        let config_str = std::str::from_utf8(config_bytes).unwrap_or("");
+        println!("DEBUG RUST: get_pixel_pipeline_c config_str (len {}):\n{}", config_len, config_str);
+        let pipeline = config::parse_config(config_str.to_string());
+        Box::into_raw(Box::new(pipeline))
+    }).unwrap_or(std::ptr::null_mut())
 }
 
 #[no_mangle]
@@ -287,12 +344,19 @@ pub extern "C" fn run_pixel_pipeline_c(
     image: *mut Image,
     pixel_pipeline: *mut PipelineConfig,
 ) -> *mut Image {
-    let mut image_obj = unsafe { &mut *image };
-    let mut pipeline_obj = unsafe { &mut *pixel_pipeline };
-    println!("DEBUG PIPELINE: Input image dim = {}x{}, raw_data len = {}", 
-             image_obj.metadata.width, image_obj.metadata.height, image_obj.raw_data.len());
-    run_pixel_pipeline(&mut image_obj, &mut pipeline_obj);
-    image
+    if image.is_null() || pixel_pipeline.is_null() {
+        return std::ptr::null_mut();
+    }
+    let image_ptr_val = image as usize;
+    let pipeline_ptr_val = pixel_pipeline as usize;
+    catch_panic(move || {
+        let image_obj = unsafe { &mut *(image_ptr_val as *mut Image) };
+        let pipeline_obj = unsafe { &mut *(pipeline_ptr_val as *mut PipelineConfig) };
+        println!("DEBUG PIPELINE: Input image dim = {}x{}, raw_data len = {}", 
+                 image_obj.metadata.width, image_obj.metadata.height, image_obj.raw_data.len());
+        run_pixel_pipeline(image_obj, pipeline_obj);
+        image_ptr_val as *mut Image
+    }).unwrap_or(std::ptr::null_mut())
 }
 
 #[no_mangle]
@@ -302,27 +366,44 @@ pub extern "C" fn get_image_rgb_data_c(
     out_height: *mut usize,
     out_len: *mut usize,
 ) -> *const u8 {
-    let data = unsafe { &mut *image };
-    let width = data.metadata.width;
-    let height = data.metadata.height;
-    
-    let rgb_u8: Vec<u8> = data.rgb_data.iter().flatten().map(|sub_pixel| {
-        (sub_pixel.clamp(0.0, 1.0) * 255.0) as u8
-    }).collect();
-    
-    unsafe {
-        if !out_width.is_null() { *out_width = width; }
-        if !out_height.is_null() { *out_height = height; }
-        if !out_len.is_null() { *out_len = rgb_u8.len(); }
+    if image.is_null() {
+        return std::ptr::null();
     }
+    let image_ptr_val = image as usize;
+    let out_width_val = out_width as usize;
+    let out_height_val = out_height as usize;
+    let out_len_val = out_len as usize;
     
-    Box::into_raw(rgb_u8.into_boxed_slice()) as *const u8
+    catch_panic(move || {
+        let data = unsafe { &mut *(image_ptr_val as *mut Image) };
+        let width = data.metadata.width;
+        let height = data.metadata.height;
+        
+        let rgb_u8: Vec<u8> = data.rgb_data.iter().flatten().map(|sub_pixel| {
+            (sub_pixel.clamp(0.0, 1.0) * 255.0) as u8
+        }).collect();
+        
+        let out_width_ptr = out_width_val as *mut usize;
+        let out_height_ptr = out_height_val as *mut usize;
+        let out_len_ptr = out_len_val as *mut usize;
+        
+        unsafe {
+            if !out_width_ptr.is_null() { *out_width_ptr = width; }
+            if !out_height_ptr.is_null() { *out_height_ptr = height; }
+            if !out_len_ptr.is_null() { *out_len_ptr = rgb_u8.len(); }
+        }
+        
+        Box::into_raw(rgb_u8.into_boxed_slice()) as *const u8
+    }).unwrap_or(std::ptr::null())
 }
 
 #[no_mangle]
 pub extern "C" fn free_image_c(image: *mut Image) {
     if !image.is_null() {
-        unsafe { let _ = Box::from_raw(image); }
+        let image_ptr_val = image as usize;
+        let _ = catch_panic(move || {
+            unsafe { let _ = Box::from_raw(image_ptr_val as *mut Image); }
+        });
     }
 }
 
@@ -331,34 +412,46 @@ pub extern "C" fn get_image_metadata_c(image: *const Image) -> *mut std::os::raw
     if image.is_null() {
         return std::ptr::null_mut();
     }
-    let raw_metadata = unsafe { &*image };
-    let json_str = serde_json::to_string(&raw_metadata.metadata).unwrap_or_default();
-    let c_str = std::ffi::CString::new(json_str).unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
-    c_str.into_raw()
+    let image_ptr_val = image as usize;
+    catch_panic(move || {
+        let raw_metadata = unsafe { &*(image_ptr_val as *const Image) };
+        let json_str = serde_json::to_string(&raw_metadata.metadata).unwrap_or_default();
+        let c_str = std::ffi::CString::new(json_str).unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
+        c_str.into_raw()
+    }).unwrap_or(std::ptr::null_mut())
 }
 
 #[no_mangle]
 pub extern "C" fn free_string_c(ptr: *mut std::os::raw::c_char) {
     if !ptr.is_null() {
-        unsafe {
-            let _ = std::ffi::CString::from_raw(ptr);
-        }
+        let ptr_val = ptr as usize;
+        let _ = catch_panic(move || {
+            unsafe {
+                let _ = std::ffi::CString::from_raw(ptr_val as *mut std::os::raw::c_char);
+            }
+        });
     }
 }
 
 #[no_mangle]
 pub extern "C" fn free_pipeline_c(pipeline: *mut PipelineConfig) {
     if !pipeline.is_null() {
-        unsafe { let _ = Box::from_raw(pipeline); }
+        let pipeline_ptr_val = pipeline as usize;
+        let _ = catch_panic(move || {
+            unsafe { let _ = Box::from_raw(pipeline_ptr_val as *mut PipelineConfig); }
+        });
     }
 }
 
 #[no_mangle]
 pub extern "C" fn free_rgb_buffer_c(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
-        unsafe {
-            let _ = Vec::from_raw_parts(ptr, len, len);
-        }
+        let ptr_val = ptr as usize;
+        let _ = catch_panic(move || {
+            unsafe {
+                let _ = Vec::from_raw_parts(ptr_val as *mut u8, len, len);
+            }
+        });
     }
 }
 

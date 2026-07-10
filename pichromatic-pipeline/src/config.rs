@@ -24,7 +24,7 @@ pub fn parse_config(config: String) -> PipelineConfig {
     for module in data.pipeline_modules {
         let name = module["name"].as_str().expect("Module must have a name field");
         let template = default_modules.iter()
-            .find(|m| m.schema().name == name)
+            .find(|m| m.schema().name.to_lowercase() == name.to_lowercase())
             .expect(&format!("wrong pipeline module name {}", name));
         let pipeline_module = template.create(module);
 
