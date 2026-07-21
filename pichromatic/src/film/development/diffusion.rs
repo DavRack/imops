@@ -29,10 +29,13 @@ pub fn apply_adjacency(
 
 /// Apply DIR (Development Inhibitor Releasing) coupler interlayer chemical inhibition.
 ///
-/// Developing silver halide in emulsion layer i releases inhibitor molecules I_i(x,y).
-/// The inhibitor diffuses over radius σ_dir = dir_diffusion_length / pitch.
-/// Target layer j receives total inhibition: I_total,j = Σ_i M_ij * (I_i ⊛ G_σ).
-/// Target layer dye density is scaled by exp(-I_total,j).
+/// Developing silver halide in emulsion layer `i` releases inhibitor `I_i(x,y)`,
+/// which is blurred by σ_dir = `dir_diffusion_length / pitch`.
+///
+/// **Matrix layout:** `matrix[source][target]` (row = source emulsion `i` releasing inhibitor,
+/// column = target emulsion `j` receiving inhibition). Target `j` receives
+/// `I_total,j = Σ_i matrix[i][j] · (I_i ⊛ G_σ)` and its image dye is scaled by
+/// `exp(−I_total,j)`.
 pub fn apply_dir_inhibition(
     dyes: &mut DyePlanes,
     sigma_dir_px: f32,
@@ -54,19 +57,18 @@ pub fn apply_dir_inhibition(
     }
 
     for j in 0..num_emulsions {
-        if j >= matrix.len() {
-            continue;
-        }
-        let row = &matrix[j];
         let mut total_inhibition = vec![0.0f32; n];
         let mut active = false;
 
-        for (i, &weight) in row.iter().enumerate() {
-            if i < num_emulsions && weight.abs() > 1e-6 {
-                active = true;
-                let inh_i = &diffused_inhibitors[i];
-                for p in 0..n {
-                    total_inhibition[p] += weight * inh_i[p];
+        for i in 0..num_emulsions {
+            if i < matrix.len() && j < matrix[i].len() {
+                let weight = matrix[i][j]; // row i = source, col j = target
+                if weight.abs() > 1e-6 {
+                    active = true;
+                    let inh_i = &diffused_inhibitors[i];
+                    for p in 0..n {
+                        total_inhibition[p] += weight * inh_i[p];
+                    }
                 }
             }
         }
@@ -142,5 +144,33 @@ mod tests {
         let before = dyes.image_dye.clone();
         apply_adjacency(&mut dyes, 5.0, 0.0);
         assert_eq!(dyes.image_dye, before);
+    }
+
+    #[test]
+    fn dir_matrix_is_source_row_target_column() {
+        // Asymmetric coupling: source 1 → target 0 (matrix[1][0] = w).
+        // If the implementation swapped orientation, target 1 would be hit instead.
+        let n = 16 * 16;
+        let mut dyes = DyePlanes {
+            width: 16,
+            height: 16,
+            image_dye: vec![vec![1.0f32; n], vec![1.0f32; n]],
+            mask_dye: vec![vec![0.0; n], vec![0.0; n]],
+        };
+        let w = 0.5f32;
+        let matrix = vec![vec![0.0, 0.0], vec![w, 0.0]]; // matrix[source 1][target 0]
+        // σ → 0 blur is skipped; use tiny-but-active σ with a flat field (blur = identity).
+        apply_dir_inhibition(&mut dyes, 1e-2, &matrix);
+        let expected = (-w * 1.0).exp();
+        let got0 = dyes.image_dye[0][0];
+        let got1 = dyes.image_dye[1][0];
+        assert!(
+            (got0 - expected).abs() < 1e-5,
+            "target 0 should be inhibited by source 1: got {got0} expected {expected}"
+        );
+        assert!(
+            (got1 - 1.0).abs() < 1e-5,
+            "target 1 must be unchanged under matrix[1][0]-only coupling: got {got1}"
+        );
     }
 }

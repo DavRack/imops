@@ -122,6 +122,19 @@ impl SpectralCurve {
     pub fn integrate_against(&self, other: &SpectralCurve) -> f64 {
         self.multiply(other).integrate()
     }
+
+    /// Wavelength (nm) where the spectral curve reaches its maximum value.
+    pub fn peak_wavelength(&self) -> f64 {
+        let mut max_val = f64::NEG_INFINITY;
+        let mut peak_lambda = 550.0;
+        for (i, &v) in self.samples.iter().enumerate() {
+            if v > max_val {
+                max_val = v;
+                peak_lambda = self.grid.wavelengths_nm[i];
+            }
+        }
+        peak_lambda
+    }
 }
 
 #[cfg(test)]

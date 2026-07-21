@@ -78,15 +78,33 @@ pub fn absorb_stack(
     (out, phi)
 }
 
-/// Integrated absorbed fluence for an emulsion layer (sum over λ, photons/µm² proxy).
+/// Mean spectral absorbed fluence for an emulsion layer over visible spectrum (400–700 nm, photons/µm² proxy).
+///
+/// Computes the trapezoidal integral `∫ Φ_abs(λ) dλ` over the MVP grid
+/// (400–700 nm, Δλ = 20 nm), then **divides by the 300 nm span**. The result is
+/// therefore a mean spectral fluence density over wavelength — **not** a raw
+/// total photon count sum over all wavelengths.
+///
+/// [`crate::film::constants::ABSORPTION_SIGMA_SCALE_PER_UM`] was tuned against
+/// this averaged quantity; do not drop the `/300` without re-deriving that scale.
+/// For the un-divided integral `∫ Φ_abs(λ) dλ`, use [`total_absorbed_fluence`].
 pub fn integrated_absorbed(absorbed: &[f64; 16]) -> f64 {
+    mean_absorbed_fluence(absorbed)
+}
+
+/// Mean spectral absorbed fluence: `∫ Φ_abs(λ) dλ / 300.0`.
+pub fn mean_absorbed_fluence(absorbed: &[f64; 16]) -> f64 {
+    total_absorbed_fluence(absorbed) / 300.0
+}
+
+/// True trapezoidal integral `∫ Φ_abs(λ) dλ` over 400–700 nm (photons · nm / µm²).
+pub fn total_absorbed_fluence(absorbed: &[f64; 16]) -> f64 {
     let dlambda = 20.0;
     let mut acc = 0.0;
     for i in 0..15 {
         acc += 0.5 * (absorbed[i] + absorbed[i + 1]) * dlambda;
     }
-    // Normalize by span so magnitude stays order-of Φ.
-    acc / 300.0
+    acc
 }
 
 #[cfg(test)]
@@ -224,5 +242,16 @@ mod tests {
         let incident = flat_incident(1.0);
         let (layers, _) = absorb_stack(&[filter], &incident, 1.0);
         assert!(!layers[0].produces_latent);
+    }
+
+    #[test]
+    fn integrated_absorbed_is_band_average_not_sum() {
+        // Flat Φ_abs(λ)=2 over [400,700] → ∫ = 2·300, band average = 2.
+        let absorbed = [2.0f64; 16];
+        let mean = integrated_absorbed(&absorbed);
+        assert!(
+            (mean - 2.0).abs() < 1e-9,
+            "expected band average 2.0, got {mean} (would be ~600 if left as raw integral)"
+        );
     }
 }

@@ -228,6 +228,8 @@ pub fn load() -> Result<FilmStock, FilmError> {
     };
 
     // 7 emulsion layers: [BF, BS, 4th, GF, GS, RF, RS]
+    // DIR weights: matrix[source][target] (row = source emulsion layer, column = inhibited layer).
+    // Intentionally non-symmetric — e.g. 4th→GF (0.06) ≠ GF→4th (0.05).
     let dir_matrix = vec![
         vec![0.02, 0.01, 0.03, 0.04, 0.02, 0.03, 0.01],
         vec![0.01, 0.01, 0.02, 0.02, 0.01, 0.02, 0.01],

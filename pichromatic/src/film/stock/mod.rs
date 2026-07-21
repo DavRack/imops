@@ -106,7 +106,12 @@ pub struct FilmStock {
     pub adjacency_beta: f32,
     /// DIR (Development Inhibitor Releasing) coupler diffusion length.
     pub dir_diffusion_length: Microns,
-    /// Interlayer DIR chemical inhibition matrix (emulsion_count × emulsion_count).
+    /// Interlayer DIR inhibition weights, `matrix[source][target]`.
+    ///
+    /// Emulsion indices follow top→bottom order among emulsion layers only
+    /// (same order as [`FilmStock::emulsion_layers`] / dye planes). Entry
+    /// `matrix[i][j]` scales inhibitor released by source emulsion `i` onto target `j`.
+    /// May be non-symmetric (see Fuji Pro 400H).
     pub dir_inhibition_matrix: Vec<Vec<f32>>,
     pub scanner_light: SpectralCurve,
     /// Precomputed at load: per-layer capture LUT (None for non-emulsion).

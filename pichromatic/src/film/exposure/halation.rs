@@ -12,8 +12,8 @@
 
 use crate::film::blur::gaussian_blur_separable;
 use crate::film::constants::{HALATION_BLEED_WEIGHTS_BGR, LOCAL_SCATTER_MIX};
-use crate::film::spectrum::WavelengthGrid;
-use crate::film::stock::{AntihalationModel, FilmStock};
+use crate::film::spectrum::{SpectralCurve, WavelengthGrid};
+use crate::film::stock::{AntihalationModel, EmulsionLayer, FilmStock};
 
 /// Representative bands for spectral reflectance sampling (nm).
 const HALATION_BANDS_NM: [f64; 4] = [450.0, 550.0, 650.0, 700.0];
@@ -46,8 +46,17 @@ pub fn apply_spatial_exposure_effects(
 
     // --- 2. Wide support bounce with cross-layer bleed ---
     let sigma_wide = sigma_px_from_um(stock.antihalation.psf_halation_um, pixel_pitch_um);
-    let w_red = reflectance_at(&stock.antihalation, 650.0);
-    if w_red <= 0.0 || sigma_wide < 1e-3 {
+    if sigma_wide < 1e-3 {
+        return;
+    }
+
+    let emulsion_layers: Vec<&EmulsionLayer> = stock.emulsion_layers().map(|(_, l)| l).collect();
+    let use_stock_layers = emulsion_layers.len() == absorbed_planes.len();
+
+    // Check if backing reflectance is non-zero
+    let bands = band_reflectances(&stock.antihalation);
+    let max_r = bands.iter().copied().fold(0.0f32, f32::max);
+    if max_r <= 0.0 {
         return;
     }
 
@@ -56,10 +65,24 @@ pub fn apply_spatial_exposure_effects(
     let mut bounce = absorbed_planes[deep].clone();
     gaussian_blur_separable(&mut bounce, width, height, sigma_wide);
 
-    // Normalize bleed weights to the number of emulsion planes present.
-    let bleed = bleed_weights(absorbed_planes.len());
+    // Compute bleed weights derived from each layer's spectral sensitivity peak wavelength.
+    let bleed = if use_stock_layers {
+        bleed_weights_for_layers(&emulsion_layers)
+    } else {
+        bleed_weights_fallback(absorbed_planes.len())
+    };
+
     for (e, plane) in absorbed_planes.iter_mut().enumerate() {
-        let gain = w_red * bleed[e];
+        let r_e = if use_stock_layers {
+            if let Some(sens) = emulsion_layers[e].spectral_sensitivity.as_ref() {
+                effective_reflectance(&stock.antihalation.reflectance, sens)
+            } else {
+                reflectance_at(&stock.antihalation, 650.0)
+            }
+        } else {
+            reflectance_at(&stock.antihalation, 650.0)
+        };
+        let gain = r_e * bleed[e];
         if gain <= 0.0 {
             continue;
         }
@@ -69,16 +92,53 @@ pub fn apply_spatial_exposure_effects(
     }
 }
 
-fn bleed_weights(emulsion_count: usize) -> Vec<f32> {
+/// Compute per-layer halation bleed weights for stock emulsion layers based on spectral sensitivity peak wavelength.
+pub fn bleed_weights_for_stock(stock: &FilmStock) -> Vec<f32> {
+    let emulsion_layers: Vec<&EmulsionLayer> = stock.emulsion_layers().map(|(_, l)| l).collect();
+    bleed_weights_for_layers(&emulsion_layers)
+}
+
+/// Derive each layer's bleed weight from its actual spectral sensitivity peak wavelength.
+pub fn bleed_weights_for_layers(layers: &[&EmulsionLayer]) -> Vec<f32> {
+    let mut w = vec![0.0f32; layers.len()];
+    for (i, layer) in layers.iter().enumerate() {
+        let peak_lambda = if let Some(sens) = &layer.spectral_sensitivity {
+            sens.peak_wavelength()
+        } else {
+            if layers.len() <= 1 {
+                550.0
+            } else {
+                450.0 + (i as f64 / (layers.len() - 1) as f64) * 200.0
+            }
+        };
+
+        let b = HALATION_BLEED_WEIGHTS_BGR[0];
+        let g = HALATION_BLEED_WEIGHTS_BGR[1];
+        let r = HALATION_BLEED_WEIGHTS_BGR[2];
+
+        w[i] = if peak_lambda <= 450.0 {
+            b
+        } else if peak_lambda <= 550.0 {
+            let t = ((peak_lambda - 450.0) / 100.0) as f32;
+            b + (g - b) * t
+        } else if peak_lambda <= 650.0 {
+            let t = ((peak_lambda - 550.0) / 100.0) as f32;
+            g + (r - g) * t
+        } else {
+            r
+        };
+    }
+    w
+}
+
+fn bleed_weights_fallback(emulsion_count: usize) -> Vec<f32> {
     let mut w = vec![0.0f32; emulsion_count];
     for i in 0..emulsion_count {
-        // Map onto BGR template: first→blue-ish, last→red-ish.
         let t = if emulsion_count <= 1 {
             1.0
         } else {
             i as f32 / (emulsion_count - 1) as f32
         };
-        // Interpolate from blue weight toward red weight.
         let b = HALATION_BLEED_WEIGHTS_BGR[0];
         let r = HALATION_BLEED_WEIGHTS_BGR[2];
         let g = HALATION_BLEED_WEIGHTS_BGR[1];
@@ -89,6 +149,15 @@ fn bleed_weights(emulsion_count: usize) -> Vec<f32> {
         };
     }
     w
+}
+
+/// Effective backing reflectance integrated over an emulsion layer's spectral sensitivity curve.
+pub fn effective_reflectance(reflectance: &SpectralCurve, sensitivity: &SpectralCurve) -> f32 {
+    let norm = sensitivity.integrate();
+    if norm <= 1e-9 {
+        return reflectance.evaluate(650.0) as f32;
+    }
+    (reflectance.integrate_against(sensitivity) / norm) as f32
 }
 
 /// Energy-conserving local scatter: `Φ' = (1−f)·Φ + f·blur(Φ)`.
@@ -132,6 +201,21 @@ pub fn apply_halation_plane(
 /// Weight from antihalation backing reflectance at λ.
 pub fn reflectance_at(model: &AntihalationModel, wavelength_nm: f64) -> f32 {
     model.reflectance.evaluate(wavelength_nm) as f32
+}
+
+/// Sample antihalation reflectance at the 4 representative spectral bands.
+pub fn band_reflectances(model: &AntihalationModel) -> [f32; 4] {
+    let mut out = [0.0f32; 4];
+    for (i, &lambda) in HALATION_BANDS_NM.iter().enumerate() {
+        out[i] = reflectance_at(model, lambda);
+    }
+    out
+}
+
+/// Convert 4-band antihalation reflectance into a 16-sample spectral curve via linear interpolation.
+pub fn spectral_reflectance_curve(model: &AntihalationModel) -> [f32; 16] {
+    let band_w = band_reflectances(model);
+    interpolate_band_weights(band_w)
 }
 
 /// Map µm PSF to pixels via pitch.
@@ -239,7 +323,7 @@ mod tests {
 
     #[test]
     fn cross_layer_bleed_hits_shallower_more_from_deep_source() {
-        use crate::film::stock::{EmulsionLayer, FilmStock, LayerKind, LogNormalDist};
+        use crate::film::stock::{EmulsionLayer, FilmStock, LayerKind};
         use crate::film::units::{IsoSpeed, Microns};
 
         let width = 41;
@@ -251,23 +335,40 @@ mod tests {
         let cy = height / 2;
         planes[2][cy * width + cx] = 1.0;
 
-        let stock = FilmStock {
-            name: "test",
-            box_iso: IsoSpeed(200.0),
-            layers: vec![EmulsionLayer {
-                name: "dummy",
+        fn make_emulsion(name: &'static str, peak_nm: f64) -> EmulsionLayer {
+            let grid = WavelengthGrid::mvp();
+            let samples: Vec<f64> = grid
+                .wavelengths_nm
+                .iter()
+                .map(|&l| {
+                    let d = (l - peak_nm) / 30.0;
+                    (-0.5 * d * d).exp()
+                })
+                .collect();
+            EmulsionLayer {
+                name,
                 depth_from_surface: Microns(0.0),
                 thickness: Microns(1.0),
-                kind: LayerKind::Overcoat,
-                spectral_sensitivity: None,
-                crystal_size: None::<LogNormalDist>,
-                silver_halide_fraction: 0.0,
+                kind: LayerKind::Emulsion,
+                spectral_sensitivity: Some(SpectralCurve::new(grid, samples)),
+                crystal_size: None,
+                silver_halide_fraction: 0.2,
                 coupler: None,
                 gamma_contrast: 1.0,
                 capture_k: 1.0,
                 reciprocity_p: 1.0,
                 is_reversal: false,
-            }],
+            }
+        }
+
+        let stock = FilmStock {
+            name: "test",
+            box_iso: IsoSpeed(200.0),
+            layers: vec![
+                make_emulsion("blue", 450.0),
+                make_emulsion("green", 550.0),
+                make_emulsion("red", 650.0),
+            ],
             antihalation: elevated_ah(),
             developer_diffusion_length: Microns(1.0),
             adjacency_beta: 0.0,
@@ -318,5 +419,27 @@ mod tests {
         let w_blue = reflectance_at(&ah, 450.0);
         let w_red = reflectance_at(&ah, 650.0);
         assert!(w_red >= w_blue);
+    }
+
+    #[test]
+    fn fast_slow_sublayers_get_correct_spectral_bleed_weights() {
+        use crate::film::stock::StockId;
+        let portra = StockId::Portra400.load().expect("portra400 loads");
+        let weights = bleed_weights_for_stock(&portra);
+        assert_eq!(weights.len(), 6, "Portra 400 has 6 emulsion layers");
+        // [BF, BS, GF, GS, RF, RS]
+        let b_fast = weights[0];
+        let b_slow = weights[1];
+        let g_fast = weights[2];
+        let g_slow = weights[3];
+        let r_fast = weights[4];
+        let r_slow = weights[5];
+
+        assert!((b_fast - b_slow).abs() < 1e-4, "both blue sub-layers should have equal blue bleed weight");
+        assert!((g_fast - g_slow).abs() < 1e-4, "both green sub-layers should have equal green bleed weight");
+        assert!((r_fast - r_slow).abs() < 1e-4, "both red sub-layers should have equal red bleed weight");
+
+        assert!(b_fast < g_fast, "blue bleed weight < green bleed weight");
+        assert!(g_fast < r_fast, "green bleed weight < red bleed weight");
     }
 }
