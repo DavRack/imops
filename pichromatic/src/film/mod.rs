@@ -223,6 +223,7 @@ mod tests {
             StockId::BwStub,
             StockId::ColorNeg200,
             StockId::Portra400,
+            StockId::Ektar100,
             StockId::FujiPro400H,
             StockId::EktachromeE100,
             StockId::TriX400,

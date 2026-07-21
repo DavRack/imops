@@ -3,6 +3,7 @@
 pub mod bw_stub;
 pub mod color_neg_200;
 pub mod ektachrome_e100;
+pub mod ektar_100;
 pub mod fuji_pro_400h;
 pub mod portra_400;
 pub mod trix_400;
@@ -126,6 +127,7 @@ pub enum StockId {
     BwStub,
     ColorNeg200,
     Portra400,
+    Ektar100,
     FujiPro400H,
     EktachromeE100,
     TriX400,
@@ -137,6 +139,7 @@ impl StockId {
             StockId::BwStub => bw_stub::load(),
             StockId::ColorNeg200 => color_neg_200::load(),
             StockId::Portra400 => portra_400::load(),
+            StockId::Ektar100 => ektar_100::load(),
             StockId::FujiPro400H => fuji_pro_400h::load(),
             StockId::EktachromeE100 => ektachrome_e100::load(),
             StockId::TriX400 => trix_400::load(),

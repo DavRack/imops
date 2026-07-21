@@ -20,7 +20,7 @@ const CHROMA_KEEP: f32 = 0.55;
 
 /// Highlight headroom in units of each channel's mid invert.
 /// Channel asymptote is `MIDDLE_GRAY * (HEADROOM + 1)`.
-const HEADROOM: f32 = 6.0;
+const HEADROOM: f32 = 8.0;
 
 /// Scene-referred Y below which chroma is faded toward neutral.
 const SHADOW_CHROMA_FADE_Y: f32 = 0.02;
