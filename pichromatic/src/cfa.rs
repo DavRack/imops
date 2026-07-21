@@ -53,7 +53,7 @@ impl TryFrom<char> for CFAColor {
 ///
 /// # Example
 /// ```
-/// use rawler::CFA;
+/// use pichromatic::cfa::CFA;
 /// let cfa = CFA::new("RGGB");
 /// assert_eq!(cfa.color_at(0,0), 0);
 /// assert_eq!(cfa.color_at(0,1), 1);
@@ -188,7 +188,7 @@ impl CFA {
   ///
   /// # Example
   /// ```
-  /// use rawler::CFA;
+  /// use pichromatic::cfa::CFA;
   /// let cfa = CFA::new("RGGB");
   /// assert_eq!(cfa.color_at(0,0), 0);
   /// assert_eq!(cfa.color_at(0,1), 1);
@@ -236,7 +236,7 @@ impl CFA {
   ///
   /// # Example
   /// ```
-  /// use rawler::CFA;
+  /// use pichromatic::cfa::CFA;
   /// let cfa = CFA::new("RGGB");
   /// assert!(cfa.is_valid());
   ///
@@ -253,7 +253,7 @@ impl fmt::Display for CFA {
   ///
   /// # Example
   /// ```
-  /// use rawler::CFA;
+  /// use pichromatic::cfa::CFA;
   /// let cfa = CFA::new("RGGB");
   /// assert_eq!(cfa.to_string(), "RGGB");
   ///

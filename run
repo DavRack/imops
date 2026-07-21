@@ -1,5 +1,10 @@
 #!/bin/bash
-# time cargo run --release
+# Usage:
+#   ./run <raw.dng>                      # uses imgconfig.toml → result.exr
+#   ./run <raw.dng> imgconfig-film.toml  # film pipeline → result.exr
+#   OUTPUT=result.jpg ./run <raw.dng>    # JPEG instead of EXR
+CONFIG="${2:-imgconfig.toml}"
+OUTPUT="${OUTPUT:-result.exr}"
 cargo build --release --bin imops-cli &&
-time ./target/release/imops-cli "$1" &&
-./view result.jpg
+time ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" &&
+./view "$OUTPUT"

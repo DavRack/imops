@@ -13,6 +13,12 @@ pub struct ImageMetadata {
     pub white_level: Option<SubPixel>,
     pub color_space: Option<ColorSpaceTag>,
     pub baseline_exposure: Option<f32>,
+    /// Capture shutter time in seconds (from EXIF ExposureTime), if known.
+    pub shutter_seconds: Option<f32>,
+    /// Capture f-number (from EXIF FNumber), if known.
+    pub f_number: Option<f32>,
+    /// Capture ISO speed (from EXIF ISOSpeedRatings / ISOSpeed), if known.
+    pub iso: Option<f32>,
     pub opcode_list1: Option<Vec<u8>>,
     pub opcode_list2: Option<Vec<u8>>,
     pub opcode_list3: Option<Vec<u8>>,

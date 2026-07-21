@@ -186,6 +186,9 @@ fn is_identity_matrix(matrix: &Option<Vec<f32>>) -> bool {
 
 pub fn consolidate_dng_metadata(image: &mut Image, dng_meta: &crate::dng_metadata::DngMetadata) {
     image.metadata.baseline_exposure = dng_meta.baseline_exposure;
+    image.metadata.shutter_seconds = dng_meta.shutter_seconds;
+    image.metadata.f_number = dng_meta.f_number;
+    image.metadata.iso = dng_meta.iso;
     image.metadata.opcode_list1 = dng_meta.opcode_list1.clone();
     image.metadata.opcode_list2 = dng_meta.opcode_list2.clone();
     image.metadata.opcode_list3 = dng_meta.opcode_list3.clone();
@@ -254,10 +257,6 @@ pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
     };
     let raw_image_dimensions = raw_image.dim();
     let raw_image_crop_area = raw_image.crop_area.unwrap();
-    println!("DEBUG RAW: dim = {}x{}, crop = ({},{}) {}x{}", 
-             raw_image_dimensions.w, raw_image_dimensions.h, 
-             raw_image_crop_area.p.x, raw_image_crop_area.p.y, 
-             raw_image_crop_area.d.w, raw_image_crop_area.d.h);
     let raw_image_white_level = raw_image.whitelevel.as_bayer_array()[0];
     let raw_image_black_level = raw_image.blacklevel.as_bayer_array()[0];
     let raw_image_cfa = raw_image.camera.cfa.to_string();
@@ -286,6 +285,9 @@ pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
         calibration_matrix_d65: Some(calibration_matrix_d65),
         color_space: None,
         baseline_exposure: None,
+        shutter_seconds: None,
+        f_number: None,
+        iso: None,
         opcode_list1: None,
         opcode_list2: None,
         opcode_list3: None,
@@ -333,7 +335,6 @@ pub extern "C" fn get_pixel_pipeline_c(
     catch_panic(move || {
         let config_bytes = unsafe { slice::from_raw_parts(ptr_val as *const u8, config_len) };
         let config_str = std::str::from_utf8(config_bytes).unwrap_or("");
-        println!("DEBUG RUST: get_pixel_pipeline_c config_str (len {}):\n{}", config_len, config_str);
         let pipeline = config::parse_config(config_str.to_string());
         Box::into_raw(Box::new(pipeline))
     }).unwrap_or(std::ptr::null_mut())
@@ -352,8 +353,6 @@ pub extern "C" fn run_pixel_pipeline_c(
     catch_panic(move || {
         let image_obj = unsafe { &mut *(image_ptr_val as *mut Image) };
         let pipeline_obj = unsafe { &mut *(pipeline_ptr_val as *mut PipelineConfig) };
-        println!("DEBUG PIPELINE: Input image dim = {}x{}, raw_data len = {}", 
-                 image_obj.metadata.width, image_obj.metadata.height, image_obj.raw_data.len());
         run_pixel_pipeline(image_obj, pipeline_obj);
         image_ptr_val as *mut Image
     }).unwrap_or(std::ptr::null_mut())
@@ -485,8 +484,6 @@ fn interpolate_matrices(
     } else {
         0.0
     };
-    
-    println!("DEBUG COLOR: ratio1 = {}, ratio2 = {}, ratio_s = {}, w = {}", ratio1, ratio2, ratio_s, w);
     
     let mut interpolated = vec![0.0; 9];
     for i in 0..9 {

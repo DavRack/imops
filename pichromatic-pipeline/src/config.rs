@@ -32,3 +32,25 @@ pub fn parse_config(config: String) -> PipelineConfig {
     }
     return config
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_imgconfig_film() {
+        let cfg = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../imgconfig-film.toml"
+        ))
+        .expect("imgconfig-film.toml");
+        let parsed = super::parse_config(cfg);
+        let names: Vec<_> = parsed
+            .pipeline_modules
+            .iter()
+            .map(|m| m.schema().name)
+            .collect();
+        assert!(
+            names.iter().any(|n| n == "Film"),
+            "expected Film in pipeline, got {names:?}"
+        );
+    }
+}

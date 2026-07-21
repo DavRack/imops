@@ -23,7 +23,7 @@ name = "CFACoeffs"
 
 [[pipeline_modules]]
 name = "LumaGuidedChromaDenoise"
-radius = 4
+radius = 2
 epsilon = 0.01
 
 [[pipeline_modules]]
@@ -33,12 +33,12 @@ name = "HighlightReconstruction"
 name = "Vignette"
 strength = 1.0
 
-[[pipeline_modules]]
-name = "BaselineExposureCompensation"
+# [[pipeline_modules]]
+# name = "BaselineExposureCompensation"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 1
+ev = 0
 
 [[pipeline_modules]]
 name = "Contrast"
@@ -57,11 +57,11 @@ target_color_space = "AcesCg"
 [[pipeline_modules]]
 name = "LCH"
 lc = 1
-cc = 1.3
+cc = 1
 hc = 1
 
 [[pipeline_modules]]
-name = "ToneMap"
+name = "SigmoidToneMap"
 # c = 6
 
 [[pipeline_modules]]

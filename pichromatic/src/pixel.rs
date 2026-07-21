@@ -9,7 +9,7 @@ use crate::{
     highlight_reconstruction::highlight_reconstruction,
     image::ImageMetadata,
     lch::lch,
-    tone_map::sigmoid
+    tone_map::{gamma_encode, sigmoid},
 };
 
 pub const CHANNELS_PER_PIXEL: usize = 3;
@@ -88,11 +88,15 @@ impl Image {
         return self
     }
 
-    pub fn tone_map(&mut self) -> &mut Image{
-        sigmoid(
-            &mut self.rgb_data
-        );
-        return self
+    pub fn sigmoid_tone_map(&mut self) -> &mut Image {
+        sigmoid(&mut self.rgb_data);
+        self
+    }
+
+    /// Power-law display encode (`γ` = 2.2 ≈ sRGB, 2.4 = BT.1886).
+    pub fn gamma(&mut self, gamma: SubPixel) -> &mut Image {
+        gamma_encode(&mut self.rgb_data, gamma);
+        self
     }
     
     pub fn cfa_coeffs(&mut self, wb_coeffs: [SubPixel; 4]) -> &mut Image{
@@ -153,5 +157,15 @@ impl Image {
             );
         }
         self
+    }
+
+    /// Physically-based analog film simulation. Requires absolute-luminance ACEScg input
+    /// (see BaselineExposureCompensation in the pipeline).
+    pub fn film(
+        &mut self,
+        params: &crate::film::FilmParams,
+    ) -> Result<&mut Image, crate::film::FilmError> {
+        crate::film::process(self, params)?;
+        Ok(self)
     }
 }

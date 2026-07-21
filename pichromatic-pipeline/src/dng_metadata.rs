@@ -10,6 +10,9 @@ pub struct DngMetadata {
     pub analog_balance: Option<Vec<f32>>,
     pub as_shot_neutral: Option<Vec<f32>>,
     pub baseline_exposure: Option<f32>,
+    pub shutter_seconds: Option<f32>,
+    pub f_number: Option<f32>,
+    pub iso: Option<f32>,
     pub linear_response_limit: Option<f32>,
     pub shadow_scale: Option<f32>,
     pub noise_profile: Option<Vec<f64>>,
@@ -112,6 +115,44 @@ impl<'a> DngMetadataParser<'a> {
                 }
                 34665 | 34853 => { // ExifIFD / GPSIFD — follow these linked IFDs
                     self.parse_ifd(val_offset, metadata, visited);
+                }
+                33434 => { // ExposureTime
+                    if typ == 5 {
+                        if let Some(val) = self.read_urational(val_offset, &val_bytes, count) {
+                            metadata.shutter_seconds = Some(val);
+                        }
+                    }
+                }
+                33437 => { // FNumber
+                    if typ == 5 {
+                        if let Some(val) = self.read_urational(val_offset, &val_bytes, count) {
+                            metadata.f_number = Some(val);
+                        }
+                    }
+                }
+                34855 => { // ISOSpeedRatings
+                    if typ == 3 && count >= 1 {
+                        let iso = if self.is_little_endian {
+                            u16::from_le_bytes([val_bytes[0], val_bytes[1]])
+                        } else {
+                            u16::from_be_bytes([val_bytes[0], val_bytes[1]])
+                        };
+                        if iso > 0 {
+                            metadata.iso = Some(iso as f32);
+                        }
+                    }
+                }
+                34867 => { // ISOSpeed
+                    if metadata.iso.is_none() && typ == 4 && count >= 1 {
+                        let iso = if self.is_little_endian {
+                            u32::from_le_bytes([val_bytes[0], val_bytes[1], val_bytes[2], val_bytes[3]])
+                        } else {
+                            u32::from_be_bytes([val_bytes[0], val_bytes[1], val_bytes[2], val_bytes[3]])
+                        };
+                        if iso > 0 {
+                            metadata.iso = Some(iso as f32);
+                        }
+                    }
                 }
                 50706 => { // DNGVersion
                     if typ == 1 && count == 4 {
@@ -271,6 +312,25 @@ impl<'a> DngMetadataParser<'a> {
             let s_num = num as i32;
             let s_den = den as i32;
             Some(s_num as f32 / s_den as f32)
+        }
+    }
+
+    /// Unsigned RATIONAL (TIFF type 5). Value may be inline when count==1.
+    fn read_urational(&self, val_offset: usize, val_bytes: &[u8; 4], count: usize) -> Option<f32> {
+        if count != 1 {
+            return None;
+        }
+        // RATIONAL is 8 bytes → always stored at val_offset pointer.
+        let _ = val_bytes;
+        if val_offset + 8 > self.data.len() {
+            return None;
+        }
+        let num = Self::read_u32_at(self.data, val_offset, self.is_little_endian);
+        let den = Self::read_u32_at(self.data, val_offset + 4, self.is_little_endian);
+        if den == 0 {
+            None
+        } else {
+            Some(num as f32 / den as f32)
         }
     }
 

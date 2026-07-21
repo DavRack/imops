@@ -25,7 +25,7 @@ fn main() {
         .cfa_coeffs(wb_coeffs)
         .highlight_reconstruction(wb_coeffs)
         .camera_cst(wcs, &calibration_matrix_d65)
-        .tone_map()
+        .sigmoid_tone_map()
         .cst(ColorSpaceTag::Srgb);
 
     println!("pipeline time: {}ms", t1.elapsed().as_millis());

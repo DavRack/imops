@@ -30,6 +30,24 @@ pub fn sigmoid(image_buffer: &mut ImageBuffer){
     });
 }
 
+/// Power-law display encode: `out = max(0, linear)^(1/γ)`.
+///
+/// Default γ = 2.2 approximates the sRGB OETF; γ = 2.4 matches BT.1886 /
+/// pure “gamma 2.4” display encoding. Apply on linear display-referred RGB
+/// (e.g. after CST to sRGB / Rec.709 / Rec.2020).
+pub fn gamma_encode(image_buffer: &mut ImageBuffer, gamma: f32) {
+    let inv = 1.0 / gamma.max(1e-6);
+    image_buffer.par_iter_mut().for_each(|pixel| {
+        *pixel = pixel.map(|c| {
+            if c <= 0.0 {
+                0.0
+            } else {
+                c.powf(inv)
+            }
+        });
+    });
+}
+
 /// Configuration parameters for the Reference Gamut Compression.
 /// Defaults match the ACES 1.3 LMT implementation.
 #[derive(Debug, Clone)]
@@ -165,6 +183,15 @@ mod tests {
             input,
             output
         );
+    }
+
+    #[test]
+    fn gamma_encode_22_roundtrip_mid() {
+        let mut buf = vec![[0.18, 0.18, 0.18]];
+        gamma_encode(&mut buf, 2.2);
+        let e = buf[0][0];
+        let back = e.powf(2.2);
+        assert!((back - 0.18).abs() < 1e-5, "γ2.2 roundtrip {back}");
     }
 }
 

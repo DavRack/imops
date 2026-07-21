@@ -12,6 +12,10 @@ name = "imops-cli"
 path = "src/bin/imops-cli.rs"
 
 [[bin]]
+name = "exr-stats"
+path = "src/bin/exr-stats.rs"
+
+[[bin]]
 name = "example"
 path = "src/bin/example.rs"
 
@@ -38,6 +42,8 @@ pichromatic-pipeline = {version="0.1.0", path="./pichromatic-pipeline"}
 rawler = "*"
 clap = {version="4.6.0", features=["derive"]}
 image = "0.24.9"
+exr = "1.74"
+color = { version = "0.3.2", features = ["serde"] }
 serde_json = "*"
 
 
@@ -49,3 +55,28 @@ egui_plot = { version = "0.27", optional = true }
 [features]
 parallel = []
 visual_tests = ["dep:eframe", "dep:egui", "dep:egui_plot"]
+
+[[bin]]
+name = "cst-probe"
+path = "src/bin/cst-probe.rs"
+
+[[bin]]
+name = "film-shadow-probe"
+path = "src/bin/film-shadow-probe.rs"
+
+[[bin]]
+name = "exr-hist"
+path = "src/bin/exr-hist.rs"
+
+[[bin]]
+name = "de-diagnose"
+path = "src/bin/de-diagnose.rs"
+
+[[bin]]
+name = "sigma-tune"
+path = "src/bin/sigma-tune.rs"
+
+
+
+
+

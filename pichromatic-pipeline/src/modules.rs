@@ -334,9 +334,40 @@ pub struct BaselineExposureCompensation {
 
 impl PipelineModule for Module<BaselineExposureCompensation> {
     fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        use pichromatic::film::exposure::radiance::absolute_luminance_gain;
+        use pichromatic::pixel::MIDDLE_GRAY;
+        use rayon::prelude::*;
+
+        // 1) DNG BaselineExposure EV (relative scale).
         let ev = image.metadata.baseline_exposure.unwrap_or(0.0);
         if ev.abs() > 1e-6 {
-            return image.exp(ev)
+            image.exp(ev);
+        }
+
+        // 2) Camera-relative → absolute luminance via reflected-light meter equation:
+        //    L = K * v * N² / (t * S)
+        // Requires shutter / f-number / ISO from EXIF (filled by DNG metadata parse).
+        let t = image.metadata.shutter_seconds;
+        let n = image.metadata.f_number;
+        let s = image.metadata.iso;
+        match (t, n, s) {
+            (Some(t), Some(n), Some(iso)) if t > 0.0 && n > 0.0 && iso > 0.0 => {
+                let gain = absolute_luminance_gain(t as f64, n as f64, iso as f64) as f32;
+                image.rgb_data.par_iter_mut().for_each(|px| {
+                    *px = px.map(|c| c * gain);
+                });
+                // Mark that buffer is now absolute luminance. Mid-gray relative 0.185
+                // under sunny-16 metering → L ≈ K·0.185·N²/(t·S) ≈ 148.
+                let _ = MIDDLE_GRAY;
+            }
+            _ => {
+                // No capture exposure metadata — leave relative. Film will still run
+                // but absolute calibration assumes Baseline ran with EXIF present.
+                eprintln!(
+                    "BaselineExposureCompensation: missing shutter/f-number/ISO; \
+                     skipping absolute luminance conversion"
+                );
+            }
         }
         image
     }
@@ -344,7 +375,7 @@ impl PipelineModule for Module<BaselineExposureCompensation> {
     fn schema(&self) -> ModuleSchema {
         ModuleSchema {
             name: "BaselineExposureCompensation".to_string(),
-            description: "Automatically apply baseline exposure compensation from DNG metadata.".to_string(),
+            description: "Apply DNG BaselineExposure EV, then convert camera-relative linear values to absolute luminance using EXIF shutter/f-number/ISO (L = K·v·N²/(t·S)).".to_string(),
             fields: vec![],
         }
     }
@@ -359,27 +390,63 @@ impl PipelineModule for Module<BaselineExposureCompensation> {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct ToneMap {
-}
+pub struct SigmoidToneMap {}
 
-impl PipelineModule for Module<ToneMap> {
+impl PipelineModule for Module<SigmoidToneMap> {
     fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
-        return image.tone_map()
+        image.sigmoid_tone_map()
     }
 
     fn schema(&self) -> ModuleSchema {
         ModuleSchema {
-            name: "ToneMap".to_string(),
-            description: "Apply legacy sigmoid tone mapping curve (kept for backward compatibility).".to_string(),
+            name: "SigmoidToneMap".to_string(),
+            description: "Sigmoid display tone map with ACES reference gamut compression (ACEScg).".to_string(),
             fields: vec![],
         }
     }
 
     fn create(&self, _module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        Box::new(Module::<ToneMap> {
+        Box::new(Module::<SigmoidToneMap> {
             name: self.schema().name,
             cache: None,
-            config: ToneMap {},
+            config: SigmoidToneMap {},
+        })
+    }
+}
+
+/// Power-law display encode (sRGB ≈ γ 2.2, BT.1886 = γ 2.4).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Gamma {
+    pub gamma: Parameter<SubPixel>,
+}
+
+impl Default for Gamma {
+    fn default() -> Self {
+        Self {
+            gamma: Parameter::new(2.2, "Display gamma (2.2 ≈ sRGB, 2.4 = BT.1886)."),
+        }
+    }
+}
+
+impl PipelineModule for Module<Gamma> {
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        image.gamma(self.config.gamma.value)
+    }
+
+    fn schema(&self) -> ModuleSchema {
+        ModuleSchema {
+            name: "Gamma".to_string(),
+            description: "Power-law display encode: out = linear^(1/γ). Use γ=2.2 for sRGB-like, γ=2.4 for BT.1886. Apply after CST to a linear display space.".to_string(),
+            fields: fields_from_config(&Gamma::default()),
+        }
+    }
+
+    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
+        let config: Gamma = module.try_into().expect("Invalid Gamma config");
+        Box::new(Module::<Gamma> {
+            name: self.schema().name,
+            cache: None,
+            config,
         })
     }
 }
@@ -561,8 +628,6 @@ impl Default for Demosaic {
 
 impl PipelineModule for Module<Demosaic> {
     fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
-        println!("DEBUG DEMOSAIC: starting algorithm = {:?}, width = {}, height = {}", 
-                 self.config.algorithm.value, image.metadata.width, image.metadata.height);
         let new_image = match self.config.algorithm.value {
             DemosaicAlgorithmType::Markesteijn => {
                 Image::demosaic(
@@ -730,6 +795,102 @@ impl PipelineModule for Module<Vignette> {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Film {
+    pub stock: Parameter<String>,
+    pub film_format: Parameter<String>,
+    pub seed: Parameter<u64>,
+    pub output: Parameter<String>,
+}
+
+impl Default for Film {
+    fn default() -> Self {
+        Self {
+            stock: Parameter::new_with_choices(
+                "ColorNeg200".to_string(),
+                "Film stock identifier.",
+                vec![
+                    "BwStub".to_string(),
+                    "ColorNeg200".to_string(),
+                    "Portra400".to_string(),
+                    "FujiPro400H".to_string(),
+                    "EktachromeE100".to_string(),
+                    "TriX400".to_string(),
+                ],
+            ),
+            film_format: Parameter::new_with_choices(
+                "Film35mm".to_string(),
+                "Film format (sets pixel pitch from frame width).",
+                vec![
+                    "Film35mm".to_string(),
+                    "Film6x6".to_string(),
+                    "Film4x5".to_string(),
+                ],
+            ),
+            seed: Parameter::new(1, "RNG seed for grain (deterministic)."),
+            output: Parameter::new_with_choices(
+                "NegativeLinear".to_string(),
+                "NegativeLinear: densitometric scanned negative. PositiveLinear: mid/Dmin invert from stock film base + mid-gray gain.",
+                vec!["NegativeLinear".to_string(), "PositiveLinear".to_string()],
+            ),
+        }
+    }
+}
+
+impl PipelineModule for Module<Film> {
+    fn process<'a>(&self, image: &'a mut Image) -> &'a mut Image {
+        use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
+
+        let stock = match self.config.stock.value.as_str() {
+            "BwStub" => StockId::BwStub,
+            "ColorNeg200" => StockId::ColorNeg200,
+            "Portra400" => StockId::Portra400,
+            "FujiPro400H" => StockId::FujiPro400H,
+            "EktachromeE100" => StockId::EktachromeE100,
+            "TriX400" => StockId::TriX400,
+            other => panic!("Unknown film stock: {other}"),
+        };
+        let film_format = match self.config.film_format.value.as_str() {
+            "Film35mm" => FilmFormat::Film35mm,
+            "Film6x6" => FilmFormat::Film6x6,
+            "Film4x5" => FilmFormat::Film4x5,
+            other => panic!("Unknown film format: {other}"),
+        };
+        let output = match self.config.output.value.as_str() {
+            "NegativeLinear" => FilmOutput::NegativeLinear,
+            "PositiveLinear" => FilmOutput::PositiveLinear,
+            other => panic!("Unknown film output: {other}"),
+        };
+
+        let params = FilmParams {
+            stock,
+            film_format,
+            seed: self.config.seed.value,
+            output,
+        };
+
+        pichromatic::film::process(image, &params).expect("Film process failed");
+        image
+    }
+
+    fn schema(&self) -> ModuleSchema {
+        ModuleSchema {
+            name: "Film".to_string(),
+            description: "Physically-based analog film simulation. NegativeLinear exports the densitometric scan; PositiveLinear inverts with the stock film-base Dmin and mid-gray gain.".to_string(),
+            fields: fields_from_config(&self.config),
+        }
+    }
+
+    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
+        let config: Film = module.try_into().expect("Invalid Film config");
+        Box::new(Module {
+            name: self.schema().name,
+            cache: None,
+            config,
+        })
+    }
+}
+
 /// Dynamic list of all default pipeline modules acting as templates.
 pub fn get_default_modules() -> Vec<Box<dyn PipelineModule>> {
     vec![
@@ -743,8 +904,10 @@ pub fn get_default_modules() -> Vec<Box<dyn PipelineModule>> {
         Box::new(Module::<Exp>::default()),
         Box::new(Module::<Contrast>::default()),
         Box::new(Module::<CST>::default()),
+        Box::new(Module::<Film>::default()),
         Box::new(Module::<LCH>::default()),
-        Box::new(Module::<ToneMap>::default()),
+        Box::new(Module::<SigmoidToneMap>::default()),
+        Box::new(Module::<Gamma>::default()),
         Box::new(Module::<BM3D>::default()),
     ]
 }

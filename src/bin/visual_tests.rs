@@ -1,6 +1,6 @@
 use pichromatic_pipeline::config::PipelineConfig;
 use pichromatic_pipeline::modules::{
-    BaselineExposureCompensation, CFACoeffs, CST, ChromaDenoise, Contrast, Demosaic, DemosaicAlgorithmType, Exp, HighlightReconstruction, LCH, LumaGuidedChromaDenoise, Module, Parameter, PipelineModule, ToneMap, Vignette
+    BaselineExposureCompensation, CFACoeffs, CST, ChromaDenoise, Contrast, Demosaic, DemosaicAlgorithmType, Exp, HighlightReconstruction, LCH, LumaGuidedChromaDenoise, Module, Parameter, PipelineModule, SigmoidToneMap, Vignette
 };
 use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use pichromatic::pixel::Image;
@@ -85,9 +85,9 @@ fn main() {
                 },
             }),
             Box::new(Module {
-                name: "ToneMap".to_string(),
+                name: "SigmoidToneMap".to_string(),
                 cache: None,
-                config: ToneMap { },
+                config: SigmoidToneMap { },
             }),
             Box::new(Module {
                 name: "CST".to_string(),
@@ -153,9 +153,9 @@ fn main() {
                 },
             }),
             Box::new(Module {
-                name: "ToneMap".to_string(),
+                name: "SigmoidToneMap".to_string(),
                 cache: None,
-                config: ToneMap { },
+                config: SigmoidToneMap { },
             }),
             Box::new(Module {
                 name: "CST".to_string(),
