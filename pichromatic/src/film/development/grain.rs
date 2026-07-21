@@ -90,7 +90,9 @@ pub fn apply_grain(
 
         plane.par_iter_mut().zip(noise.par_iter()).for_each(|(d, &n)| {
             let dens = (*d).clamp(0.0, d_max);
-            let sigma_d = (dens * (d_max - dens)).max(0.0).sqrt();
+            let eps_toe = 0.02 * d_max;
+            let taper = (dens / (dens + eps_toe)).min(1.0);
+            let sigma_d = taper * (dens * (d_max - dens)).max(0.0).sqrt();
             *d = dens + kappa * sigma_d * n * norm;
             *d = (*d).clamp(0.0, d_max * 1.05);
         });
