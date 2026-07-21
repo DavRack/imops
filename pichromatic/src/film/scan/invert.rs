@@ -73,7 +73,7 @@ pub fn invert_negative(
     ];
 
     buffer.par_iter_mut().for_each(|px| {
-        // T>1 (mask-clearing toe) → that channel contributes 0, not a whole-pixel crush.
+        // T>1 (rare after dye-coupled mask) → that channel contributes 0.
         let t = [
             (px[0] / dmin[0]).clamp(eps, 1.0),
             (px[1] / dmin[1]).clamp(eps, 1.0),
@@ -217,7 +217,6 @@ mod tests {
         let n = 10000;
         let mut buf = Vec::with_capacity(n);
         for i in 0..n {
-            // Gaussian-like pseudo-random noise near Dmin
             let r_noise = ((i * 1103515245 + 12345) % 1000) as f32 / 1000.0 - 0.5;
             let g_noise = ((i * 214013 + 2531011) % 1000) as f32 / 1000.0 - 0.5;
             let b_noise = ((i * 1664525 + 1013904223) % 1000) as f32 / 1000.0 - 0.5;
