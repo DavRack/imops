@@ -18,3 +18,8 @@ color = { version = "0.3.2", features = ["serde"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_with = "*"
 rayon = "1.10.0"
+wgpu = "23.0.0"
+bytemuck = { version = "1.16.0", features = ["derive"] }
+pollster = "0.3.0"
+rand = "0.8.5"
+rand_chacha = "0.3.1"

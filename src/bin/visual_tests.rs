@@ -441,7 +441,9 @@ pub fn run_module_viewer(
         let pipeline_image_before = to_pipeline_image(&img);
 
         let mut pipeline_image_after = pipeline_image_before.clone();
-        module.process(&mut pipeline_image_after);
+        let mut p_image = pichromatic_pipeline::backend::PipelineImage::Cpu(pipeline_image_after);
+        module.process(&pichromatic_pipeline::backend::Backend::Cpu, &mut p_image);
+        let pipeline_image_after = p_image.to_cpu(None);
 
         (pipeline_image_before, pipeline_image_after)
     });

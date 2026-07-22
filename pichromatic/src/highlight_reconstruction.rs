@@ -1,3 +1,4 @@
+use crate::gpu::{GpuContext, GpuImageBuffer};
 use crate::pixel::{ImageBuffer, SubPixel};
 use rayon::prelude::*;
 
@@ -10,6 +11,54 @@ let [_, clip_g, _, _] = wb_coeffs;
             let reconstructed_g = ((1.0-factor)*g) + (factor*(r+b)*(1.0/2.0));
             pixel[1] = reconstructed_g;
         });
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct HighlightReconstructionParamsGpu {
+    clip_g: f32,
+    _pad: [f32; 3],
+}
+
+pub fn highlight_reconstruction_gpu(
+    ctx: &GpuContext,
+    storage_buffer: &GpuImageBuffer,
+    wb_coeffs: [SubPixel; 4],
+) {
+    let params = HighlightReconstructionParamsGpu {
+        clip_g: wb_coeffs[1],
+        _pad: [0.0; 3],
+    };
+    let shader_source = r#"
+        struct Params {
+            clip_g: f32,
+            _pad0: f32,
+            _pad1: f32,
+            _pad2: f32,
+        };
+
+        @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+        @group(0) @binding(1) var<uniform> params: Params;
+
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let index = global_id.x;
+            if (index >= arrayLength(&pixels)) {
+                return;
+            }
+            let p = pixels[index];
+            let factor = p.g / params.clip_g;
+            let reconstructed_g = ((1.0 - factor) * p.g) + (factor * (p.r + p.b) * 0.5);
+            pixels[index] = vec4<f32>(p.r, reconstructed_g, p.b, p.a);
+        }
+    "#;
+
+    ctx.dispatch_compute_shader(
+        "highlight_reconstruction",
+        shader_source,
+        storage_buffer,
+        bytemuck::bytes_of(&params),
+    );
 }
 
 #[cfg(test)]

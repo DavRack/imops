@@ -1,0 +1,61 @@
+#### Pixel Pipeline — physically-based film (PositiveLinear) ####
+# Usage: ./run <raw.dng> imgconfig-film.toml
+#
+# PositiveLinear inverts inside the Film module using the stock film-base Dmin
+# (mask / d_max / scanner light) and a mid-gray gain calibration — negative→positive only.
+
+[[pipeline_modules]]
+name = "Demosaic"
+algorithm = "markesteijn"
+
+[[pipeline_modules]]
+name = "CFACoeffs"
+
+[[pipeline_modules]]
+name = "LumaGuidedChromaDenoise"
+radius = 2
+epsilon = 0.01
+
+[[pipeline_modules]]
+name = "HighlightReconstruction"
+
+[[pipeline_modules]]
+name = "Vignette"
+strength = 1.0
+
+[[pipeline_modules]]
+name = "BaselineExposureCompensation"
+
+[[pipeline_modules]]
+name = "Exp"
+ev = 0.0
+
+[[pipeline_modules]]
+name = "CST"
+target_color_space = "AcesCg"
+
+# [[pipeline_modules]]
+# name = "Film"
+# stock = "Portra400"
+# film_format = "Film35mm"
+# seed = 1
+# output = "PositiveLinear"
+
+[[pipeline_modules]]
+name = "Exp"
+ev = 1.5
+
+[[pipeline_modules]]
+name = "Contrast"
+c = 1.5
+
+[[pipeline_modules]]
+name = "SigmoidToneMap"
+
+[[pipeline_modules]]
+name = "CST"
+target_color_space = "LinearSrgb"
+
+[[pipeline_modules]]
+name = "Gamma"
+gamma = 2.2

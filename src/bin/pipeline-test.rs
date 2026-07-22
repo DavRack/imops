@@ -34,9 +34,11 @@ fn main() {
     let config_str = fs::read_to_string(config_path).expect("Failed to read config file");
     let pipeline = parse_config(config_str);
 
-    let mut img = image;
+    let mut pipeline_image = pichromatic_pipeline::backend::PipelineImage::Cpu(image);
+    let backend = pichromatic_pipeline::backend::Backend::Cpu;
     for (i, module) in pipeline.pipeline_modules.iter().enumerate() {
-        module.process(&mut img);
+        module.process(&backend, &mut pipeline_image);
+        let img = pipeline_image.ensure_cpu(None);
         let rgb_len = img.rgb_data.len();
         let (r_mean, g_mean, b_mean) = if rgb_len > 0 {
             let (mut r, mut g, mut b) = (0.0f64, 0.0f64, 0.0f64);

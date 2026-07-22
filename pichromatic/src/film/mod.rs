@@ -21,6 +21,7 @@ pub mod development;
 pub mod error;
 pub mod exposure;
 pub mod fixtures;
+pub mod gpu;
 pub mod scan;
 pub mod spectrum;
 pub mod stock;
@@ -28,6 +29,7 @@ pub mod types;
 pub mod units;
 
 pub use error::FilmError;
+pub use gpu::process_gpu;
 pub use stock::StockId;
 pub use types::{ExposureMeta, FilmFormat};
 

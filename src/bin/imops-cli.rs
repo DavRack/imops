@@ -1,7 +1,6 @@
 #![warn(unused_extern_crates)]
 use clap::Parser as Clap_parser;
 use pichromatic_pipeline::config;
-use pichromatic_pipeline::pipeline::run_pixel_pipeline;
 use std::time::Instant;
 
 #[derive(Clap_parser, Debug, Clone)]
@@ -27,6 +26,10 @@ struct Args {
         value_name = "config_path"
     )]
     config_path: String,
+
+    /// Use WGPU GPU acceleration
+    #[arg(long, default_value_t = false)]
+    gpu: bool,
 }
 
 fn main() {
@@ -55,8 +58,16 @@ fn main() {
         std::fs::read_to_string(args.config_path.clone()).expect("Cannot read config file");
     let mut config = config::parse_config(config_data);
 
-    run_pixel_pipeline(&mut image, &mut config);
-    println!("pixel pipeline time: {:.2?}", now.elapsed());
+    let backend = if args.gpu {
+        println!("Initializing WGPU GPU Context...");
+        let ctx = pichromatic::gpu::GpuContext::new_sync();
+        pichromatic_pipeline::backend::Backend::Wgpu(ctx)
+    } else {
+        pichromatic_pipeline::backend::Backend::Cpu
+    };
+
+    pichromatic_pipeline::pipeline::run_pixel_pipeline_with_backend(&mut image, &mut config, &backend);
+    println!("pixel pipeline time ({:?}): {:.2?}", if args.gpu { "GPU" } else { "CPU" }, now.elapsed());
     println!(
         "pixel pipeline fps: {:.2?}",
         1.0 / now.elapsed().as_secs_f32()

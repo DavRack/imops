@@ -1380,6 +1380,127 @@ pub mod demosaic_algorithms {
 }
 
 
+use crate::gpu::{GpuContext, GpuImageBuffer};
+use wgpu::util::DeviceExt;
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct DemosaicParamsGpu {
+    width: u32,
+    height: u32,
+    _pad: [u32; 2],
+}
+
+/// Native GPU Markesteijn-style 3×3 neighbor demosaic. Matches CPU Markesteijn.
+///
+/// `raw` is the cropped mosaic (same layout as CPU `Image::raw_data` after parse).
+/// `cfa` must already be crop-shifted via [`get_cfa`].
+pub fn demosaic_markesteijn_gpu(
+    ctx: &GpuContext,
+    raw: &[SubPixel],
+    width: usize,
+    height: usize,
+    cfa: &CFA,
+) -> GpuImageBuffer {
+    assert_eq!(raw.len(), width * height, "raw length must equal width*height");
+
+    let raw_buf = ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("demosaic_raw"),
+        contents: bytemuck::cast_slice(raw),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let mut cfa_flat = vec![0u32; 48 * 48];
+    for row in 0..48 {
+        for col in 0..48 {
+            cfa_flat[row * 48 + col] = cfa.color_at(row, col) as u32;
+        }
+    }
+    let cfa_buf = ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("demosaic_cfa"),
+        contents: bytemuck::cast_slice(&cfa_flat),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let out = ctx.create_output_buffer(width, height);
+    let params = DemosaicParamsGpu {
+        width: width as u32,
+        height: height as u32,
+        _pad: [0, 0],
+    };
+
+    let shader = r#"
+        struct Params {
+            width: u32,
+            height: u32,
+            _pad: vec2<u32>,
+        };
+
+        @group(0) @binding(0) var<storage, read_write> raw: array<f32>;
+        @group(0) @binding(1) var<storage, read_write> pixels: array<vec4<f32>>;
+        @group(0) @binding(2) var<storage, read_write> cfa: array<u32>;
+        @group(0) @binding(3) var<uniform> params: Params;
+
+        fn cfa_at(row: i32, col: i32) -> u32 {
+            let r = u32((row + 48) % 48);
+            let c = u32((col + 48) % 48);
+            return cfa[r * 48u + c];
+        }
+
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let index = global_id.x;
+            let n = params.width * params.height;
+            if (index >= n) {
+                return;
+            }
+            let row = i32(index / params.width);
+            let col = i32(index % params.width);
+            let center_cfa = cfa_at(row, col);
+            let y_min = max(row - 1, 0);
+            let y_max = min(row + 1, i32(params.height) - 1);
+            let x_min = max(col - 1, 0);
+            let x_max = min(col + 1, i32(params.width) - 1);
+
+            var out_rgb = vec3<f32>(0.0);
+            for (var channel = 0u; channel < 3u; channel++) {
+                if (channel == center_cfa) {
+                    out_rgb[channel] = raw[index];
+                } else {
+                    var sum = 0.0;
+                    var count = 0.0;
+                    for (var ny = y_min; ny <= y_max; ny++) {
+                        for (var nx = x_min; nx <= x_max; nx++) {
+                            if (ny == row && nx == col) {
+                                continue;
+                            }
+                            if (cfa_at(ny, nx) == channel) {
+                                let n_idx = u32(ny) * params.width + u32(nx);
+                                sum += raw[n_idx];
+                                count += 1.0;
+                            }
+                        }
+                    }
+                    if (count > 0.0) {
+                        out_rgb[channel] = sum / count;
+                    }
+                }
+            }
+            pixels[index] = vec4<f32>(out_rgb, 1.0);
+        }
+    "#;
+
+    let workgroups = ((width * height) as u32 + 255) / 256;
+    ctx.dispatch_compute_shader_multi(
+        "demosaic_markesteijn",
+        shader,
+        &[&raw_buf, &out.buffer, &cfa_buf],
+        bytemuck::bytes_of(&params),
+        workgroups,
+    );
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

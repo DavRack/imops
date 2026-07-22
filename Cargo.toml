@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "pichromatic", "pichromatic-pipeline"]
+
 [package]
 name = "filsimrs"
 version = "0.1.0"
@@ -37,7 +40,7 @@ inherits = "release"
 debug = true
 
 [dependencies]
-pichromatic = {version="0.1.0", path="./pichromatic"}
+pichromatic = { version = "0.1.0", path = "pichromatic" }
 pichromatic-pipeline = {version="0.1.0", path="./pichromatic-pipeline"}
 rawler = "*"
 clap = {version="4.6.0", features=["derive"]}

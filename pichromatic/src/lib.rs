@@ -13,4 +13,5 @@ pub mod tone_map;
 pub mod image;
 pub mod bm3d;
 pub mod vignette;
+pub mod gpu;
 

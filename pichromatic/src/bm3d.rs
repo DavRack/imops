@@ -32,6 +32,10 @@ impl Bm3dParams {
 }
 
 pub fn bm3d(rgb_data: &mut Vec<[f32; 3]>, width: usize, height: usize, intensity: f32) {
+    // Intensity 0 means disabled (default); both CPU and GPU treat it as a no-op.
+    if intensity <= 0.0 {
+        return;
+    }
     let params = Bm3dParams::from_intensity(intensity);
     let dct_tables = Arc::new(DctTables::new());
 
@@ -703,6 +707,10 @@ fn gaussian_blur_1ch(data: &[f32], width: usize, height: usize, sigma: f32) -> V
 // 8x8 block is independently DCT'd, hard-thresholded, and IDCT'd. ~100x faster
 // and chroma noise is visually forgiving, so quality is comparable.
 pub fn chroma_bm3d(rgb_data: &mut Vec<[f32; 3]>, width: usize, height: usize, intensity: f32) {
+    // Intensity 0 means disabled (default); both CPU and GPU treat it as a no-op.
+    if intensity <= 0.0 {
+        return;
+    }
     let sigma = intensity.clamp(0.001, 1.0) * 80.0;
     let threshold = (2.0 + (intensity.clamp(0.001, 1.0) * 2.5)) * sigma * 1.8;
     let tables = Arc::new(DctTables::new());

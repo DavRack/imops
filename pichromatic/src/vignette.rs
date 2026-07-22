@@ -97,3 +97,146 @@ pub fn apply_vignette_radial_correction(
         }
     }
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct VignetteParamsGpu {
+    pub k0: f32,
+    pub k1: f32,
+    pub k2: f32,
+    pub k3: f32,
+    pub k4: f32,
+    pub cx: f32,
+    pub cy: f32,
+    pub strength: f32,
+    pub d_max: f32,
+    pub width: u32,
+    pub height: u32,
+    pub _pad: u32,
+}
+
+pub fn apply_vignette_radial_correction_gpu(
+    ctx: &crate::gpu::GpuContext,
+    storage_buffer: &crate::gpu::GpuImageBuffer,
+    opcode_list3: &[u8],
+    strength: f32,
+) {
+    if opcode_list3.len() < 4 {
+        return;
+    }
+    let count = u32::from_be_bytes([opcode_list3[0], opcode_list3[1], opcode_list3[2], opcode_list3[3]]) as usize;
+    let mut offset = 4;
+
+    for _ in 0..count {
+        if offset + 16 > opcode_list3.len() {
+            break;
+        }
+        let opcode_id = u32::from_be_bytes([opcode_list3[offset], opcode_list3[offset+1], opcode_list3[offset+2], opcode_list3[offset+3]]);
+        let _version = u32::from_be_bytes([opcode_list3[offset+4], opcode_list3[offset+5], opcode_list3[offset+6], opcode_list3[offset+7]]);
+        let _flags = u32::from_be_bytes([opcode_list3[offset+8], opcode_list3[offset+9], opcode_list3[offset+10], opcode_list3[offset+11]]);
+        let parameter_size = u32::from_be_bytes([opcode_list3[offset+12], opcode_list3[offset+13], opcode_list3[offset+14], opcode_list3[offset+15]]) as usize;
+        
+        offset += 16;
+        if offset + parameter_size > opcode_list3.len() {
+            break;
+        }
+
+        let params = &opcode_list3[offset..offset + parameter_size];
+        offset += parameter_size;
+
+        if opcode_id == 3 && parameter_size >= 56 {
+            let read_double = |idx: usize| -> f64 {
+                let bytes = [
+                    params[idx], params[idx+1], params[idx+2], params[idx+3],
+                    params[idx+4], params[idx+5], params[idx+6], params[idx+7]
+                ];
+                f64::from_be_bytes(bytes)
+            };
+
+            let k0 = read_double(0) as f32;
+            let k1 = read_double(8) as f32;
+            let k2 = read_double(16) as f32;
+            let k3 = read_double(24) as f32;
+            let k4 = read_double(32) as f32;
+            let cx = read_double(40) as f32;
+            let cy = read_double(48) as f32;
+
+            let d_00 = (cx * cx + cy * cy).sqrt();
+            let d_10 = ((1.0 - cx).powi(2) + cy * cy).sqrt();
+            let d_01 = (cx * cx + (1.0 - cy).powi(2)).sqrt();
+            let d_11 = ((1.0 - cx).powi(2) + (1.0 - cy).powi(2)).sqrt();
+            let d_max = d_00.max(d_10).max(d_01).max(d_11);
+
+            if d_max > 0.0 {
+                let gpu_params = VignetteParamsGpu {
+                    k0, k1, k2, k3, k4, cx, cy, strength, d_max,
+                    width: storage_buffer.width as u32,
+                    height: storage_buffer.height as u32,
+                    _pad: 0,
+                };
+
+                let shader_source = r#"
+                    struct Params {
+                        k0: f32,
+                        k1: f32,
+                        k2: f32,
+                        k3: f32,
+                        k4: f32,
+                        cx: f32,
+                        cy: f32,
+                        strength: f32,
+                        d_max: f32,
+                        width: u32,
+                        height: u32,
+                        pad: u32,
+                    };
+
+                    @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+                    @group(0) @binding(1) var<uniform> params: Params;
+
+                    @compute @workgroup_size(256)
+                    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                        let index = global_id.x;
+                        let total_pixels = params.width * params.height;
+                        if (index >= total_pixels) {
+                            return;
+                        }
+
+                        let py = f32(index / params.width);
+                        let px = f32(index % params.width);
+
+                        let w_f32 = f32(params.width - 1u);
+                        let h_f32 = f32(params.height - 1u);
+
+                        let u = px / w_f32;
+                        let v = py / h_f32;
+
+                        let du = u - params.cx;
+                        let dv = v - params.cy;
+                        let d = sqrt(du * du + dv * dv);
+                        let r = d / params.d_max;
+
+                        let r2 = r * r;
+                        let r4 = r2 * r2;
+                        let r6 = r4 * r2;
+                        let r8 = r4 * r4;
+                        let r10 = r8 * r2;
+
+                        let correction = params.k0 * r2 + params.k1 * r4 + params.k2 * r6 + params.k3 * r8 + params.k4 * r10;
+                        let gain = max(0.0, 1.0 + params.strength * correction);
+
+                        let p = pixels[index];
+                        pixels[index] = vec4<f32>(p.rgb * gain, p.a);
+                    }
+                "#;
+
+                ctx.dispatch_compute_shader(
+                    "vignette",
+                    shader_source,
+                    storage_buffer,
+                    bytemuck::bytes_of(&gpu_params),
+                );
+            }
+        }
+    }
+}
