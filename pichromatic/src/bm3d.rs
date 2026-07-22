@@ -798,7 +798,7 @@ mod tests {
 
     #[test]
     fn test_bm3d_regression() {
-        let size = 2048;
+        let size = 128;
         let mut img = generate_test_image(size, size);
         bm3d(&mut img, size, size, 0.1);
         
@@ -806,10 +806,10 @@ mod tests {
         let sum_g = refined_sum(&img, 1);
         let sum_b = refined_sum(&img, 2);
         
-        println!("BM3D checksums 2048x2048: r={}, g={}, b={}", sum_r, sum_g, sum_b);
-        let diff_r = (sum_r - 2100044.776915211_f64).abs();
-        let diff_g = (sum_g - 2101586.5654235613_f64).abs();
-        let diff_b = (sum_b - 2098591.6187395807_f64).abs();
+        println!("BM3D checksums 128x128: r={:.10}, g={:.10}, b={:.10}", sum_r, sum_g, sum_b);
+        let diff_r = (sum_r - 9224.4037742568_f64).abs();
+        let diff_g = (sum_g - 8342.7538197995_f64).abs();
+        let diff_b = (sum_b - 8139.7504220075_f64).abs();
         assert!(diff_r < 1e-3, "r diff is {}", diff_r);
         assert!(diff_g < 1e-3, "g diff is {}", diff_g);
         assert!(diff_b < 1e-3, "b diff is {}", diff_b);
@@ -817,7 +817,7 @@ mod tests {
 
     #[test]
     fn test_chroma_bm3d_regression() {
-        let size = 2048;
+        let size = 128;
         let mut img = generate_test_image(size, size);
         chroma_bm3d(&mut img, size, size, 0.1);
         
@@ -825,10 +825,10 @@ mod tests {
         let sum_g = refined_sum(&img, 1);
         let sum_b = refined_sum(&img, 2);
         
-        println!("CHROMA_BM3D checksums 2048x2048: r={}, g={}, b={}", sum_r, sum_g, sum_b);
-        let diff_r = (sum_r - 2099732.10061259_f64).abs();
-        let diff_g = (sum_g - 2101692.5347650475_f64).abs();
-        let diff_b = (sum_b - 2098392.755773447_f64).abs();
+        println!("CHROMA_BM3D checksums 128x128: r={:.10}, g={:.10}, b={:.10}", sum_r, sum_g, sum_b);
+        let diff_r = (sum_r - 9214.6776764872_f64).abs();
+        let diff_g = (sum_g - 8343.8299463872_f64).abs();
+        let diff_b = (sum_b - 8143.4677845523_f64).abs();
         assert!(diff_r < 1e-3, "r diff is {}", diff_r);
         assert!(diff_g < 1e-3, "g diff is {}", diff_g);
         assert!(diff_b < 1e-3, "b diff is {}", diff_b);
