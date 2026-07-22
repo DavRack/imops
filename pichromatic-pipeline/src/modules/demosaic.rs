@@ -108,6 +108,7 @@ impl PipelineModule for Module<Demosaic> {
             },
         };
         image.rgb_data = new_image.rgb_data;
+        image.raw_data = new_image.raw_data;
         image.metadata.width = new_image.metadata.width;
         image.metadata.height = new_image.metadata.height;
         image.metadata.color_space = None;

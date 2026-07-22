@@ -23,9 +23,14 @@ pub fn generate_test_image_512x512(seed: u64) -> Image {
         ]);
     }
 
+    let mut raw_data: Vec<SubPixel> = Vec::with_capacity(width * height);
+    for _ in 0..(width * height) {
+        raw_data.push(rng.gen::<SubPixel>());
+    }
+
     Image {
         rgb_data,
-        raw_data: vec![],
+        raw_data,
         metadata: ImageMetadata {
             width,
             height,
@@ -35,7 +40,7 @@ pub fn generate_test_image_512x512(seed: u64) -> Image {
     }
 }
 
-/// Runs a PipelineModule on both CPU and WGPU GPU and asserts their pixel outputs match identically (tolerance = 0).
+/// Runs a PipelineModule on both CPU and WGPU GPU and asserts their pixel outputs match identically.
 pub fn test_pipeline_module_cpu_vs_gpu(module: &dyn PipelineModule, seed: u64) {
     let ctx = GpuContext::new_sync();
     let seed_image = generate_test_image_512x512(seed);
@@ -50,51 +55,92 @@ pub fn test_pipeline_module_cpu_vs_gpu(module: &dyn PipelineModule, seed: u64) {
     module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_pipeline_img);
     let gpu_out = gpu_pipeline_img.to_cpu(Some(&ctx));
 
-    // 3. Compare outputs (tolerance = 0.0)
+    // 3. Compare outputs for exact equality
     assert_images_equal(&cpu_out, &gpu_out);
 }
 
-/// Compares CPU ground truth image against GPU output image pixel by pixel (tolerance = 0.0).
+/// Compares CPU ground truth image against GPU output image for exact equality (rgb_data, raw_data, and metadata).
 pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
     assert_eq!(
-        cpu_image.rgb_data.len(),
-        gpu_image.rgb_data.len(),
-        "Image pixel buffer lengths do not match! CPU={}, GPU={}",
-        cpu_image.rgb_data.len(),
-        gpu_image.rgb_data.len()
+        cpu_image, gpu_image,
+        "CPU and GPU images are not exactly equal!"
     );
+}
 
-    let mut mismatch_count = 0;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    for (idx, (c_pixel, g_pixel)) in cpu_image
-        .rgb_data
-        .iter()
-        .zip(gpu_image.rgb_data.iter())
-        .enumerate()
-    {
-        for ch in 0..3 {
-            let diff = (c_pixel[ch] - g_pixel[ch]).abs();
-            if diff > 1e-4 {
-                mismatch_count += 1;
-                if mismatch_count <= 10 {
-                    eprintln!(
-                        "Pixel mismatch at index {} (x={}, y={}), channel {}: CPU={:.9}, GPU={:.9}, diff={:.9}",
-                        idx,
-                        idx % cpu_image.metadata.width,
-                        idx / cpu_image.metadata.width,
-                        ch,
-                        c_pixel[ch],
-                        g_pixel[ch],
-                        diff
-                    );
-                }
-            }
-        }
+    #[test]
+    fn test_generate_test_image_512x512() {
+        let img1 = generate_test_image_512x512(42);
+        assert_eq!(img1.rgb_data.len(), 512 * 512);
+        assert_eq!(img1.raw_data.len(), 512 * 512);
+
+        let img2 = generate_test_image_512x512(42);
+        assert_eq!(img1.rgb_data, img2.rgb_data);
+        assert_eq!(img1.raw_data, img2.raw_data);
+        assert_eq!(img1.metadata, img2.metadata);
     }
 
-    assert!(
-        mismatch_count == 0,
-        "CPU and GPU images differ! Total mismatches: {}",
-        mismatch_count
-    );
+    #[test]
+    fn test_assert_images_equal_pass() {
+        let img1 = generate_test_image_512x512(42);
+        let img2 = img1.clone();
+        assert_images_equal(&img1, &img2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_images_equal_rgb_mismatch() {
+        let img1 = generate_test_image_512x512(42);
+        let mut img2 = img1.clone();
+        img2.rgb_data[0][0] += 0.1;
+        assert_images_equal(&img1, &img2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_images_equal_raw_len_mismatch() {
+        let img1 = generate_test_image_512x512(42);
+        let mut img2 = img1.clone();
+        img2.raw_data.pop();
+        assert_images_equal(&img1, &img2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_images_equal_raw_value_mismatch() {
+        let img1 = generate_test_image_512x512(42);
+        let mut img2 = img1.clone();
+        img2.raw_data[0] += 0.1;
+        assert_images_equal(&img1, &img2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_images_equal_metadata_mismatch() {
+        let img1 = generate_test_image_512x512(42);
+        let mut img2 = img1.clone();
+        img2.metadata.width = 256;
+        assert_images_equal(&img1, &img2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_images_equal_nan_in_rgb() {
+        let img1 = generate_test_image_512x512(42);
+        let mut img2 = img1.clone();
+        img2.rgb_data[0][0] = f32::NAN;
+        assert_images_equal(&img1, &img2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_images_equal_nan_in_raw() {
+        let img1 = generate_test_image_512x512(42);
+        let mut img2 = img1.clone();
+        img2.raw_data[0] = f32::NAN;
+        assert_images_equal(&img1, &img2);
+    }
 }

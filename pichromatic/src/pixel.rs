@@ -19,7 +19,7 @@ pub type Pixel = [SubPixel; CHANNELS_PER_PIXEL];
 
 pub type ImageBuffer = Vec<Pixel>;
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct Image {
     pub rgb_data: ImageBuffer,
     pub raw_data: Vec<SubPixel>,

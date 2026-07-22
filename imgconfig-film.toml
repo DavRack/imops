@@ -34,12 +34,12 @@ ev = 0.0
 name = "CST"
 target_color_space = "AcesCg"
 
-# [[pipeline_modules]]
-# name = "Film"
-# stock = "Portra400"
-# film_format = "Film35mm"
-# seed = 1
-# output = "PositiveLinear"
+[[pipeline_modules]]
+name = "Film"
+stock = "Portra400"
+film_format = "Film35mm"
+seed = 1
+output = "PositiveLinear"
 
 [[pipeline_modules]]
 name = "Exp"

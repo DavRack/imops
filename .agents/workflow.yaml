@@ -1,0 +1,58 @@
+name: feature_development_pipeline
+version: "1.0"
+trigger: "/build-feature"
+max_iterations: 3
+
+scratchpad_dir: ".scratchpad"
+
+steps:
+  - step: 1
+    id: prompt_engineering
+    agent: prompt_engineer
+    role_definition: ".agents/roles/01_prompt_engineer.md"
+    action: "Refine user input and save specification"
+    output_artifact: ".scratchpad/final_spec.md"
+
+  - step: 2
+    id: research
+    agent: researcher
+    role_definition: ".agents/roles/02_researcher.md"
+    action: "Gather API docs and codebase context based on final_spec.md"
+    output_artifact: ".scratchpad/docs_context.md"
+
+  - step: 3
+    id: initial_coding
+    agent: coder
+    role_definition: ".agents/roles/03_coder.md"
+    action: "Write initial feature implementation"
+    inputs:
+      - ".scratchpad/final_spec.md"
+      - ".scratchpad/docs_context.md"
+
+  - step: 4
+    id: parallel_reviews
+    parallel:
+      - agent: qa_reviewer
+        role_definition: ".agents/roles/04_qa_reviewer.md"
+        action: "Audit code correctness and edge cases"
+        output_artifact: ".scratchpad/qa_report.md"
+      - agent: swe_reviewer
+        role_definition: ".agents/roles/05_swe_reviewer.md"
+        action: "Audit code architecture and best practices"
+        output_artifact: ".scratchpad/swe_report.md"
+
+  - step: 5
+    id: integration
+    agent: integrator
+    role_definition: ".agents/roles/06_integrator.md"
+    action: "Apply reviewer suggestions to the codebase"
+    inputs:
+      - ".scratchpad/qa_report.md"
+      - ".scratchpad/swe_report.md"
+
+  - step: 6
+    id: loop_condition
+    condition:
+      check: "If QA or SWE reviewer output contains 'NEEDS_REVISION'"
+      on_true: "Loop back to step 4 (parallel_reviews)"
+      on_false: "Terminate pipeline with SUCCESS status"
