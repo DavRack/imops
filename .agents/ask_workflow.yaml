@@ -1,6 +1,6 @@
 name: codebase_qa_pipeline
 version: "1.0"
-trigger: "/ask"
+trigger: "/askc"
 max_iterations: 2
 
 scratchpad_dir: ".scratchpad"

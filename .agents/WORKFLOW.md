@@ -3,7 +3,7 @@
 ## Overview
 This document defines the execution pipelines, shared artifact handoffs, and feedback loop conditions for multi-agent workflows:
 1. `/build-feature`: Feature Development Pipeline (Specification → Research → Coding → Reviews → Integration).
-2. `/ask`: Codebase Q&A & Deep Research Pipeline (**Strictly Read-Only App Code** → Query Spec → Investigation/Probing → Audit → Final Answer).
+2. `/askc`: Codebase Q&A & Deep Research Pipeline (**Strictly Read-Only App Code** → Query Spec → Investigation/Probing → Audit → Final Answer).
 
 ---
 
