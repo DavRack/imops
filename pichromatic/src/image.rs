@@ -19,6 +19,8 @@ pub struct ImageMetadata {
     pub f_number: Option<f32>,
     /// Capture ISO speed (from EXIF ISOSpeedRatings / ISOSpeed), if known.
     pub iso: Option<f32>,
+    /// Calculated or EXIF Light Value (LV / EV_100), if known.
+    pub light_value: Option<f32>,
     pub opcode_list1: Option<Vec<u8>>,
     pub opcode_list2: Option<Vec<u8>>,
     pub opcode_list3: Option<Vec<u8>>,
@@ -47,5 +49,20 @@ impl ImageMetadata {
         let mut hasher = DefaultHasher::new();
         format!("{:?}", self).hash(&mut hasher);
         return hasher.finish()
+    }
+
+    /// Retrieve or compute EXIF Light Value (LV / EV_100).
+    pub fn get_light_value(&self) -> Option<f32> {
+        if let Some(lv) = self.light_value {
+            Some(lv)
+        } else if let (Some(t), Some(n), Some(iso)) = (self.shutter_seconds, self.f_number, self.iso) {
+            if t > 0.0 && n > 0.0 && iso > 0.0 {
+                Some(crate::film::exposure::radiance::calculate_light_value(t as f64, n as f64, iso as f64) as f32)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 }

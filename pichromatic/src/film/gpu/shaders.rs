@@ -25,7 +25,7 @@ fn reflect_index(i: i32, len: i32) -> i32 {
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let w = u.width;
     let x = i % w;
@@ -61,7 +61,7 @@ fn reflect_index(i: i32, len: i32) -> i32 {
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let w = u.width;
     let h = u.height;
@@ -88,7 +88,7 @@ struct U { width:u32, height:u32, n:u32, num_layers:u32, num_emul:u32, p0:u32, p
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let px = pixels[i];
     let r = px.x; let g = px.y; let b = px.z;
@@ -141,7 +141,7 @@ struct U { n:u32, off:u32, keep:f32, f:f32, p0:u32, p1:u32, p2:u32, p3:u32 };
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     planes[u.off + i] = u.keep * planes[u.off + i] + u.f * blurred[i];
 }
@@ -157,7 +157,7 @@ struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let bv = bounce[i];
     for (var e = 0u; e < u.num_emul; e = e + 1u) {
@@ -192,7 +192,7 @@ fn lut_sample(phi: f32, fbase: u32) -> f32 {
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     for (var e = 0u; e < u.num_emul; e = e + 1u) {
         let idx = e * u.n + i;
@@ -212,7 +212,7 @@ struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
     for (var e = 0u; e < e_count; e = e + 1u) {
@@ -244,7 +244,7 @@ struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
     for (var j = 0u; j < e_count; j = j + 1u) {
@@ -266,7 +266,7 @@ struct U { n:u32, off:u32, beta:f32, p0:u32 };
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let d = dye[u.off + i];
     dye[u.off + i] = d + u.beta * (d - blurred[i]);
@@ -332,7 +332,7 @@ fn splitmix(state: vec2<u32>) -> vec2<u32> {
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let w = u.width;
     let x = i % w;
@@ -360,7 +360,7 @@ struct U { n:u32, off:u32, kappa:f32, dmax:f32, norm:f32, p0:u32, p1:u32, p2:u32
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let d0 = dye[u.off + i];
     let dens = clamp(d0, 0.0, u.dmax);
@@ -384,7 +384,7 @@ struct U { n:u32, num_emul:u32, scale:f32, p0:u32 };
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let E = u.num_emul;
     let eps_base = 0u;
@@ -438,7 +438,7 @@ fn soft_inv(inv: f32, shoulder: f32) -> f32 {
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let dmin = vec3<f32>(ic[0], ic[1], ic[2]);
     let g = vec3<f32>(ic[3], ic[4], ic[5]);

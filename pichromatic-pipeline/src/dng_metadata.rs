@@ -107,50 +107,93 @@ impl<'a> DngMetadataParser<'a> {
             ];
 
             match tag {
-                330 => { // SubIFDs
+                330 | 366 | 50740 => { // SubIFDs / Sony SR2 SubIFD (0x016E) / DNG PrivateData
                     let offsets = self.read_offsets(typ, count, val_offset, &val_bytes);
-                    for sub_offset in offsets {
-                        self.parse_ifd(sub_offset, metadata, visited);
+                    if offsets.is_empty() && val_offset > 0 {
+                        self.parse_ifd(val_offset, metadata, visited);
+                    } else {
+                        for sub_offset in offsets {
+                            self.parse_ifd(sub_offset, metadata, visited);
+                        }
                     }
                 }
                 34665 | 34853 => { // ExifIFD / GPSIFD — follow these linked IFDs
                     self.parse_ifd(val_offset, metadata, visited);
                 }
+                271 => { // Make
+                    if metadata.unique_camera_model.is_none() && typ == 2 {
+                        if let Some(make) = self.read_ascii(count, val_offset, &val_bytes) {
+                            metadata.unique_camera_model = Some(make);
+                        }
+                    }
+                }
+                272 => { // Model
+                    if typ == 2 {
+                        if let Some(model) = self.read_ascii(count, val_offset, &val_bytes) {
+                            if let Some(ref mut existing) = metadata.unique_camera_model {
+                                if !existing.contains(&model) {
+                                    *existing = format!("{existing} {model}");
+                                }
+                            } else {
+                                metadata.unique_camera_model = Some(model);
+                            }
+                        }
+                    }
+                }
                 33434 => { // ExposureTime
-                    if typ == 5 {
-                        if let Some(val) = self.read_urational(val_offset, &val_bytes, count) {
+                    if typ == 5 || typ == 10 {
+                        if let Some(val) = self.read_urational(val_offset, &val_bytes, count).or_else(|| self.read_rational(val_offset)) {
                             metadata.shutter_seconds = Some(val);
                         }
                     }
                 }
+                37377 => { // ShutterSpeedValue (APEX: Apex = -log2(shutter_seconds))
+                    if metadata.shutter_seconds.is_none() && (typ == 5 || typ == 10) {
+                        if let Some(apex) = self.read_rational(val_offset) {
+                            metadata.shutter_seconds = Some(2.0f32.powf(-apex));
+                        }
+                    }
+                }
                 33437 => { // FNumber
-                    if typ == 5 {
-                        if let Some(val) = self.read_urational(val_offset, &val_bytes, count) {
+                    if typ == 5 || typ == 10 {
+                        if let Some(val) = self.read_urational(val_offset, &val_bytes, count).or_else(|| self.read_rational(val_offset)) {
                             metadata.f_number = Some(val);
                         }
                     }
                 }
-                34855 => { // ISOSpeedRatings
-                    if typ == 3 && count >= 1 {
-                        let iso = if self.is_little_endian {
-                            u16::from_le_bytes([val_bytes[0], val_bytes[1]])
-                        } else {
-                            u16::from_be_bytes([val_bytes[0], val_bytes[1]])
-                        };
-                        if iso > 0 {
-                            metadata.iso = Some(iso as f32);
+                37378 => { // ApertureValue (APEX: Apex = 2*log2(f_number))
+                    if metadata.f_number.is_none() && (typ == 5 || typ == 10) {
+                        if let Some(apex) = self.read_rational(val_offset) {
+                            metadata.f_number = Some(2.0f32.powf(apex * 0.5));
                         }
                     }
                 }
-                34867 => { // ISOSpeed
-                    if metadata.iso.is_none() && typ == 4 && count >= 1 {
-                        let iso = if self.is_little_endian {
-                            u32::from_le_bytes([val_bytes[0], val_bytes[1], val_bytes[2], val_bytes[3]])
+                34855 | 34867 | 34866 => { // ISOSpeedRatings / ISOSpeed / RecommendedExposureIndex
+                    if metadata.iso.is_none() && count >= 1 {
+                        let iso_val = if typ == 3 {
+                            if self.is_little_endian {
+                                u16::from_le_bytes([val_bytes[0], val_bytes[1]]) as f32
+                            } else {
+                                u16::from_be_bytes([val_bytes[0], val_bytes[1]]) as f32
+                            }
+                        } else if typ == 4 {
+                            if self.is_little_endian {
+                                u32::from_le_bytes([val_bytes[0], val_bytes[1], val_bytes[2], val_bytes[3]]) as f32
+                            } else {
+                                u32::from_be_bytes([val_bytes[0], val_bytes[1], val_bytes[2], val_bytes[3]]) as f32
+                            }
                         } else {
-                            u32::from_be_bytes([val_bytes[0], val_bytes[1], val_bytes[2], val_bytes[3]])
+                            0.0
                         };
-                        if iso > 0 {
-                            metadata.iso = Some(iso as f32);
+                        if iso_val > 0.0 {
+                            metadata.iso = Some(iso_val);
+                        }
+                    }
+                }
+                37380 => { // ExposureBiasValue (0x9204) — used by Sony ARW and EXIF cameras
+                    if metadata.baseline_exposure.is_none() && (typ == 5 || typ == 10) {
+                        if let Some(val) = self.read_rational(val_offset) {
+                            metadata.baseline_exposure = Some(val);
                         }
                     }
                 }

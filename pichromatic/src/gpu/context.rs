@@ -243,6 +243,134 @@ impl GpuContext {
         out
     }
 
+    /// Helper to compile and dispatch a native 2D compute shader (@workgroup_size(16, 16)).
+    pub fn dispatch_compute_shader_2d(
+        &self,
+        label: &str,
+        wgsl_source: &str,
+        storage_buffer: &GpuImageBuffer,
+        uniform_bytes: &[u8],
+    ) {
+        let gx = (storage_buffer.width as u32 + 15) / 16;
+        let gy = (storage_buffer.height as u32 + 15) / 16;
+        self.dispatch_compute_shader_2d_multi(
+            label,
+            wgsl_source,
+            &[&storage_buffer.buffer],
+            uniform_bytes,
+            gx,
+            gy,
+        );
+    }
+
+    /// Compile and dispatch a 2D compute shader with multiple storage buffers.
+    pub fn dispatch_compute_shader_2d_multi(
+        &self,
+        label: &str,
+        wgsl_source: &str,
+        storage_buffers: &[&wgpu::Buffer],
+        uniform_bytes: &[u8],
+        gx: u32,
+        gy: u32,
+    ) {
+        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(label),
+            source: wgpu::ShaderSource::Wgsl(wgsl_source.into()),
+        });
+
+        let uniform_buffer = if !uniform_bytes.is_empty() {
+            Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("{label} Uniform Buffer")),
+                contents: uniform_bytes,
+                usage: wgpu::BufferUsages::UNIFORM,
+            }))
+        } else {
+            None
+        };
+
+        let mut bind_group_entries = Vec::new();
+        let mut layout_entries = Vec::new();
+
+        for (i, buf) in storage_buffers.iter().enumerate() {
+            let binding = i as u32;
+            layout_entries.push(wgpu::BindGroupLayoutEntry {
+                binding,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            });
+            bind_group_entries.push(wgpu::BindGroupEntry {
+                binding,
+                resource: buf.as_entire_binding(),
+            });
+        }
+
+        if let Some(buf) = &uniform_buffer {
+            let binding = storage_buffers.len() as u32;
+            layout_entries.push(wgpu::BindGroupLayoutEntry {
+                binding,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            });
+            bind_group_entries.push(wgpu::BindGroupEntry {
+                binding,
+                resource: buf.as_entire_binding(),
+            });
+        }
+
+        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some(&format!("{label} Bind Group Layout")),
+            entries: &layout_entries,
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("{label} Bind Group")),
+            layout: &bind_group_layout,
+            entries: &bind_group_entries,
+        });
+
+        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(&format!("{label} Pipeline Layout")),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let compute_pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(&format!("{label} Compute Pipeline")),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some(&format!("{label} Encoder")),
+        });
+
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some(&format!("{label} Compute Pass")),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&compute_pipeline);
+            cpass.set_bind_group(0, &bind_group, &[]);
+            cpass.dispatch_workgroups(gx.max(1), gy.max(1), 1);
+        }
+
+        self.queue.submit(Some(encoder.finish()));
+        self.device.poll(wgpu::Maintain::Wait);
+    }
+
     /// Helper to compile and dispatch a compute shader on a GPU image storage buffer.
     pub fn dispatch_compute_shader(
         &self,
@@ -251,15 +379,7 @@ impl GpuContext {
         storage_buffer: &GpuImageBuffer,
         uniform_bytes: &[u8],
     ) {
-        let num_pixels = (storage_buffer.width * storage_buffer.height) as u32;
-        let workgroups = (num_pixels + 255) / 256;
-        self.dispatch_compute_shader_multi(
-            label,
-            wgsl_source,
-            &[&storage_buffer.buffer],
-            uniform_bytes,
-            workgroups,
-        );
+        self.dispatch_compute_shader_2d(label, wgsl_source, storage_buffer, uniform_bytes);
     }
 
     /// Compile and dispatch a compute shader with multiple storage buffers.
@@ -365,7 +485,10 @@ impl GpuContext {
             });
             cpass.set_pipeline(&compute_pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
-            cpass.dispatch_workgroups(workgroups_x.max(1), 1, 1);
+            let max_x = 65535u32;
+            let gx = workgroups_x.min(max_x).max(1);
+            let gy = (workgroups_x + max_x - 1) / max_x;
+            cpass.dispatch_workgroups(gx, gy, 1);
         }
 
         self.queue.submit(Some(encoder.finish()));

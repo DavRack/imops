@@ -1,7 +1,9 @@
 # Assembly Line Multi-Agent Workflow Orchestration
 
 ## Overview
-This document defines the strict execution pipeline, shared artifact handoffs, and feedback loop conditions for feature development using an Assembly Line architecture.
+This document defines the execution pipelines, shared artifact handoffs, and feedback loop conditions for multi-agent workflows:
+1. `/build-feature`: Feature Development Pipeline (Specification → Research → Coding → Reviews → Integration).
+2. `/ask`: Codebase Q&A & Deep Research Pipeline (**Strictly Read-Only App Code** → Query Spec → Investigation/Probing → Audit → Final Answer).
 
 ---
 
@@ -10,6 +12,9 @@ This document defines the strict execution pipeline, shared artifact handoffs, a
    - Build strictly what the user requested. Agents **MUST NOT** invent arbitrary goals, unrequested feature additions, unstated scope extensions, or artificial constraints/tolerances that were not specified in the user's prompt.
 2. **Clarification Protocol for Ambiguity**:
    - If a requirement, parameter, design decision, or assumption is genuinely necessary to proceed but was **NOT** specified in the user's request, agents **MUST** explicitly ask the user for clarification rather than inventing arbitrary goals or assumptions on their own.
+3. **No Superficial Symptom Patches or Dummy Fallbacks**:
+   - Agents **MUST NOT** insert dummy fallbacks, fake default numbers, or artificial patches (e.g. magic default gains or silent fallback values) just to avoid failing tests or to "not be wrong".
+   - Trace and fix the true upstream data parser/provider or handle missing data cleanly rather than inventing silent fallback values.
 
 ---
 
@@ -85,3 +90,31 @@ User Input ──────► [Step 1: Prompt Engineer]
     - **Trigger**: Complete pipeline with SUCCESS status.
   - Else (max_iterations reached):
     - **Trigger**: Terminate with WARNING (max revision attempts reached).
+
+---
+
+## Codebase Q&A & Research Pipeline (/ask-codebase)
+
+### Trigger
+`"/ask-codebase <question>"`
+
+### Constraint Protocol
+- **STRICT_READ_ONLY_APP_CODE**: Zero modifications to application source files (`pichromatic/`, `pichromatic-pipeline/`, `src/`, etc.).
+- **PROBE_SCRIPTS_ALLOWED**: Agents may create temporary diagnostic scripts in `.scratchpad/scratch/` or run workspace test/benchmark commands to empirically verify behavior.
+
+### Flow Diagram
+```text
+User Question ──► [Step 1: Question Clarifier]
+                         │
+                         ▼ (.scratchpad/qa_query_spec.md)
+                  [Step 2: Codebase Investigator] (Searches, probes, runs diagnostic scripts)
+                         │
+                         ▼ (.scratchpad/qa_investigation.md)
+                  [Step 3: QA Analyst] (Audits completeness & zero app code edits)
+                         │
+                         ▼ (.scratchpad/qa_audit_report.md)
+                  [Step 4: Response Synthesizer]
+                         │
+                         ▼ (.scratchpad/final_answer.md)
+```
+

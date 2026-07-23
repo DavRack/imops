@@ -28,7 +28,7 @@ name = "BaselineExposureCompensation"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 5.0
+ev = 0.0
 
 [[pipeline_modules]]
 name = "CST"

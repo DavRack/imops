@@ -47,6 +47,7 @@ The output must adhere strictly to this structure:
 ## Strict Guidance
 - **Strict Scope & No Invented Goals**: Adhere strictly to `.scratchpad/final_spec.md`. Do NOT introduce arbitrary goals, unrequested feature extensions, or unstated design constraints.
 - **Clarification Protocol**: If essential technical parameters or design choices are genuinely ambiguous or necessary but missing from `.scratchpad/final_spec.md`, flag them explicitly in your report for user clarification rather than assuming arbitrary defaults.
+- **No Dummy Fallbacks**: Do NOT recommend artificial patches or dummy fallback values to cover up missing data; always point out the root cause in the data provider/parser.
 
 ---
 

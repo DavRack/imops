@@ -30,6 +30,20 @@ pub fn absolute_luminance_gain(shutter_seconds: f64, f_number: f64, iso: f64) ->
     relative_to_absolute_luminance(1.0, shutter_seconds, f_number, iso)
 }
 
+/// Compute EXIF Light Value (LV / EV_100) from shutter speed (seconds), f-number, and ISO.
+///
+/// `LV = log2( (N² / t) * (100 / S) )`
+pub fn calculate_light_value(shutter_seconds: f64, f_number: f64, iso: f64) -> f64 {
+    ((f_number * f_number / shutter_seconds) * (100.0 / iso)).log2()
+}
+
+/// Multiplicative scale that converts camera-relative to absolute luminance using Light Value (LV / EV_100).
+///
+/// `gain = 2^(LV - 3.0)` (where K = 12.5)
+pub fn absolute_luminance_gain_from_lv(lv: f64) -> f64 {
+    2.0_f64.powf(lv - 3.0)
+}
+
 /// Film fluence scale from absolute luminance (`Φ ∝ L`; §5.3).
 pub fn film_exposure_scale(l_abs: f64) -> f64 {
     l_abs.max(0.0)
@@ -125,5 +139,17 @@ mod tests {
             "L={l} expected={expected}"
         );
         assert!((film_exposure_scale(l) - l).abs() < 1e-12);
+    }
+
+    #[test]
+    fn light_value_parity_test() {
+        let t = 1.0 / 125.0;
+        let n = 2.8;
+        let iso = 400.0;
+        let gain1 = absolute_luminance_gain(t, n, iso);
+        let lv = calculate_light_value(t, n, iso);
+        let gain2 = absolute_luminance_gain_from_lv(lv);
+        assert!((gain1 - gain2).abs() < 1e-10, "gain1={gain1}, gain2={gain2}, lv={lv}");
+        assert!((gain1 - 30.625).abs() < 1e-10);
     }
 }

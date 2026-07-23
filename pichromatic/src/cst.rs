@@ -174,7 +174,12 @@ pub fn cst_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, source_cs: Col
         r_row: [c0[0], c1[0], c2[0], 0.0],
         g_row: [c0[1], c1[1], c2[1], 0.0],
         b_row: [c0[2], c1[2], c2[2], 0.0],
-        flags: [if is_source_srgb { 1 } else { 0 }, if is_target_srgb { 1 } else { 0 }, 0, 0],
+        flags: [
+            if is_source_srgb { 1 } else { 0 },
+            if is_target_srgb { 1 } else { 0 },
+            storage_buffer.width as u32,
+            storage_buffer.height as u32,
+        ],
     };
 
     let shader_source = r#"
@@ -208,12 +213,14 @@ pub fn cst_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, source_cs: Col
             return select(-encoded, encoded, c >= 0.0);
         }
 
-        @compute @workgroup_size(256)
+        @compute @workgroup_size(16, 16)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let index = global_id.x;
-            if (index >= arrayLength(&pixels)) {
+            let x = global_id.x;
+            let y = global_id.y;
+            if (x >= params.flags.z || y >= params.flags.w) {
                 return;
             }
+            let index = y * params.flags.z + x;
             let p = pixels[index];
             var rgb = p.rgb;
 
@@ -234,7 +241,7 @@ pub fn cst_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, source_cs: Col
         }
     "#;
 
-    ctx.dispatch_compute_shader(
+    ctx.dispatch_compute_shader_2d(
         "cst_full",
         shader_source,
         storage_buffer,

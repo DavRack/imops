@@ -1,0 +1,55 @@
+name: codebase_qa_pipeline
+version: "1.0"
+trigger: "/ask"
+max_iterations: 2
+
+scratchpad_dir: ".scratchpad"
+
+constraints:
+  - "STRICT_READ_ONLY_APP_CODE: No modifications allowed to application source code."
+  - "PROBE_SCRIPTS_ALLOWED: Scratch scripts in .scratchpad/scratch/ or diagnostic execution permitted."
+
+steps:
+  - step: 1
+    id: question_clarification
+    agent: question_clarifier
+    role_definition: ".agents/roles/01_question_clarifier.md"
+    action: "Refine user query into structured research objectives"
+    output_artifact: ".scratchpad/qa_query_spec.md"
+
+  - step: 2
+    id: codebase_investigation
+    agent: codebase_investigator
+    role_definition: ".agents/roles/02_codebase_investigator.md"
+    action: "Search codebase, inspect files, run scratch probes/tests, and document technical findings"
+    inputs:
+      - ".scratchpad/qa_query_spec.md"
+    output_artifact: ".scratchpad/qa_investigation.md"
+
+  - step: 3
+    id: investigation_audit
+    agent: qa_analyst
+    role_definition: ".agents/roles/03_qa_analyst.md"
+    action: "Audit investigation findings for completeness, evidence, and zero application code edits"
+    inputs:
+      - ".scratchpad/qa_query_spec.md"
+      - ".scratchpad/qa_investigation.md"
+    output_artifact: ".scratchpad/qa_audit_report.md"
+
+  - step: 4
+    id: final_answer_synthesis
+    agent: response_synthesizer
+    role_definition: ".agents/roles/04_response_synthesizer.md"
+    action: "Synthesize full response with exact file links and empirical evidence"
+    inputs:
+      - ".scratchpad/qa_query_spec.md"
+      - ".scratchpad/qa_investigation.md"
+      - ".scratchpad/qa_audit_report.md"
+    output_artifact: ".scratchpad/final_answer.md"
+
+  - step: 5
+    id: loop_condition
+    condition:
+      check: "If QA audit output contains 'NEEDS_FURTHER_INVESTIGATION'"
+      on_true: "Loop back to step 2 (codebase_investigation)"
+      on_false: "Terminate pipeline with SUCCESS status"

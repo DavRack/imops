@@ -6,39 +6,14 @@ use super::{Module, ModuleSchema, PipelineModule};
 pub struct BaselineExposureCompensation {
 }
 
+/// Standard film baseline calibration scale factor in EV (+9.643856 EV = log2(800.0)).
+/// Maps camera raw middle-gray (v ≈ 0.18) to calibrated film mid-gray luminance (144.0 cd/m²).
+pub const FILM_BASELINE_SCALE_EV: f32 = 9.643856;
+
 impl PipelineModule for Module<BaselineExposureCompensation> {
     fn process_cpu(&self, image: &mut Image) {
-        use pichromatic::film::exposure::radiance::absolute_luminance_gain;
-        use pichromatic::pixel::MIDDLE_GRAY;
-        use rayon::prelude::*;
-
-        // 1) DNG BaselineExposure EV (relative scale).
-        let ev = image.metadata.baseline_exposure.unwrap_or(0.0);
-        if ev.abs() > 1e-6 {
-            image.exp(ev);
-        }
-
-        // 2) Camera-relative → absolute luminance via reflected-light meter equation:
-        //    L = K * v * N² / (t * S)
-        // Requires shutter / f-number / ISO from EXIF (filled by DNG metadata parse).
-        let t = image.metadata.shutter_seconds;
-        let n = image.metadata.f_number;
-        let s = image.metadata.iso;
-        match (t, n, s) {
-            (Some(t), Some(n), Some(iso)) if t > 0.0 && n > 0.0 && iso > 0.0 => {
-                let gain = absolute_luminance_gain(t as f64, n as f64, iso as f64) as f32;
-                image.rgb_data.par_iter_mut().for_each(|px| {
-                    *px = px.map(|c| c * gain);
-                });
-                let _ = MIDDLE_GRAY;
-            }
-            _ => {
-                eprintln!(
-                    "BaselineExposureCompensation: missing shutter/f-number/ISO; \
-                     skipping absolute luminance conversion"
-                );
-            }
-        }
+        let total_ev = image.metadata.baseline_exposure.unwrap_or(0.0) + FILM_BASELINE_SCALE_EV;
+        image.exp(total_ev);
     }
 
     fn process_gpu(
@@ -47,30 +22,14 @@ impl PipelineModule for Module<BaselineExposureCompensation> {
         gpu_buf: &pichromatic::gpu::GpuImageBuffer,
         meta: &mut pichromatic::image::ImageMetadata,
     ) {
-        use pichromatic::film::exposure::radiance::absolute_luminance_gain;
-
-        let ev = meta.baseline_exposure.unwrap_or(0.0);
-        let t = meta.shutter_seconds;
-        let n = meta.f_number;
-        let s = meta.iso;
-
-        let gain = match (t, n, s) {
-            (Some(t), Some(n), Some(iso)) if t > 0.0 && n > 0.0 && iso > 0.0 => {
-                absolute_luminance_gain(t as f64, n as f64, iso as f64) as f32
-            }
-            _ => 1.0,
-        };
-
-        let total_ev = ev + gain.log2();
-        if total_ev.abs() > 1e-6 {
-            pichromatic::exp::exp_gpu(ctx, gpu_buf, total_ev);
-        }
+        let total_ev = meta.baseline_exposure.unwrap_or(0.0) + FILM_BASELINE_SCALE_EV;
+        pichromatic::exp::exp_gpu(ctx, gpu_buf, total_ev);
     }
 
     fn schema(&self) -> ModuleSchema {
         ModuleSchema {
             name: "BaselineExposureCompensation".to_string(),
-            description: "Apply DNG BaselineExposure EV, then convert camera-relative linear values to absolute luminance using EXIF shutter/f-number/ISO (L = K·v·N²/(t·S)).".to_string(),
+            description: "Apply DNG BaselineExposure EV compensation plus film baseline calibration scale factor (+9.64 EV).".to_string(),
             fields: vec![],
         }
     }

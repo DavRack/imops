@@ -194,16 +194,14 @@ pub fn apply_vignette_radial_correction_gpu(
                     @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
                     @group(0) @binding(1) var<uniform> params: Params;
 
-                    @compute @workgroup_size(256)
+                    @compute @workgroup_size(16, 16)
                     fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-                        let index = global_id.x;
-                        let total_pixels = params.width * params.height;
-                        if (index >= total_pixels) {
+                        let px = f32(global_id.x);
+                        let py = f32(global_id.y);
+                        if (global_id.x >= params.width || global_id.y >= params.height) {
                             return;
                         }
-
-                        let py = f32(index / params.width);
-                        let px = f32(index % params.width);
+                        let index = global_id.y * params.width + global_id.x;
 
                         let w_f32 = f32(params.width - 1u);
                         let h_f32 = f32(params.height - 1u);
@@ -230,7 +228,7 @@ pub fn apply_vignette_radial_correction_gpu(
                     }
                 "#;
 
-                ctx.dispatch_compute_shader(
+                ctx.dispatch_compute_shader_2d(
                     "vignette",
                     shader_source,
                     storage_buffer,

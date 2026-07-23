@@ -57,6 +57,9 @@ The output must adhere strictly to this structure:
 2. **Clarification Protocol for Ambiguity**:
    - If a parameter, design choice, or requirement is genuinely necessary for implementation but was **NOT** specified in the user's prompt, ask the user for explicit clarification rather than inventing arbitrary goals or assumptions on your own.
    - If the user's request is clear and sufficient, follow it directly without adding unrequested parameters or features.
+3. **No Superficial Symptom Patches or Dummy Fallbacks**:
+   - **DO NOT** specify dummy fallbacks, fake default numbers, or artificial patches (e.g. magic default gains or silent fallback values) just to avoid failing tests or to "not be wrong".
+   - Require real upstream parser fixes or clean error handling rather than silent fallback defaults.
 
 ---
 

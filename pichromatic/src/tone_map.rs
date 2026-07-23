@@ -49,6 +49,9 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         from_lin_r: [f32; 4],
         from_lin_g: [f32; 4],
         from_lin_b: [f32; 4],
+        width: u32,
+        height: u32,
+        _pad: [u32; 2],
     }
 
     let params = SigmoidParamsGpu {
@@ -58,6 +61,9 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         from_lin_r: [from0[0], from1[0], from2[0], 0.0],
         from_lin_g: [from0[1], from1[1], from2[1], 0.0],
         from_lin_b: [from0[2], from1[2], from2[2], 0.0],
+        width: storage_buffer.width as u32,
+        height: storage_buffer.height as u32,
+        _pad: [0; 2],
     };
 
     let shader_source = r#"
@@ -68,6 +74,10 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
             from_lin_r: vec4<f32>,
             from_lin_g: vec4<f32>,
             from_lin_b: vec4<f32>,
+            width: u32,
+            height: u32,
+            _pad0: u32,
+            _pad1: u32,
         };
 
         @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
@@ -128,7 +138,7 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         fn oklab_to_oklch(lab: vec3<f32>) -> vec3<f32> {
             var h = degrees(atan2(lab.z, lab.y));
             if (h < 0.0) {
-                h += 360.0;
+                h = h + 360.0;
             }
             let c = length(lab.yz);
             return vec3<f32>(lab.x, c, h);
@@ -183,7 +193,7 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
             let s = (lim - thr) / pow(denom_inner, 1.0 / POWER);
             let dist_norm = (dist - thr) / s;
             let denominator = pow(1.0 + pow(dist_norm, POWER), 1.0 / POWER);
-            return thr + s * (dist_norm / denominator);
+            return thr + s * dist_norm / denominator;
         }
 
         fn gamut_compress(rgb: vec3<f32>) -> vec3<f32> {
@@ -205,12 +215,14 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
             return LUMA_R * rgb.r + LUMA_G * rgb.g + LUMA_B * rgb.b;
         }
 
-        @compute @workgroup_size(256)
+        @compute @workgroup_size(16, 16)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let index = global_id.x;
-            if (index >= arrayLength(&pixels)) {
+            let x = global_id.x;
+            let y = global_id.y;
+            if (x >= params.width || y >= params.height) {
                 return;
             }
+            let index = y * params.width + x;
             let alpha = pixels[index].a;
             let gc = gamut_compress(pixels[index].rgb);
             let h = acescg_to_oklch(gc).z;
@@ -227,7 +239,7 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         }
     "#;
 
-    ctx.dispatch_compute_shader(
+    ctx.dispatch_compute_shader_2d(
         "sigmoid",
         shader_source,
         storage_buffer,
@@ -254,21 +266,41 @@ pub fn gamma_encode(image_buffer: &mut ImageBuffer, gamma: f32) {
 }
 
 pub fn gamma_encode_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, gamma: f32) {
-    let inv = 1.0 / gamma.max(1e-6);
+    #[repr(C)]
+    #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+    struct GammaParamsGpu {
+        inv_gamma: f32,
+        width: u32,
+        height: u32,
+        _pad: u32,
+    }
+
+    let params = GammaParamsGpu {
+        inv_gamma: 1.0 / gamma.max(1e-6),
+        width: storage_buffer.width as u32,
+        height: storage_buffer.height as u32,
+        _pad: 0,
+    };
+
     let shader_source = r#"
         struct Params {
             inv_gamma: f32,
+            width: u32,
+            height: u32,
+            _pad: u32,
         };
 
         @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
         @group(0) @binding(1) var<uniform> params: Params;
 
-        @compute @workgroup_size(256)
+        @compute @workgroup_size(16, 16)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let index = global_id.x;
-            if (index >= arrayLength(&pixels)) {
+            let x = global_id.x;
+            let y = global_id.y;
+            if (x >= params.width || y >= params.height) {
                 return;
             }
+            let index = y * params.width + x;
             let p = pixels[index];
             let r = select(pow(max(p.r, 0.0), params.inv_gamma), 0.0, p.r <= 0.0);
             let g = select(pow(max(p.g, 0.0), params.inv_gamma), 0.0, p.g <= 0.0);
@@ -277,7 +309,7 @@ pub fn gamma_encode_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, gamma
         }
     "#;
 
-    ctx.dispatch_compute_shader("gamma_encode", shader_source, storage_buffer, bytemuck::bytes_of(&inv));
+    ctx.dispatch_compute_shader_2d("gamma_encode", shader_source, storage_buffer, bytemuck::bytes_of(&params));
 }
 
 /// Configuration parameters for the Reference Gamut Compression.

@@ -17,7 +17,9 @@ let [_, clip_g, _, _] = wb_coeffs;
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct HighlightReconstructionParamsGpu {
     clip_g: f32,
-    _pad: [f32; 3],
+    width: u32,
+    height: u32,
+    _pad: u32,
 }
 
 pub fn highlight_reconstruction_gpu(
@@ -27,25 +29,29 @@ pub fn highlight_reconstruction_gpu(
 ) {
     let params = HighlightReconstructionParamsGpu {
         clip_g: wb_coeffs[1],
-        _pad: [0.0; 3],
+        width: storage_buffer.width as u32,
+        height: storage_buffer.height as u32,
+        _pad: 0,
     };
     let shader_source = r#"
         struct Params {
             clip_g: f32,
-            _pad0: f32,
-            _pad1: f32,
-            _pad2: f32,
+            width: u32,
+            height: u32,
+            _pad2: u32,
         };
 
         @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
         @group(0) @binding(1) var<uniform> params: Params;
 
-        @compute @workgroup_size(256)
+        @compute @workgroup_size(16, 16)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let index = global_id.x;
-            if (index >= arrayLength(&pixels)) {
+            let x = global_id.x;
+            let y = global_id.y;
+            if (x >= params.width || y >= params.height) {
                 return;
             }
+            let index = y * params.width + x;
             let p = pixels[index];
             let factor = p.g / params.clip_g;
             let reconstructed_g = ((1.0 - factor) * p.g) + (factor * (p.r + p.b) * 0.5);
@@ -53,7 +59,7 @@ pub fn highlight_reconstruction_gpu(
         }
     "#;
 
-    ctx.dispatch_compute_shader(
+    ctx.dispatch_compute_shader_2d(
         "highlight_reconstruction",
         shader_source,
         storage_buffer,

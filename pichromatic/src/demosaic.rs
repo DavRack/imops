@@ -1449,7 +1449,7 @@ pub fn demosaic_markesteijn_gpu(
 
         @compute @workgroup_size(256)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let index = global_id.x;
+            let index = global_id.x + global_id.y * 16776960u;
             let n = params.width * params.height;
             if (index >= n) {
                 return;

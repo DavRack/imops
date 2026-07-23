@@ -288,6 +288,7 @@ pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
         shutter_seconds: None,
         f_number: None,
         iso: None,
+        light_value: None,
         opcode_list1: None,
         opcode_list2: None,
         opcode_list3: None,

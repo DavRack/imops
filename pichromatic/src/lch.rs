@@ -64,7 +64,12 @@ pub fn lch_gpu(
         from_lin_g: [from0[1], from1[1], from2[1], 0.0],
         from_lin_b: [from0[2], from1[2], from2[2], 0.0],
         coeffs: [l_coef, c_coef, h_coef, 0.0],
-        flags: [if is_srgb { 1 } else { 0 }, 0, 0, 0],
+        flags: [
+            if is_srgb { 1 } else { 0 },
+            0,
+            storage_buffer.width as u32,
+            storage_buffer.height as u32,
+        ],
     };
 
     // Oklab matrices from color-0.3.x (Björn Ottosson), precision reduced to f32.
@@ -155,7 +160,6 @@ pub fn lch_gpu(
             return vec3<f32>(lab.x, c, h);
         }
 
-        // Oklch [L,C,h°] → Oklab [L,a,b]
         fn oklch_to_oklab(lch: vec3<f32>) -> vec3<f32> {
             let h_rad = radians(lch.z);
             let a = lch.y * cos(h_rad);
@@ -163,8 +167,8 @@ pub fn lch_gpu(
             return vec3<f32>(lch.x, a, b);
         }
 
-        fn source_to_linear_srgb(rgb: vec3<f32>) -> vec3<f32> {
-            var v = rgb;
+        fn source_to_linear_srgb(src: vec3<f32>) -> vec3<f32> {
+            var v = src;
             if (params.flags.x == 1u) {
                 v = vec3<f32>(srgb_eotf(v.x), srgb_eotf(v.y), srgb_eotf(v.z));
             }
@@ -189,12 +193,14 @@ pub fn lch_gpu(
             return v;
         }
 
-        @compute @workgroup_size(256)
+        @compute @workgroup_size(16, 16)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let index = global_id.x;
-            if (index >= arrayLength(&pixels)) {
+            let x = global_id.x;
+            let y = global_id.y;
+            if (x >= params.flags.z || y >= params.flags.w) {
                 return;
             }
+            let index = y * params.flags.z + x;
             let p = pixels[index];
             let lin = source_to_linear_srgb(p.rgb);
             let lab = linear_srgb_to_oklab(lin);
@@ -211,7 +217,7 @@ pub fn lch_gpu(
         }
     "#;
 
-    ctx.dispatch_compute_shader(
+    ctx.dispatch_compute_shader_2d(
         "lch",
         shader_source,
         storage_buffer,
