@@ -36,6 +36,18 @@ impl PipelineImage {
         }
     }
 
+    pub async fn to_cpu_async(&self, ctx: Option<&GpuContext>) -> Image {
+        match self {
+            Self::Cpu(img) => img.clone(),
+            Self::Gpu(buf, meta, raw_data) => {
+                let context = ctx.expect("GpuContext required to download GpuImage");
+                let mut img = context.download_image_async(buf, meta).await;
+                img.raw_data = raw_data.clone();
+                img
+            }
+        }
+    }
+
     pub fn ensure_gpu(&mut self, ctx: &GpuContext) -> (&GpuImageBuffer, &mut ImageMetadata) {
         match self {
             Self::Gpu(buf, meta, _raw_data) => (buf, meta),

@@ -5,6 +5,7 @@ use crate::backend::{Backend, PipelineImage};
 use super::{fields_from_config, DemosaicAlgorithmType, Module, ModuleSchema, Parameter, PipelineModule};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct Demosaic {
     pub algorithm: Parameter<DemosaicAlgorithmType>,
 }
@@ -22,6 +23,16 @@ impl Default for Demosaic {
 }
 
 impl PipelineModule for Module<Demosaic> {
+    fn process_async<'a>(
+        &'a self,
+        backend: &'a Backend,
+        image: &'a mut PipelineImage,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(async move {
+            self.process(backend, image);
+        })
+    }
+
     fn process(&self, backend: &Backend, image: &mut PipelineImage) {
         match backend {
             Backend::Cpu => {
@@ -122,8 +133,8 @@ impl PipelineModule for Module<Demosaic> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: Demosaic = module.try_into().expect("Invalid Demosaic config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: Demosaic = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid Demosaic config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

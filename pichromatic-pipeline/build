@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 echo "=== Building for WASM ==="
 cargo build --target=wasm32-unknown-unknown --release
-~/.cargo/bin/wasm-bindgen --target web --out-dir pichromatic-pipeline ./target/wasm32-unknown-unknown/release/pichromatic_pipeline.wasm
+~/.cargo/bin/wasm-bindgen --target web --out-dir pichromatic-pipeline ../target/wasm32-unknown-unknown/release/pichromatic_pipeline.wasm
 
 if [ -d ~/programs/pichromatic-web/src/ ]; then
   echo "Copying WASM build to pichromatic-web..."
@@ -20,11 +20,11 @@ echo "=== Building for iOS (Device Only) ==="
 cargo build --target=aarch64-apple-ios --release
 
 # Force static linking by removing dynamic libraries from target directories
-rm -f ./target/aarch64-apple-ios/release/libpichromatic_pipeline.dylib
+rm -f ../target/aarch64-apple-ios/release/libpichromatic_pipeline.dylib
 
 if [ -d ../../iosRawManualCameraApp/iosManualRawCamera/ ]; then
   echo "Copying static library to iosRawManualCameraApp..."
-  cp ./target/aarch64-apple-ios/release/libpichromatic_pipeline.a ../../iosRawManualCameraApp/iosManualRawCamera/
+  cp ../target/aarch64-apple-ios/release/libpichromatic_pipeline.a ../../iosRawManualCameraApp/iosManualRawCamera/
 else
   echo "Warning: iosRawManualCameraApp directory not found, skipped copy."
 fi

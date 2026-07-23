@@ -74,21 +74,24 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Parameter<T> {
     where
         D: serde::Deserializer<'de>,
     {
-        let v = serde_json::Value::deserialize(deserializer)?;
-        match v {
+        let json_val = serde_json::Value::deserialize(deserializer)?;
+        match json_val {
             serde_json::Value::Object(mut map) => {
-                let value_json = map.remove("value")
-                    .ok_or_else(|| serde::de::Error::missing_field("value"))?;
-                let value = T::deserialize(value_json).map_err(serde::de::Error::custom)?;
-                let description = match map.remove("description") {
-                    Some(serde_json::Value::String(s)) => Box::leak(s.into_boxed_str()),
-                    _ => "",
-                };
-                let choices = match map.remove("choices") {
-                    Some(val) => serde_json::from_value(val).ok(),
-                    None => None,
-                };
-                Ok(Self { value, description, choices })
+                if let Some(val_json) = map.remove("value") {
+                    let value = T::deserialize(val_json).map_err(serde::de::Error::custom)?;
+                    let description = match map.remove("description") {
+                        Some(serde_json::Value::String(s)) => Box::leak(s.into_boxed_str()),
+                        _ => "",
+                    };
+                    let choices = match map.remove("choices") {
+                        Some(val) => serde_json::from_value(val).ok(),
+                        None => None,
+                    };
+                    Ok(Self { value, description, choices })
+                } else {
+                    let value = T::deserialize(serde_json::Value::Object(map)).map_err(serde::de::Error::custom)?;
+                    Ok(Self { value, description: "", choices: None })
+                }
             }
             primitive => {
                 let value = T::deserialize(primitive).map_err(serde::de::Error::custom)?;
@@ -181,7 +184,10 @@ pub struct FieldSchema {
 }
 
 pub fn fields_from_config<C: Serialize>(config: &C) -> Vec<FieldSchema> {
-    let val = serde_json::to_value(config).unwrap();
+    let val = match serde_json::to_value(config) {
+        Ok(v) => v,
+        Err(e) => panic!("fields_from_config to_value failed: {}", e),
+    };
     let mut fields = Vec::new();
 
     if let serde_json::Value::Object(map) = val {
@@ -238,6 +244,25 @@ pub trait PipelineModule {
         }
     }
 
+    fn process_async<'a>(
+        &'a self,
+        backend: &'a crate::backend::Backend,
+        image: &'a mut crate::backend::PipelineImage,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(async move {
+            match backend {
+                crate::backend::Backend::Cpu => {
+                    let cpu_img = image.ensure_cpu(None);
+                    self.process_cpu(cpu_img);
+                }
+                crate::backend::Backend::Wgpu(ctx) => {
+                    let (gpu_buf, meta) = image.ensure_gpu(ctx);
+                    self.process_gpu_async(ctx, gpu_buf, meta).await;
+                }
+            }
+        })
+    }
+
     fn process_cpu(&self, image: &mut Image);
 
     /// Native GPU implementation. Must not download and run CPU.
@@ -255,9 +280,24 @@ pub trait PipelineModule {
         );
     }
 
+    fn process_gpu_async<'a>(
+        &'a self,
+        ctx: &'a pichromatic::gpu::GpuContext,
+        gpu_buf: &'a pichromatic::gpu::GpuImageBuffer,
+        meta: &'a mut pichromatic::image::ImageMetadata,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(async move {
+            self.process_gpu(ctx, gpu_buf, meta);
+        })
+    }
+
+    fn name(&self) -> String {
+        self.schema().name
+    }
+
     fn schema(&self) -> ModuleSchema;
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule>;
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule>;
 }
 
 pub struct Module<T: Debug> {
@@ -268,8 +308,10 @@ pub struct Module<T: Debug> {
 
 impl<T: Default + Debug> Default for Module<T> {
     fn default() -> Self {
+        let full_type_name = std::any::type_name::<T>();
+        let name = full_type_name.split("::").last().unwrap_or(full_type_name).to_string();
         Self {
-            name: std::any::type_name::<T>().split("::").last().unwrap().to_string(),
+            name,
             cache: None,
             config: T::default(),
         }

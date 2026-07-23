@@ -3,6 +3,7 @@ use pichromatic::pixel::{Image, SubPixel};
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct Contrast {
     pub c: Parameter<SubPixel>,
 }
@@ -37,8 +38,8 @@ impl PipelineModule for Module<Contrast> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: Contrast = module.try_into().expect("Invalid Contrast config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: Contrast = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid Contrast config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

@@ -4,6 +4,7 @@ use pichromatic::pixel::Image;
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule, SUPPORTED_COLOR_SPACES};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct CST {
     pub target_color_space: Parameter<String>,
 }
@@ -73,8 +74,8 @@ impl PipelineModule for Module<CST> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: CST = module.try_into().expect("Invalid CST config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: CST = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid CST config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

@@ -3,6 +3,7 @@ use pichromatic::pixel::Image;
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct Vignette {
     pub strength: Parameter<f32>,
 }
@@ -52,8 +53,8 @@ impl PipelineModule for Module<Vignette> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: Vignette = module.try_into().expect("Invalid Vignette config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: Vignette = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid Vignette config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

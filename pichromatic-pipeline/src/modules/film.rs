@@ -3,6 +3,7 @@ use pichromatic::pixel::Image;
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct Film {
     pub stock: Parameter<String>,
     pub film_format: Parameter<String>,
@@ -130,8 +131,56 @@ impl PipelineModule for Module<Film> {
             output,
         };
 
-        pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params)
+        pollster::block_on(pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params))
             .expect("GPU film process failed");
+    }
+
+    fn process_gpu_async<'a>(
+        &'a self,
+        ctx: &'a pichromatic::gpu::GpuContext,
+        gpu_buf: &'a pichromatic::gpu::GpuImageBuffer,
+        meta: &'a mut pichromatic::image::ImageMetadata,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(async move {
+            use pichromatic::cst::ColorSpaceTag;
+            use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
+
+            if !matches!(meta.color_space, Some(ColorSpaceTag::AcesCg)) {
+                return;
+            }
+
+            let stock = match self.config.stock.value.as_str() {
+                "BwStub" => StockId::BwStub,
+                "ColorNeg200" => StockId::ColorNeg200,
+                "Portra400" => StockId::Portra400,
+                "Ektar100" => StockId::Ektar100,
+                "FujiPro400H" => StockId::FujiPro400H,
+                "EktachromeE100" => StockId::EktachromeE100,
+                "TriX400" => StockId::TriX400,
+                other => panic!("Unknown film stock: {other}"),
+            };
+            let film_format = match self.config.film_format.value.as_str() {
+                "Film35mm" => FilmFormat::Film35mm,
+                "Film6x6" => FilmFormat::Film6x6,
+                "Film4x5" => FilmFormat::Film4x5,
+                other => panic!("Unknown film format: {other}"),
+            };
+            let output = match self.config.output.value.as_str() {
+                "NegativeLinear" => FilmOutput::NegativeLinear,
+                "PositiveLinear" => FilmOutput::PositiveLinear,
+                other => panic!("Unknown film output: {other}"),
+            };
+
+            let params = FilmParams {
+                stock,
+                film_format,
+                seed: self.config.seed.value,
+                output,
+            };
+
+            pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params).await
+                .expect("GPU film process failed");
+        })
     }
 
     fn schema(&self) -> ModuleSchema {
@@ -142,8 +191,8 @@ impl PipelineModule for Module<Film> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: Film = module.try_into().expect("Invalid Film config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: Film = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid Film config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,
@@ -182,5 +231,12 @@ mod tests {
         let gpu_out = gpu_img.to_cpu(Some(&ctx));
 
         assert_images_equal(&cpu_out, &gpu_out);
+    }
+
+    #[test]
+    fn test_film_deserialization() {
+        let json_str = r#"{"stock": "Portra400", "film_format": "Film35mm", "seed": 1, "output": "PositiveLinear"}"#;
+        let map: toml::Table = serde_json::from_str(json_str).unwrap();
+        let _film: Film = map.try_into().unwrap();
     }
 }

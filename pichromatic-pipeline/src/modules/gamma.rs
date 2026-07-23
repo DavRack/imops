@@ -4,6 +4,7 @@ use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule}
 
 /// Power-law display encode (sRGB ≈ γ 2.2, BT.1886 = γ 2.4).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct Gamma {
     pub gamma: Parameter<SubPixel>,
 }
@@ -38,8 +39,8 @@ impl PipelineModule for Module<Gamma> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: Gamma = module.try_into().expect("Invalid Gamma config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: Gamma = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid Gamma config");
         Box::new(Module::<Gamma> {
             name: self.schema().name,
             cache: None,

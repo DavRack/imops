@@ -55,8 +55,8 @@ impl PipelineModule for Module<LCH> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: LCH = module.try_into().expect("Invalid LCH config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: LCH = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid LCH config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

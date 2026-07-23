@@ -3,6 +3,7 @@ use pichromatic::pixel::Image;
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct LumaGuidedChromaDenoise {
     pub radius: Parameter<usize>,
     pub epsilon: Parameter<f32>,
@@ -44,8 +45,8 @@ impl PipelineModule for Module<LumaGuidedChromaDenoise> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: LumaGuidedChromaDenoise = module.try_into().expect("Invalid LumaGuidedChromaDenoise config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: LumaGuidedChromaDenoise = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid LumaGuidedChromaDenoise config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

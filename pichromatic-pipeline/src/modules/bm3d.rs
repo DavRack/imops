@@ -41,8 +41,8 @@ impl PipelineModule for Module<BM3D> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: BM3D = module.try_into().expect("Invalid BM3D config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: BM3D = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid BM3D config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

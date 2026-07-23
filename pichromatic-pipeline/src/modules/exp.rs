@@ -3,6 +3,7 @@ use pichromatic::pixel::{Image, SubPixel};
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct Exp {
     pub ev: Parameter<SubPixel>,
 }
@@ -37,8 +38,8 @@ impl PipelineModule for Module<Exp> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: Exp = module.try_into().expect("Invalid Exp config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: Exp = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid Exp config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

@@ -996,6 +996,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1594,6 +1604,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "futures-channel"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07bbe89c50d7a535e539b8c17bc0b49bdb77747034daa8087407d655f3f7cc1d"
+dependencies = [
+ "futures-core",
 ]
 
 [[package]]
@@ -3201,6 +3220,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "color",
+ "futures-channel",
  "getrandom 0.2.17",
  "pollster",
  "rand",
@@ -3209,6 +3229,7 @@ dependencies = [
  "serde",
  "serde_with",
  "wasm-bindgen-futures",
+ "web-sys",
  "wgpu 23.0.1",
 ]
 
@@ -3216,6 +3237,7 @@ dependencies = [
 name = "pichromatic-pipeline"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "getrandom 0.2.17",
  "pichromatic",
  "pollster",
@@ -3230,6 +3252,7 @@ dependencies = [
  "uuid",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

@@ -41,8 +41,8 @@ impl PipelineModule for Module<ChromaDenoise> {
         }
     }
 
-    fn create(&self, module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
-        let config: ChromaDenoise = module.try_into().expect("Invalid ChromaDenoise config");
+    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
+        let config: ChromaDenoise = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid ChromaDenoise config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,

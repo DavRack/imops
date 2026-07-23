@@ -27,7 +27,7 @@ impl PipelineModule for Module<SigmoidToneMap> {
         }
     }
 
-    fn create(&self, _module: toml::map::Map<String, toml::Value>) -> Box<dyn PipelineModule> {
+    fn create(&self, _module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
         Box::new(Module::<SigmoidToneMap> {
             name: self.schema().name,
             cache: None,

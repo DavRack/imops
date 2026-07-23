@@ -598,7 +598,7 @@ fn blur_plane(
 
 /// GPU partial sum-of-squares over all active emulsions → one tiny download →
 /// per-emulsion f64 variance norms. Single sync for the whole grain stage.
-fn grain_variance_norms(
+async fn grain_variance_norms(
     ctx: &GpuContext,
     src: &Buffer,
     partial: &Buffer,
@@ -642,7 +642,7 @@ fn grain_variance_norms(
         .collect();
     ctx.dispatch_compute_passes("film_grain_var", &passes);
 
-    let parts = ctx.download_f32(partial, active.len() * out_n as usize);
+    let parts = ctx.download_f32_async(partial, active.len() * out_n as usize).await;
     let mut norms = Vec::with_capacity(active.len());
     for (i, &(plane_e, _)) in active.iter().enumerate() {
         let start = i * out_n as usize;
@@ -660,7 +660,7 @@ fn grain_variance_norms(
 }
 
 /// Full GPU film simulation, mirroring [`crate::film::process`].
-pub fn process_gpu(
+pub async fn process_gpu(
     ctx: &GpuContext,
     gpu_buf: &GpuImageBuffer,
     meta: &crate::image::ImageMetadata,
@@ -1029,7 +1029,7 @@ pub fn process_gpu(
             active.push((plane_e, dst_off));
         }
 
-        let norms = grain_variance_norms(ctx, &work, &var_partial, n, &active);
+        let norms = grain_variance_norms(ctx, &work, &var_partial, n, &active).await;
         for &(plane_e, norm) in &norms {
             let gu = GrainApplyU {
                 n: n as u32,

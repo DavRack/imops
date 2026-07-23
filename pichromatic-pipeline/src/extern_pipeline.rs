@@ -6,10 +6,8 @@ use crate::{config::{self, PipelineConfig}, pipeline::run_pixel_pipeline};
 
 #[wasm_bindgen]
 extern "C" {
-    // Use `js_namespace` here to bind `console.log(..)` instead of just
-    // `log(..)`
     #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
+    pub fn web_log(s: &str);
 }
 
 use std::sync::OnceLock;
@@ -91,33 +89,64 @@ pub fn get_image_metadata(image: *const Image) -> String {
 
 #[wasm_bindgen]
 pub fn get_raw_img_js(file_bytes: Vec<u8>) -> *const Image {
+    console_error_panic_hook::set_once();
     let img = get_raw_img_internal(&file_bytes);
     return Box::leak(Box::new(img))
 }
 
 #[wasm_bindgen]
 pub fn get_pixel_pipeline(pixel_pipeline_config: String) -> *const PipelineConfig {
+    console_error_panic_hook::set_once();
     let pipeline = config::parse_config(pixel_pipeline_config);
-    let pipeline = Box::leak(Box::new(pipeline));
-    return pipeline
+    Box::leak(Box::new(pipeline))
 }
 
+
+
 use crate::backend::Backend;
-use crate::pipeline::run_pixel_pipeline_with_backend;
+use crate::pipeline::{run_pixel_pipeline_with_backend, run_pixel_pipeline_with_backend_async};
 
 #[wasm_bindgen]
-pub async fn run_pixel_pipeline_js(image: *mut Image, pixel_pipeline: *mut PipelineConfig) -> *const Image {
-    let mut image_obj = unsafe { &mut *image };
-    let mut pipeline_obj = unsafe { &mut *pixel_pipeline };
+pub async fn init_gpu_js() -> bool {
+    console_error_panic_hook::set_once();
+    pichromatic::gpu::GpuContext::global().await.is_some()
+}
 
-    if let Some(gpu_ctx) = pichromatic::gpu::GpuContext::global().await {
-        let backend = Backend::Wgpu(gpu_ctx);
-        run_pixel_pipeline_with_backend(&mut image_obj, &mut pipeline_obj, &backend);
-    } else {
-        run_pixel_pipeline_with_backend(&mut image_obj, &mut pipeline_obj, &Backend::Cpu);
-    }
+#[wasm_bindgen]
+pub fn run_pixel_pipeline_js(image: *const Image, pixel_pipeline: *mut PipelineConfig) -> *const Image {
+    console_error_panic_hook::set_once();
+    let image_obj = unsafe { &*image };
+    let pipeline_obj = unsafe { &mut *pixel_pipeline };
 
-    image
+    let mut work_image = image_obj.clone();
+
+    web_sys::console::log_1(&"[Pichromatic WASM] Executing pipeline on CPU backend ⚙️".into());
+    run_pixel_pipeline_with_backend(&mut work_image, pipeline_obj, &Backend::Cpu);
+
+    Box::leak(Box::new(work_image))
+}
+
+#[wasm_bindgen]
+pub async fn run_pixel_pipeline_async_js(image: *const Image, pixel_pipeline: *mut PipelineConfig) -> *const Image {
+    console_error_panic_hook::set_once();
+    let image_obj = unsafe { &*image };
+    let pipeline_obj = unsafe { &mut *pixel_pipeline };
+
+    let mut work_image = image_obj.clone();
+
+    let gpu_ctx = match pichromatic::gpu::GpuContext::global().await {
+        Some(ctx) => ctx,
+        None => {
+            web_sys::console::error_1(&"[Pichromatic WASM Error] Failed to acquire WebGPU GpuContext".into());
+            panic!("Failed to acquire WebGPU GpuContext");
+        }
+    };
+
+    web_sys::console::log_1(&"[Pichromatic WASM] Executing pipeline on WebGPU backend 🚀".into());
+    let backend = Backend::Wgpu(gpu_ctx);
+    run_pixel_pipeline_with_backend_async(&mut work_image, pipeline_obj, &backend).await;
+
+    Box::leak(Box::new(work_image))
 }
 
 #[no_mangle]
@@ -408,6 +437,7 @@ pub extern "C" fn get_image_rgb_data_c(
 }
 
 #[no_mangle]
+#[wasm_bindgen]
 pub extern "C" fn free_image_c(image: *mut Image) {
     if !image.is_null() {
         let image_ptr_val = image as usize;
@@ -444,6 +474,7 @@ pub extern "C" fn free_string_c(ptr: *mut std::os::raw::c_char) {
 }
 
 #[no_mangle]
+#[wasm_bindgen]
 pub extern "C" fn free_pipeline_c(pipeline: *mut PipelineConfig) {
     if !pipeline.is_null() {
         let pipeline_ptr_val = pipeline as usize;

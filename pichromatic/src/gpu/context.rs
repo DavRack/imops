@@ -74,6 +74,10 @@ impl GpuContext {
         }
     }
 
+    pub fn global_cached() -> Option<Arc<Self>> {
+        GLOBAL_GPU_CONTEXT.get().cloned()
+    }
+
     pub fn new_sync() -> Arc<Self> {
         if let Some(ctx) = GLOBAL_GPU_CONTEXT.get() {
             return ctx.clone();
@@ -99,6 +103,8 @@ impl GpuContext {
             .ok_or_else(|| "Failed to find a suitable GPU adapter".to_string())?;
 
         let limits = adapter.limits();
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&format!("[Pichromatic GPU] WebGPU Adapter limits: max_buffer_size={}, max_storage_binding={}", limits.max_buffer_size, limits.max_storage_buffer_binding_size).into());
 
         let (device, queue) = adapter
             .request_device(
@@ -108,7 +114,8 @@ impl GpuContext {
                     required_limits: wgpu::Limits {
                         max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
                         max_buffer_size: limits.max_buffer_size,
-                        ..wgpu::Limits::default()
+                        max_storage_buffers_per_shader_stage: limits.max_storage_buffers_per_shader_stage.max(8),
+                        ..wgpu::Limits::downlevel_defaults()
                     },
                     memory_hints: wgpu::MemoryHints::Performance,
                 },
@@ -240,6 +247,63 @@ impl GpuContext {
         }
     }
 
+    pub async fn download_image_async(&self, gpu_buf: &GpuImageBuffer, original_metadata: &crate::image::ImageMetadata) -> Image {
+        let num_pixels = gpu_buf.width * gpu_buf.height;
+        let buffer_size = (num_pixels * 4 * std::mem::size_of::<f32>()) as u64;
+
+        let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Pichromatic Staging Download Buffer"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Download Encoder"),
+        });
+
+        encoder.copy_buffer_to_buffer(&gpu_buf.buffer, 0, &staging_buffer, 0, buffer_size);
+        self.queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.device.poll(wgpu::Maintain::Wait);
+
+        #[cfg(target_arch = "wasm32")]
+        self.device.poll(wgpu::Maintain::Poll);
+
+        receiver.await.unwrap().expect("Failed to map staging buffer for read");
+
+        let data = buffer_slice.get_mapped_range();
+        let float_slice: &[f32] = bytemuck::cast_slice(&data);
+
+        let mut rgb_data: Vec<Pixel> = Vec::with_capacity(num_pixels);
+        for i in 0..num_pixels {
+            let r = float_slice[i * 4];
+            let g = float_slice[i * 4 + 1];
+            let b = float_slice[i * 4 + 2];
+            rgb_data.push([r, g, b]);
+        }
+
+        drop(data);
+        staging_buffer.unmap();
+
+        let mut meta = original_metadata.clone();
+        meta.width = gpu_buf.width;
+        meta.height = gpu_buf.height;
+
+        Image {
+            metadata: meta,
+            raw_data: vec![],
+            rgb_data,
+        }
+    }
+
     /// Allocate an uninitialized GPU Storage Buffer for output
     pub fn create_output_buffer(&self, width: usize, height: usize) -> GpuImageBuffer {
         let num_pixels = width * height;
@@ -311,6 +375,43 @@ impl GpuContext {
         });
         self.device.poll(wgpu::Maintain::Wait);
         receiver.recv().unwrap().expect("Failed to map f32 staging buffer for read");
+
+        let data = buffer_slice.get_mapped_range();
+        let float_slice: &[f32] = bytemuck::cast_slice(&data);
+        let out = float_slice[..count.min(float_slice.len())].to_vec();
+        drop(data);
+        staging_buffer.unmap();
+        out
+    }
+
+    pub async fn download_f32_async(&self, buffer: &wgpu::Buffer, count: usize) -> Vec<f32> {
+        let buffer_size = (count.max(1) * std::mem::size_of::<f32>()) as u64;
+        let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Pichromatic f32 Download Staging"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("f32 Download Encoder"),
+        });
+        encoder.copy_buffer_to_buffer(buffer, 0, &staging_buffer, 0, buffer_size);
+        self.queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.device.poll(wgpu::Maintain::Wait);
+
+        #[cfg(target_arch = "wasm32")]
+        self.device.poll(wgpu::Maintain::Poll);
+
+        receiver.await.unwrap().expect("Failed to map f32 staging buffer for read");
 
         let data = buffer_slice.get_mapped_range();
         let float_slice: &[f32] = bytemuck::cast_slice(&data);
