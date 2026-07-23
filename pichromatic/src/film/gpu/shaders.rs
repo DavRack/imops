@@ -5,6 +5,7 @@
 //! always uses non-read-only storage), even where the shader only reads.
 
 /// Horizontal separable-blur pass. Mirrors `blur::convolve_1d_reflect`.
+/// Used when radius > [`super::BLUR_TILED_MAX_RADIUS`] (tiled path cannot cover full kernel).
 pub const BLUR_H: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> src: array<f32>;
@@ -41,6 +42,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 /// Vertical separable-blur pass.
+/// Used when radius > [`super::BLUR_TILED_MAX_RADIUS`] (tiled path cannot cover full kernel).
 pub const BLUR_V: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> tmp: array<f32>;
@@ -64,16 +66,141 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let w = u.width;
-    let h = u.height;
     let x = i % w;
     let y = i / w;
     let len = 2u * u.radius + 1u;
     var acc = 0.0;
     for (var k = 0u; k < len; k = k + 1u) {
-        let yy = reflect_index(i32(y) + i32(k) - i32(u.radius), i32(h));
+        let yy = reflect_index(i32(y) + i32(k) - i32(u.radius), i32(u.height));
         acc = acc + tmp[u32(yy) * w + x] * ker[k];
     }
     dst[u.dst_off + y * w + x] = acc;
+}
+"#;
+
+/// Tiled horizontal blur: one workgroup = one row segment with shared-memory halo.
+/// Dispatch: gx = ceil(width/256), gy = height.
+///
+/// Contract: host must only dispatch this when `radius ≤ BLUR_TILED_MAX_RADIUS` (128).
+/// For larger radii the host falls back to [`BLUR_H`] so full-kernel numerics match CPU.
+/// The `min(radius, 128)` below is only a defensive tile bound (tile[512] = 256+2*128);
+/// it is **not** a correct FIR truncation — do not rely on it for radius > 128.
+pub const BLUR_H_TILED: &str = r#"
+struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
+@group(0) @binding(0) var<storage, read_write> src: array<f32>;
+@group(0) @binding(1) var<storage, read_write> tmp: array<f32>;
+@group(0) @binding(2) var<storage, read_write> ker: array<f32>;
+@group(0) @binding(3) var<uniform> u: U;
+
+var<workgroup> tile: array<f32, 512>;
+
+fn reflect_index(i: i32, len: i32) -> i32 {
+    if (len == 1) { return 0; }
+    var x = i;
+    loop {
+        if (x < 0) { x = -x; }
+        else if (x >= len) { x = 2 * len - 2 - x; }
+        else { return x; }
+    }
+    return 0;
+}
+
+@compute @workgroup_size(256)
+fn main(
+    @builtin(local_invocation_id) lid: vec3<u32>,
+    @builtin(workgroup_id) wid: vec3<u32>,
+) {
+    let y = wid.y;
+    if (y >= u.height) { return; }
+    let w = i32(u.width);
+    let radius = i32(u.radius);
+    // Defensive tile bound only (host must fall back for radius > 128).
+    let r = min(radius, 128);
+    let x0 = i32(wid.x * 256u);
+    let lx = i32(lid.x);
+    let base = u.src_off + y * u.width;
+
+    // Cooperative load of [x0-r, x0+256+r) into tile[0 .. 256+2r).
+    let tile_w = 256 + 2 * r;
+    var t = lx;
+    loop {
+        if (t >= tile_w) { break; }
+        let xx = reflect_index(x0 + t - r, w);
+        tile[t] = src[base + u32(xx)];
+        t = t + 256;
+    }
+    workgroupBarrier();
+
+    let x = x0 + lx;
+    if (x >= w) { return; }
+    let len = 2u * u32(r) + 1u;
+    var acc = 0.0;
+    let center = lx + r;
+    for (var k = 0u; k < len; k = k + 1u) {
+        acc = acc + tile[u32(center) + k - u32(r)] * ker[k];
+    }
+    tmp[y * u.width + u32(x)] = acc;
+}
+"#;
+
+/// Tiled vertical blur: one workgroup = one column segment with shared-memory halo.
+/// Dispatch: gx = width, gy = ceil(height/256).
+///
+/// Same contract as [`BLUR_H_TILED`]: host falls back to [`BLUR_V`] when radius > 128.
+pub const BLUR_V_TILED: &str = r#"
+struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
+@group(0) @binding(0) var<storage, read_write> tmp: array<f32>;
+@group(0) @binding(1) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(2) var<storage, read_write> ker: array<f32>;
+@group(0) @binding(3) var<uniform> u: U;
+
+var<workgroup> tile: array<f32, 512>;
+
+fn reflect_index(i: i32, len: i32) -> i32 {
+    if (len == 1) { return 0; }
+    var x = i;
+    loop {
+        if (x < 0) { x = -x; }
+        else if (x >= len) { x = 2 * len - 2 - x; }
+        else { return x; }
+    }
+    return 0;
+}
+
+@compute @workgroup_size(256)
+fn main(
+    @builtin(local_invocation_id) lid: vec3<u32>,
+    @builtin(workgroup_id) wid: vec3<u32>,
+) {
+    let x = wid.x;
+    if (x >= u.width) { return; }
+    let h = i32(u.height);
+    let radius = i32(u.radius);
+    // Defensive tile bound only (host must fall back for radius > 128).
+    let r = min(radius, 128);
+    let y0 = i32(wid.y * 256u);
+    let ly = i32(lid.x);
+    let w = u.width;
+
+    let tile_h = 256 + 2 * r;
+    var t = ly;
+    loop {
+        if (t >= tile_h) { break; }
+        let yy = reflect_index(y0 + t - r, h);
+        tile[t] = tmp[u32(yy) * w + x];
+        t = t + 256;
+    }
+    workgroupBarrier();
+
+    let y = y0 + ly;
+    if (y >= h) { return; }
+    let len = 2u * u32(r) + 1u;
+    var acc = 0.0;
+    let center = ly + r;
+    for (var k = 0u; k < len; k = k + 1u) {
+        acc = acc + tile[u32(center) + k - u32(r)] * ker[k];
+    }
+    dst[u.dst_off + u32(y) * w + x] = acc;
 }
 "#;
 
@@ -351,9 +478,33 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Partial sum-of-squares for grain variance. Each invocation sums `stride`
+/// consecutive samples starting at `gid * stride` (+ `src_off`), writing one
+/// partial to `out[out_off + i]`. CPU finishes the reduction in f64.
+pub const GRAIN_VAR_PARTIAL: &str = r#"
+struct U { n:u32, stride:u32, out_n:u32, src_off:u32, out_off:u32, p0:u32, p1:u32, p2:u32 };
+@group(0) @binding(0) var<storage, read_write> src: array<f32>;
+@group(0) @binding(1) var<storage, read_write> out: array<f32>;
+@group(0) @binding(2) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.out_n) { return; }
+    let start = i * u.stride;
+    var acc = 0.0;
+    let end = min(start + u.stride, u.n);
+    for (var j = start; j < end; j = j + 1u) {
+        let v = src[u.src_off + j];
+        acc = acc + v * v;
+    }
+    out[u.out_off + i] = acc;
+}
+"#;
+
 /// Grain apply on image dye only. Mirrors `development::grain::apply_grain` body.
 pub const GRAIN_APPLY: &str = r#"
-struct U { n:u32, off:u32, kappa:f32, dmax:f32, norm:f32, p0:u32, p1:u32, p2:u32 };
+struct U { n:u32, off:u32, kappa:f32, dmax:f32, norm:f32, noise_off:u32, p1:u32, p2:u32 };
 @group(0) @binding(0) var<storage, read_write> dye: array<f32>;
 @group(0) @binding(1) var<storage, read_write> noise: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
@@ -367,7 +518,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let eps_toe = 0.02 * u.dmax;
     let taper = min(dens / (dens + eps_toe), 1.0);
     let sd = taper * sqrt(max(dens * (u.dmax - dens), 0.0));
-    var dd = dens + u.kappa * sd * noise[i] * u.norm;
+    var dd = dens + u.kappa * sd * noise[u.noise_off + i] * u.norm;
     dd = clamp(dd, 0.0, u.dmax * 1.05);
     dye[u.off + i] = dd;
 }

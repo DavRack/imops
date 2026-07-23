@@ -7,10 +7,10 @@
 //!
 //! Stock calibration scalars/LUTs/spectra (which are functions of the *stock*,
 //! not the image) are precomputed on the CPU at load — exactly as the CPU path
-//! does — and uploaded as constant storage buffers. The grain global-variance
-//! normalizer is the single per-image scalar computed on the CPU (from the
-//! GPU-produced noise plane) so it matches the CPU `f64` reduction bit-near;
-//! all spatial grain work stays on GPU.
+//! does — and uploaded as constant storage buffers. Grain variance uses a GPU
+//! partial sum-of-squares (`GRAIN_VAR_PARTIAL`) then a tiny download; the CPU
+//! finishes the `f64` reduction for `norm` so it matches the CPU path bit-near.
+//! All spatial grain work stays on GPU.
 
 mod shaders;
 
@@ -31,8 +31,15 @@ use crate::film::exposure::upsample::{
 use crate::film::scan::densitometry::dmin_reference_acescg;
 use crate::film::stock::{EmulsionLayer, FilmStock, LayerKind};
 use crate::film::{FilmError, FilmOutput, FilmParams};
-use crate::gpu::{GpuContext, GpuImageBuffer};
+use crate::gpu::{ComputePassDesc, GpuContext, GpuImageBuffer};
 use color::ColorSpaceTag;
+
+/// Max FIR radius for tiled blur shaders (`tile[512]` = 256 + 2×128).
+/// Larger radii fall back to untiled [`shaders::BLUR_H`] / [`shaders::BLUR_V`].
+pub(crate) const BLUR_TILED_MAX_RADIUS: u32 = 128;
+
+/// Partial outputs per emulsion for grain variance reduce (allocation + dispatch).
+const GRAIN_VAR_PARTIALS_PER: usize = 2048;
 
 // ─── Uniform structs ────────────────────────────────────────────────────────
 
@@ -114,6 +121,19 @@ struct GrainApplyU {
     kappa: f32,
     dmax: f32,
     norm: f32,
+    noise_off: u32,
+    _p1: u32,
+    _p2: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct VarPartialU {
+    n: u32,
+    stride: u32,
+    out_n: u32,
+    src_off: u32,
+    out_off: u32,
     _p0: u32,
     _p1: u32,
     _p2: u32,
@@ -481,9 +501,50 @@ fn workgroups(n: usize) -> u32 {
     ((n as u32) + 255) / 256
 }
 
+/// Shader + workgroup dims for one separable blur axis pair.
+/// Tiled (2D) when `radius ≤ BLUR_TILED_MAX_RADIUS`; else untiled 1D fold
+/// (`workgroups_y == 0`) so full-kernel numerics match CPU.
+struct BlurDispatch<'a> {
+    h_label: &'a str,
+    v_label: &'a str,
+    h_wgsl: &'a str,
+    v_wgsl: &'a str,
+    h_gx: u32,
+    h_gy: u32,
+    v_gx: u32,
+    v_gy: u32,
+}
+
+fn blur_dispatch(width: usize, height: usize, radius: u32) -> BlurDispatch<'static> {
+    let n = width * height;
+    if radius > BLUR_TILED_MAX_RADIUS {
+        let wg = workgroups(n);
+        BlurDispatch {
+            h_label: "film_blur_h",
+            v_label: "film_blur_v",
+            h_wgsl: shaders::BLUR_H,
+            v_wgsl: shaders::BLUR_V,
+            h_gx: wg,
+            h_gy: 0,
+            v_gx: wg,
+            v_gy: 0,
+        }
+    } else {
+        BlurDispatch {
+            h_label: "film_blur_h_tiled",
+            v_label: "film_blur_v_tiled",
+            h_wgsl: shaders::BLUR_H_TILED,
+            v_wgsl: shaders::BLUR_V_TILED,
+            h_gx: ((width as u32) + 255) / 256,
+            h_gy: height as u32,
+            v_gx: width as u32,
+            v_gy: ((height as u32) + 255) / 256,
+        }
+    }
+}
+
 /// Separable Gaussian blur matching `blur::gaussian_blur_separable` bit-near.
-/// Reads `src[src_off..]`, writes `dst[dst_off..]`, using `btmp` (size n) as the
-/// horizontal-pass intermediate. `kernel` is a baked f32 buffer of `2*radius+1`.
+/// H+V in one submit: tiled shared-memory when radius fits; else untiled BLUR_H/V.
 #[allow(clippy::too_many_arguments)]
 fn blur_plane(
     ctx: &GpuContext,
@@ -498,7 +559,6 @@ fn blur_plane(
     radius: u32,
 ) {
     let n = width * height;
-    let wg = workgroups(n);
     let u = BlurU {
         width: width as u32,
         height: height as u32,
@@ -510,20 +570,93 @@ fn blur_plane(
         _p1: 0,
     };
     let ub = bytemuck::bytes_of(&u);
-    ctx.dispatch_compute_shader_multi(
-        "film_blur_h",
-        shaders::BLUR_H,
-        &[src, btmp, kernel],
-        ub,
-        wg,
+    let h_bufs = [src, btmp, kernel];
+    let v_bufs = [btmp, dst, kernel];
+    let d = blur_dispatch(width, height, radius);
+    ctx.dispatch_compute_passes(
+        "film_blur",
+        &[
+            ComputePassDesc {
+                label: d.h_label,
+                wgsl_source: d.h_wgsl,
+                storage_buffers: &h_bufs,
+                uniform_bytes: ub,
+                workgroups_x: d.h_gx,
+                workgroups_y: d.h_gy,
+            },
+            ComputePassDesc {
+                label: d.v_label,
+                wgsl_source: d.v_wgsl,
+                storage_buffers: &v_bufs,
+                uniform_bytes: ub,
+                workgroups_x: d.v_gx,
+                workgroups_y: d.v_gy,
+            },
+        ],
     );
-    ctx.dispatch_compute_shader_multi(
-        "film_blur_v",
-        shaders::BLUR_V,
-        &[btmp, dst, kernel],
-        ub,
-        wg,
-    );
+}
+
+/// GPU partial sum-of-squares over all active emulsions → one tiny download →
+/// per-emulsion f64 variance norms. Single sync for the whole grain stage.
+fn grain_variance_norms(
+    ctx: &GpuContext,
+    src: &Buffer,
+    partial: &Buffer,
+    n: usize,
+    active: &[(usize, u32)], // (plane_e, src_off)
+) -> Vec<(usize, f32)> {
+    if active.is_empty() {
+        return Vec::new();
+    }
+    let target_out = GRAIN_VAR_PARTIALS_PER.min(n).max(1);
+    let stride = ((n + target_out - 1) / target_out) as u32;
+    let out_n = ((n as u32) + stride - 1) / stride;
+    let wg = workgroups(out_n as usize);
+
+    // One batched submit for all emulsions; download drains them.
+    let uniforms: Vec<VarPartialU> = active
+        .iter()
+        .enumerate()
+        .map(|(i, &(_plane_e, src_off))| VarPartialU {
+            n: n as u32,
+            stride,
+            out_n,
+            src_off,
+            out_off: (i as u32) * out_n,
+            _p0: 0,
+            _p1: 0,
+            _p2: 0,
+        })
+        .collect();
+    let bufs = [src, partial];
+    let passes: Vec<ComputePassDesc<'_>> = uniforms
+        .iter()
+        .map(|u| ComputePassDesc {
+            label: "film_grain_var_partial",
+            wgsl_source: shaders::GRAIN_VAR_PARTIAL,
+            storage_buffers: &bufs,
+            uniform_bytes: bytemuck::bytes_of(u),
+            workgroups_x: wg,
+            workgroups_y: 0,
+        })
+        .collect();
+    ctx.dispatch_compute_passes("film_grain_var", &passes);
+
+    let parts = ctx.download_f32(partial, active.len() * out_n as usize);
+    let mut norms = Vec::with_capacity(active.len());
+    for (i, &(plane_e, _)) in active.iter().enumerate() {
+        let start = i * out_n as usize;
+        let end = start + out_n as usize;
+        let sum_sq: f64 = parts[start..end].iter().map(|&v| v as f64).sum();
+        let var = sum_sq / n as f64;
+        let norm = if var > 1e-12 {
+            (1.0 / var.sqrt()) as f32
+        } else {
+            1.0
+        };
+        norms.push((plane_e, norm));
+    }
+    norms
 }
 
 /// Full GPU film simulation, mirroring [`crate::film::process`].
@@ -562,6 +695,8 @@ pub fn process_gpu(
     let btmp = ctx.create_f32_buffer(n, "film_btmp"); // blur horizontal intermediate
     let bout = ctx.create_f32_buffer(n, "film_bout"); // blur output / bounce / noise
     let noise = ctx.create_f32_buffer(n, "film_noise"); // raw noise (pre-blur)
+    // Partial sums for grain variance (GRAIN_VAR_PARTIALS_PER × E); reused across emulsions.
+    let var_partial = ctx.create_f32_buffer(GRAIN_VAR_PARTIALS_PER * e.max(1), "film_var_partial");
 
     // ── Stage 1: expose → absorbed planes ──
     {
@@ -593,19 +728,17 @@ pub fn process_gpu(
         let f = LOCAL_SCATTER_MIX;
         let keep = 1.0 - f;
         for plane_e in 0..e {
-            blur_plane(
-                ctx,
-                width,
-                height,
-                &planes,
-                (plane_e * n) as u32,
-                &bout,
-                0,
-                &btmp,
-                &kbuf,
+            let blur_u = BlurU {
+                width: width as u32,
+                height: height as u32,
+                n: n as u32,
                 radius,
-            );
-            let u = MixU {
+                src_off: (plane_e * n) as u32,
+                dst_off: 0,
+                _p0: 0,
+                _p1: 0,
+            };
+            let mix_u = MixU {
                 n: n as u32,
                 off: (plane_e * n) as u32,
                 keep,
@@ -615,12 +748,42 @@ pub fn process_gpu(
                 _p2: 0,
                 _p3: 0,
             };
-            ctx.dispatch_compute_shader_multi(
-                "film_local_scatter_mix",
-                shaders::LOCAL_SCATTER_MIX,
-                &[&planes, &bout],
-                bytemuck::bytes_of(&u),
-                workgroups(n),
+            let blur_ub = bytemuck::bytes_of(&blur_u);
+            let mix_ub = bytemuck::bytes_of(&mix_u);
+            let h_bufs = [&planes, &btmp, &kbuf];
+            let v_bufs = [&btmp, &bout, &kbuf];
+            let mix_bufs = [&planes, &bout];
+            let d = blur_dispatch(width, height, radius);
+            let mix_wg = workgroups(n);
+            // Blur H+V + mix in one submit.
+            ctx.dispatch_compute_passes(
+                "film_local_scatter",
+                &[
+                    ComputePassDesc {
+                        label: d.h_label,
+                        wgsl_source: d.h_wgsl,
+                        storage_buffers: &h_bufs,
+                        uniform_bytes: blur_ub,
+                        workgroups_x: d.h_gx,
+                        workgroups_y: d.h_gy,
+                    },
+                    ComputePassDesc {
+                        label: d.v_label,
+                        wgsl_source: d.v_wgsl,
+                        storage_buffers: &v_bufs,
+                        uniform_bytes: blur_ub,
+                        workgroups_x: d.v_gx,
+                        workgroups_y: d.v_gy,
+                    },
+                    ComputePassDesc {
+                        label: "film_local_scatter_mix",
+                        wgsl_source: shaders::LOCAL_SCATTER_MIX,
+                        storage_buffers: &mix_bufs,
+                        uniform_bytes: mix_ub,
+                        workgroups_x: mix_wg,
+                        workgroups_y: 0,
+                    },
+                ],
             );
         }
     }
@@ -641,7 +804,7 @@ pub fn process_gpu(
             0,
             &btmp,
             &kbuf,
-            radius,
+            radius
         );
         let u = CountU {
             n: n as u32,
@@ -708,7 +871,7 @@ pub fn process_gpu(
                 (src_e * n) as u32,
                 &btmp,
                 &kbuf,
-                radius,
+                radius
             );
         }
         let u = CountU {
@@ -732,35 +895,63 @@ pub fn process_gpu(
         let radius = (kernel.len() / 2) as u32;
         let kbuf = ctx.create_f32_buffer_init(&kernel, "film_k_adj");
         for plane_e in 0..e {
-            blur_plane(
-                ctx,
-                width,
-                height,
-                &dye,
-                (plane_e * n) as u32,
-                &bout,
-                0,
-                &btmp,
-                &kbuf,
+            let blur_u = BlurU {
+                width: width as u32,
+                height: height as u32,
+                n: n as u32,
                 radius,
-            );
-            let u = AdjU {
+                src_off: (plane_e * n) as u32,
+                dst_off: 0,
+                _p0: 0,
+                _p1: 0,
+            };
+            let adj_u = AdjU {
                 n: n as u32,
                 off: (plane_e * n) as u32,
                 beta: consts.adjacency_beta,
                 _p0: 0,
             };
-            ctx.dispatch_compute_shader_multi(
-                "film_adjacency",
-                shaders::ADJACENCY,
-                &[&dye, &bout],
-                bytemuck::bytes_of(&u),
-                workgroups(n),
+            let blur_ub = bytemuck::bytes_of(&blur_u);
+            let adj_ub = bytemuck::bytes_of(&adj_u);
+            let h_bufs = [&dye, &btmp, &kbuf];
+            let v_bufs = [&btmp, &bout, &kbuf];
+            let adj_bufs = [&dye, &bout];
+            let d = blur_dispatch(width, height, radius);
+            let adj_wg = workgroups(n);
+            ctx.dispatch_compute_passes(
+                "film_adjacency_stage",
+                &[
+                    ComputePassDesc {
+                        label: d.h_label,
+                        wgsl_source: d.h_wgsl,
+                        storage_buffers: &h_bufs,
+                        uniform_bytes: blur_ub,
+                        workgroups_x: d.h_gx,
+                        workgroups_y: d.h_gy,
+                    },
+                    ComputePassDesc {
+                        label: d.v_label,
+                        wgsl_source: d.v_wgsl,
+                        storage_buffers: &v_bufs,
+                        uniform_bytes: blur_ub,
+                        workgroups_x: d.v_gx,
+                        workgroups_y: d.v_gy,
+                    },
+                    ComputePassDesc {
+                        label: "film_adjacency",
+                        wgsl_source: shaders::ADJACENCY,
+                        storage_buffers: &adj_bufs,
+                        uniform_bytes: adj_ub,
+                        workgroups_x: adj_wg,
+                        workgroups_y: 0,
+                    },
+                ],
             );
         }
     }
 
     // ── Stage 7: grain (image dye only) ──
+    // Blurred noise stored in `work` (free after DIR). One variance sync for all E.
     {
         let grain_sigma = (DYE_CLOUD_CORRELATION_UM / {
             let pitch = params.film_format.pixel_pitch_um(width);
@@ -770,13 +961,14 @@ pub fn process_gpu(
         let kernel = make_gaussian_kernel(grain_sigma);
         let radius = (kernel.len() / 2) as u32;
         let kbuf = ctx.create_f32_buffer_init(&kernel, "film_k_grain");
+        let mut active: Vec<(usize, u32)> = Vec::with_capacity(e);
         for plane_e in 0..e {
             let kappa = consts.kappa[plane_e];
             let dmax = consts.dmax[plane_e];
             if kappa <= 0.0 || dmax <= 0.0 {
                 continue;
             }
-            // Generate white Gaussian noise (SplitMix64 + Irwin–Hall 12).
+            let dst_off = (plane_e * n) as u32;
             let (base_lo, base_hi) = consts.grain_seed_base[plane_e];
             let nu = NoiseU {
                 width: width as u32,
@@ -788,40 +980,71 @@ pub fn process_gpu(
                 _p1: 0,
                 _p2: 0,
             };
-            ctx.dispatch_compute_shader_multi(
-                "film_grain_noise",
-                shaders::GRAIN_NOISE,
-                &[&noise],
-                bytemuck::bytes_of(&nu),
-                workgroups(n),
-            );
-            // Correlate by dye-cloud Gaussian footprint.
-            blur_plane(
-                ctx, width, height, &noise, 0, &bout, 0, &btmp, &kbuf, radius,
-            );
-            // Global variance normalizer: matches CPU sequential f64 reduction.
-            let blurred = ctx.download_f32(&bout, n);
-            let var: f64 =
-                blurred.iter().map(|&v| (v as f64).powi(2)).sum::<f64>() / blurred.len() as f64;
-            let norm = if var > 1e-12 {
-                (1.0 / var.sqrt()) as f32
-            } else {
-                1.0f32
+            let blur_u = BlurU {
+                width: width as u32,
+                height: height as u32,
+                n: n as u32,
+                radius,
+                src_off: 0,
+                dst_off,
+                _p0: 0,
+                _p1: 0,
             };
+            let noise_ub = bytemuck::bytes_of(&nu);
+            let blur_ub = bytemuck::bytes_of(&blur_u);
+            let noise_bufs = [&noise];
+            let h_bufs = [&noise, &btmp, &kbuf];
+            let v_bufs = [&btmp, &work, &kbuf];
+            let noise_wg = workgroups(n);
+            let d = blur_dispatch(width, height, radius);
+            ctx.dispatch_compute_passes(
+                "film_grain_noise_blur",
+                &[
+                    ComputePassDesc {
+                        label: "film_grain_noise",
+                        wgsl_source: shaders::GRAIN_NOISE,
+                        storage_buffers: &noise_bufs,
+                        uniform_bytes: noise_ub,
+                        workgroups_x: noise_wg,
+                        workgroups_y: 0,
+                    },
+                    ComputePassDesc {
+                        label: d.h_label,
+                        wgsl_source: d.h_wgsl,
+                        storage_buffers: &h_bufs,
+                        uniform_bytes: blur_ub,
+                        workgroups_x: d.h_gx,
+                        workgroups_y: d.h_gy,
+                    },
+                    ComputePassDesc {
+                        label: d.v_label,
+                        wgsl_source: d.v_wgsl,
+                        storage_buffers: &v_bufs,
+                        uniform_bytes: blur_ub,
+                        workgroups_x: d.v_gx,
+                        workgroups_y: d.v_gy,
+                    },
+                ],
+            );
+            active.push((plane_e, dst_off));
+        }
+
+        let norms = grain_variance_norms(ctx, &work, &var_partial, n, &active);
+        for &(plane_e, norm) in &norms {
             let gu = GrainApplyU {
                 n: n as u32,
                 off: (plane_e * n) as u32,
-                kappa,
-                dmax,
+                kappa: consts.kappa[plane_e],
+                dmax: consts.dmax[plane_e],
                 norm,
-                _p0: 0,
+                noise_off: (plane_e * n) as u32,
                 _p1: 0,
                 _p2: 0,
             };
             ctx.dispatch_compute_shader_multi(
                 "film_grain_apply",
                 shaders::GRAIN_APPLY,
-                &[&dye, &bout],
+                &[&dye, &work],
                 bytemuck::bytes_of(&gu),
                 workgroups(n),
             );

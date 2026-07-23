@@ -1,3 +1,3 @@
 pub mod context;
 
-pub use context::{GpuContext, GpuImageBuffer};
+pub use context::{ComputePassDesc, GpuContext, GpuImageBuffer};
