@@ -102,12 +102,22 @@ pub fn get_pixel_pipeline(pixel_pipeline_config: String) -> *const PipelineConfi
     return pipeline
 }
 
+use crate::backend::Backend;
+use crate::pipeline::run_pixel_pipeline_with_backend;
+
 #[wasm_bindgen]
-pub fn run_pixel_pipeline_js(image: *mut Image, pixel_pipeline: *mut PipelineConfig) -> *const Image {
-    let mut image_obj = unsafe {&mut *image};
-    let mut pipeline_obj = unsafe {&mut *pixel_pipeline};
-    run_pixel_pipeline(&mut image_obj, &mut pipeline_obj);
-    return image
+pub async fn run_pixel_pipeline_js(image: *mut Image, pixel_pipeline: *mut PipelineConfig) -> *const Image {
+    let mut image_obj = unsafe { &mut *image };
+    let mut pipeline_obj = unsafe { &mut *pixel_pipeline };
+
+    if let Some(gpu_ctx) = pichromatic::gpu::GpuContext::global().await {
+        let backend = Backend::Wgpu(gpu_ctx);
+        run_pixel_pipeline_with_backend(&mut image_obj, &mut pipeline_obj, &backend);
+    } else {
+        run_pixel_pipeline_with_backend(&mut image_obj, &mut pipeline_obj, &Backend::Cpu);
+    }
+
+    image
 }
 
 #[no_mangle]

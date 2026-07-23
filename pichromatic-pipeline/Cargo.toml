@@ -23,6 +23,7 @@ rayon = "1.10.0"
 rawler = "*"
 uuid = { version = "*", features = ["js"] }
 wasm-bindgen = "*"
+wasm-bindgen-futures = "0.4"
 pollster = "0.3.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
@@ -30,5 +31,4 @@ getrandom = { version = "0.2.17", features = ["js"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.17", features = ["js"] }
-wasm-bindgen-futures = "0.4"
 

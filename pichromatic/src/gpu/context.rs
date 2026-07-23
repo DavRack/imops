@@ -39,6 +39,9 @@ pub struct GpuContext {
     pipeline_cache: Mutex<HashMap<PipelineKey, CachedPipeline>>,
 }
 
+unsafe impl Send for GpuContext {}
+unsafe impl Sync for GpuContext {}
+
 pub struct GpuImageBuffer {
     pub buffer: wgpu::Buffer,
     pub width: usize,
@@ -55,12 +58,32 @@ pub struct ComputePassDesc<'a> {
     pub workgroups_y: u32,
 }
 
+static GLOBAL_GPU_CONTEXT: std::sync::OnceLock<Arc<GpuContext>> = std::sync::OnceLock::new();
+
 impl GpuContext {
-    pub fn new_sync() -> Arc<Self> {
-        pollster::block_on(Self::new())
+    pub async fn global() -> Option<Arc<Self>> {
+        if let Some(ctx) = GLOBAL_GPU_CONTEXT.get() {
+            return Some(ctx.clone());
+        }
+        match Self::try_new().await {
+            Ok(ctx) => {
+                let _ = GLOBAL_GPU_CONTEXT.set(ctx.clone());
+                Some(ctx)
+            }
+            Err(_) => None,
+        }
     }
 
-    pub async fn new() -> Arc<Self> {
+    pub fn new_sync() -> Arc<Self> {
+        if let Some(ctx) = GLOBAL_GPU_CONTEXT.get() {
+            return ctx.clone();
+        }
+        let ctx = pollster::block_on(Self::new());
+        let _ = GLOBAL_GPU_CONTEXT.set(ctx.clone());
+        ctx
+    }
+
+    pub async fn try_new() -> Result<Arc<Self>, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -73,7 +96,7 @@ impl GpuContext {
                 compatible_surface: None,
             })
             .await
-            .expect("Failed to find a suitable GPU adapter");
+            .ok_or_else(|| "Failed to find a suitable GPU adapter".to_string())?;
 
         let limits = adapter.limits();
 
@@ -92,13 +115,17 @@ impl GpuContext {
                 None,
             )
             .await
-            .expect("Failed to create wgpu device");
+            .map_err(|e| format!("Failed to create wgpu device: {e}"))?;
 
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             device,
             queue,
             pipeline_cache: Mutex::new(HashMap::new()),
-        })
+        }))
+    }
+
+    pub async fn new() -> Arc<Self> {
+        Self::try_new().await.expect("Failed to initialize GPU context")
     }
 
     /// Block until queued GPU work completes. Use at readback / true sync points only.

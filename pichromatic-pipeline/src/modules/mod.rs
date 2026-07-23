@@ -100,7 +100,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Parameter<T> {
 
 // ─── Enums & Options ────────────────────────────────────────────────────────
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DemosaicAlgorithmType {
     Amaze,
@@ -108,6 +108,25 @@ pub enum DemosaicAlgorithmType {
     Fast,
     SuperFast,
     SuperSuperFast,
+}
+
+impl<'de> Deserialize<'de> for DemosaicAlgorithmType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_lowercase().as_str() {
+            "amaze" => Ok(Self::Amaze),
+            "markesteijn" => Ok(Self::Markesteijn),
+            "fast" => Ok(Self::Fast),
+            "superfast" => Ok(Self::SuperFast),
+            "supersuperfast" => Ok(Self::SuperSuperFast),
+            _ => Err(serde::de::Error::custom(format!(
+                "unknown demosaic algorithm '{s}', expected one of: amaze, markesteijn, fast, superfast, supersuperfast"
+            ))),
+        }
+    }
 }
 
 impl Default for DemosaicAlgorithmType {
@@ -282,4 +301,38 @@ pub fn get_pipeline_schema() -> Vec<ModuleSchema> {
         .iter()
         .map(|m| m.schema())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_demosaic_algorithm_type_case_insensitive() {
+        let amaze_lower: DemosaicAlgorithmType = serde_json::from_str("\"amaze\"").unwrap();
+        let amaze_cap: DemosaicAlgorithmType = serde_json::from_str("\"Amaze\"").unwrap();
+        let amaze_upper: DemosaicAlgorithmType = serde_json::from_str("\"AMAZE\"").unwrap();
+
+        assert_eq!(amaze_lower, DemosaicAlgorithmType::Amaze);
+        assert_eq!(amaze_cap, DemosaicAlgorithmType::Amaze);
+        assert_eq!(amaze_upper, DemosaicAlgorithmType::Amaze);
+
+        let mark_mixed: DemosaicAlgorithmType = serde_json::from_str("\"MarkEsteijn\"").unwrap();
+        assert_eq!(mark_mixed, DemosaicAlgorithmType::Markesteijn);
+
+        let invalid: Result<DemosaicAlgorithmType, _> = serde_json::from_str("\"nonexistent\"");
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn test_parse_config_with_capitalized_demosaic_algorithm() {
+        let json_config = r#"{
+            "pipeline_modules": [
+                { "name": "Demosaic", "algorithm": "Amaze" }
+            ]
+        }"#;
+        let parsed = crate::config::parse_config(json_config.to_string());
+        assert_eq!(parsed.pipeline_modules.len(), 1);
+        assert_eq!(parsed.pipeline_modules[0].schema().name, "Demosaic");
+    }
 }
