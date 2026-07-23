@@ -450,52 +450,16 @@ impl GpuContext {
             source: wgpu::ShaderSource::Wgsl(wgsl_source.into()),
         });
 
-        let mut layout_entries = Vec::new();
-        for i in 0..storage_count {
-            layout_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: i as u32,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            });
-        }
-        if has_uniform {
-            layout_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: storage_count as u32,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            });
-        }
-
-        let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some(&format!("{label} Bind Group Layout")),
-            entries: &layout_entries,
-        });
-
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some(&format!("{label} Pipeline Layout")),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
         let compute_pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some(&format!("{label} Compute Pipeline")),
-            layout: Some(&pipeline_layout),
+            layout: None,
             module: &shader,
             entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
         });
 
+        let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
         let pipeline = Arc::new(compute_pipeline);
         let bind_group_layout = Arc::new(bind_group_layout);
 

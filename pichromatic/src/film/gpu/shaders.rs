@@ -8,20 +8,19 @@
 /// Used when radius > [`super::BLUR_TILED_MAX_RADIUS`] (tiled path cannot cover full kernel).
 pub const BLUR_H: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
-@group(0) @binding(0) var<storage, read_write> src: array<f32>;
+@group(0) @binding(0) var<storage, read> src: array<f32>;
 @group(0) @binding(1) var<storage, read_write> tmp: array<f32>;
-@group(0) @binding(2) var<storage, read_write> ker: array<f32>;
+@group(0) @binding(2) var<storage, read> ker: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
     var x = i;
-    loop {
+    while (x < 0 || x >= len) {
         if (x < 0) { x = -x; }
-        else if (x >= len) { x = 2 * len - 2 - x; }
-        else { return x; }
+        else { x = 2 * len - 2 - x; }
     }
-    return 0;
+    return x;
 }
 
 @compute @workgroup_size(256)
@@ -45,20 +44,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// Used when radius > [`super::BLUR_TILED_MAX_RADIUS`] (tiled path cannot cover full kernel).
 pub const BLUR_V: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
-@group(0) @binding(0) var<storage, read_write> tmp: array<f32>;
+@group(0) @binding(0) var<storage, read> tmp: array<f32>;
 @group(0) @binding(1) var<storage, read_write> dst: array<f32>;
-@group(0) @binding(2) var<storage, read_write> ker: array<f32>;
+@group(0) @binding(2) var<storage, read> ker: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
     var x = i;
-    loop {
+    while (x < 0 || x >= len) {
         if (x < 0) { x = -x; }
-        else if (x >= len) { x = 2 * len - 2 - x; }
-        else { return x; }
+        else { x = 2 * len - 2 - x; }
     }
-    return 0;
+    return x;
 }
 
 @compute @workgroup_size(256)
@@ -87,9 +85,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// it is **not** a correct FIR truncation — do not rely on it for radius > 128.
 pub const BLUR_H_TILED: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
-@group(0) @binding(0) var<storage, read_write> src: array<f32>;
+@group(0) @binding(0) var<storage, read> src: array<f32>;
 @group(0) @binding(1) var<storage, read_write> tmp: array<f32>;
-@group(0) @binding(2) var<storage, read_write> ker: array<f32>;
+@group(0) @binding(2) var<storage, read> ker: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
 var<workgroup> tile: array<f32, 512>;
@@ -97,12 +95,11 @@ var<workgroup> tile: array<f32, 512>;
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
     var x = i;
-    loop {
+    while (x < 0 || x >= len) {
         if (x < 0) { x = -x; }
-        else if (x >= len) { x = 2 * len - 2 - x; }
-        else { return x; }
+        else { x = 2 * len - 2 - x; }
     }
-    return 0;
+    return x;
 }
 
 @compute @workgroup_size(256)
@@ -149,9 +146,9 @@ fn main(
 /// Same contract as [`BLUR_H_TILED`]: host falls back to [`BLUR_V`] when radius > 128.
 pub const BLUR_V_TILED: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
-@group(0) @binding(0) var<storage, read_write> tmp: array<f32>;
+@group(0) @binding(0) var<storage, read> tmp: array<f32>;
 @group(0) @binding(1) var<storage, read_write> dst: array<f32>;
-@group(0) @binding(2) var<storage, read_write> ker: array<f32>;
+@group(0) @binding(2) var<storage, read> ker: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
 var<workgroup> tile: array<f32, 512>;
@@ -159,12 +156,11 @@ var<workgroup> tile: array<f32, 512>;
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
     var x = i;
-    loop {
+    while (x < 0 || x >= len) {
         if (x < 0) { x = -x; }
-        else if (x >= len) { x = 2 * len - 2 - x; }
-        else { return x; }
+        else { x = 2 * len - 2 - x; }
     }
-    return 0;
+    return x;
 }
 
 @compute @workgroup_size(256)

@@ -181,6 +181,7 @@ pub struct FieldSchema {
     pub default_value: serde_json::Value,
     pub description: String,
     pub choices: Option<Vec<String>>,
+    pub step: f64,
 }
 
 pub fn fields_from_config<C: Serialize>(config: &C) -> Vec<FieldSchema> {
@@ -201,19 +202,19 @@ pub fn fields_from_config<C: Serialize>(config: &C) -> Vec<FieldSchema> {
                 let choices = param_map.get("choices")
                     .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok());
 
-                let field_type = match &value {
-                    serde_json::Value::Bool(_) => "boolean",
+                let (field_type, step) = match &value {
+                    serde_json::Value::Bool(_) => ("boolean".to_string(), 1.0),
                     serde_json::Value::Number(n) => {
                         if n.is_f64() {
-                            "float"
+                            ("float".to_string(), 0.01)
                         } else {
-                            "integer"
+                            ("integer".to_string(), 1.0)
                         }
                     }
-                    serde_json::Value::String(_) => "string",
-                    serde_json::Value::Array(_) => "array",
-                    _ => "object",
-                }.to_string();
+                    serde_json::Value::String(_) => ("string".to_string(), 1.0),
+                    serde_json::Value::Array(_) => ("array".to_string(), 1.0),
+                    _ => ("object".to_string(), 1.0),
+                };
 
                 fields.push(FieldSchema {
                     name: field_name,
@@ -221,6 +222,7 @@ pub fn fields_from_config<C: Serialize>(config: &C) -> Vec<FieldSchema> {
                     default_value: value,
                     description,
                     choices,
+                    step,
                 });
             }
         }

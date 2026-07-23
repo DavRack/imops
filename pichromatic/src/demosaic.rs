@@ -1436,9 +1436,9 @@ pub fn demosaic_markesteijn_gpu(
             _pad: vec2<u32>,
         };
 
-        @group(0) @binding(0) var<storage, read_write> raw: array<f32>;
+        @group(0) @binding(0) var<storage, read> raw: array<f32>;
         @group(0) @binding(1) var<storage, read_write> pixels: array<vec4<f32>>;
-        @group(0) @binding(2) var<storage, read_write> cfa: array<u32>;
+        @group(0) @binding(2) var<storage, read> cfa: array<u32>;
         @group(0) @binding(3) var<uniform> params: Params;
 
         fn cfa_at(row: i32, col: i32) -> u32 {

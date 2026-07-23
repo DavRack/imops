@@ -475,8 +475,8 @@ fn mul_plane_gpu(
             wb: f32,
             _pad: f32,
         };
-        @group(0) @binding(0) var<storage, read_write> a: array<f32>;
-        @group(0) @binding(1) var<storage, read_write> b: array<f32>;
+        @group(0) @binding(0) var<storage, read> a: array<f32>;
+        @group(0) @binding(1) var<storage, read> b: array<f32>;
         @group(0) @binding(2) var<storage, read_write> out_data: array<f32>;
         @group(0) @binding(3) var<uniform> params: Params;
 
@@ -516,8 +516,8 @@ fn var_from_means_gpu(
             wb: f32,
             _pad: f32,
         };
-        @group(0) @binding(0) var<storage, read_write> mean_gg: array<f32>;
-        @group(0) @binding(1) var<storage, read_write> mean_g: array<f32>;
+        @group(0) @binding(0) var<storage, read> mean_gg: array<f32>;
+        @group(0) @binding(1) var<storage, read> mean_g: array<f32>;
         @group(0) @binding(2) var<storage, read_write> var_g: array<f32>;
         @group(0) @binding(3) var<uniform> params: Params;
 
@@ -557,7 +557,7 @@ fn copy_plane_gpu(
             wb: f32,
             _pad: f32,
         };
-        @group(0) @binding(0) var<storage, read_write> src: array<f32>;
+        @group(0) @binding(0) var<storage, read> src: array<f32>;
         @group(0) @binding(1) var<storage, read_write> dst: array<f32>;
         @group(0) @binding(2) var<uniform> params: Params;
 
@@ -614,10 +614,10 @@ fn guided_filter_channel_gpu(
             wb: f32,
             _pad: f32,
         };
-        @group(0) @binding(0) var<storage, read_write> mean_g: array<f32>;
-        @group(0) @binding(1) var<storage, read_write> mean_p: array<f32>;
-        @group(0) @binding(2) var<storage, read_write> mean_gp: array<f32>;
-        @group(0) @binding(3) var<storage, read_write> var_g: array<f32>;
+        @group(0) @binding(0) var<storage, read> mean_g: array<f32>;
+        @group(0) @binding(1) var<storage, read> mean_p: array<f32>;
+        @group(0) @binding(2) var<storage, read> mean_gp: array<f32>;
+        @group(0) @binding(3) var<storage, read> var_g: array<f32>;
         @group(0) @binding(4) var<storage, read_write> a_out: array<f32>;
         @group(0) @binding(5) var<storage, read_write> b_out: array<f32>;
         @group(0) @binding(6) var<uniform> params: Params;
@@ -657,9 +657,9 @@ fn guided_filter_channel_gpu(
             wb: f32,
             _pad: f32,
         };
-        @group(0) @binding(0) var<storage, read_write> mean_a: array<f32>;
-        @group(0) @binding(1) var<storage, read_write> mean_b: array<f32>;
-        @group(0) @binding(2) var<storage, read_write> guide: array<f32>;
+        @group(0) @binding(0) var<storage, read> mean_a: array<f32>;
+        @group(0) @binding(1) var<storage, read> mean_b: array<f32>;
+        @group(0) @binding(2) var<storage, read> guide: array<f32>;
         @group(0) @binding(3) var<storage, read_write> out_data: array<f32>;
         @group(0) @binding(4) var<uniform> params: Params;
 

@@ -101,6 +101,12 @@ pub fn get_pixel_pipeline(pixel_pipeline_config: String) -> *const PipelineConfi
     Box::leak(Box::new(pipeline))
 }
 
+#[wasm_bindgen]
+pub fn get_pipeline_schema_js() -> String {
+    console_error_panic_hook::set_once();
+    serde_json::to_string(&crate::modules::get_pipeline_schema()).unwrap()
+}
+
 
 
 use crate::backend::Backend;
