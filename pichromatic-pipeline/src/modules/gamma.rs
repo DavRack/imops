@@ -35,7 +35,7 @@ impl PipelineModule for Module<Gamma> {
         ModuleSchema {
             name: "Gamma".to_string(),
             description: "Power-law display encode: out = linear^(1/γ). Use γ=2.2 for sRGB-like, γ=2.4 for BT.1886. Apply after CST to a linear display space.".to_string(),
-            fields: fields_from_config(&Gamma::default()),
+            fields: fields_from_config(&self.config),
         }
     }
 
