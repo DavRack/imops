@@ -24,12 +24,21 @@ pub fn run_pixel_pipeline_with_backend(
         module.process(backend, &mut pipeline_image);
     }
 
-    let ctx = match backend {
-        Backend::Cpu => None,
-        Backend::Wgpu(ctx) => Some(ctx.as_ref()),
+    *image = match backend {
+        Backend::Cpu => match pipeline_image {
+            PipelineImage::Cpu(img) => img,
+            PipelineImage::Gpu(_, _, _) => unreachable!("CPU backend produced GPU image"),
+        },
+        Backend::Wgpu(ctx) => match pipeline_image {
+            PipelineImage::Cpu(img) => img,
+            PipelineImage::Gpu(buf, meta, raw) => {
+                let mut img = ctx.download_image(&buf, &meta);
+                img.raw_data = raw;
+                ctx.recycle_rgba_buffer(buf);
+                img
+            }
+        },
     };
-
-    *image = pipeline_image.to_cpu(ctx);
 }
 
 pub async fn run_pixel_pipeline_with_backend_async(
@@ -47,10 +56,49 @@ pub async fn run_pixel_pipeline_with_backend_async(
         module.process_async(backend, &mut pipeline_image).await;
     }
 
+    *image = match backend {
+        Backend::Cpu => match pipeline_image {
+            PipelineImage::Cpu(img) => img,
+            PipelineImage::Gpu(_, _, _) => unreachable!("CPU backend produced GPU image"),
+        },
+        Backend::Wgpu(ctx) => match pipeline_image {
+            PipelineImage::Cpu(img) => img,
+            PipelineImage::Gpu(buf, meta, raw) => {
+                let mut img = ctx.download_image_async(&buf, &meta).await;
+                img.raw_data = raw;
+                ctx.recycle_rgba_buffer(buf);
+                img
+            }
+        },
+    };
+}
+
+/// Run the pipeline on GPU and present to the configured canvas (no CPU readback).
+#[cfg(target_arch = "wasm32")]
+pub async fn run_pixel_pipeline_present_async(
+    image: &Image,
+    pixel_pipeline: &mut config::PipelineConfig,
+    backend: &Backend,
+) -> Result<(usize, usize), String> {
     let ctx = match backend {
-        Backend::Cpu => None,
-        Backend::Wgpu(ctx) => Some(ctx.as_ref()),
+        Backend::Wgpu(ctx) => ctx,
+        Backend::Cpu => {
+            return Err("GPU present requires Backend::Wgpu".to_string());
+        }
     };
 
-    *image = pipeline_image.to_cpu_async(ctx).await;
+    let mut pipeline_image = PipelineImage::new_gpu(ctx, image);
+    for module in pixel_pipeline.pipeline_modules.iter_mut() {
+        module.process_async(backend, &mut pipeline_image).await;
+    }
+
+    match pipeline_image {
+        PipelineImage::Gpu(buf, _meta, _raw) => {
+            let dims = (buf.width, buf.height);
+            ctx.present_image(&buf)?;
+            ctx.recycle_rgba_buffer(buf);
+            Ok(dims)
+        }
+        PipelineImage::Cpu(_) => Err("Pipeline ended on CPU unexpectedly".to_string()),
+    }
 }

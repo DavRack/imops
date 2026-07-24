@@ -13,6 +13,9 @@
 //! All spatial grain work stays on GPU.
 
 mod shaders;
+mod workspace;
+
+pub(crate) use workspace::acquire_film_resources;
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::Buffer;
@@ -39,7 +42,7 @@ use color::ColorSpaceTag;
 pub(crate) const BLUR_TILED_MAX_RADIUS: u32 = 128;
 
 /// Partial outputs per emulsion for grain variance reduce (allocation + dispatch).
-const GRAIN_VAR_PARTIALS_PER: usize = 2048;
+pub(crate) const GRAIN_VAR_PARTIALS_PER: usize = 2048;
 
 // ─── Uniform structs ────────────────────────────────────────────────────────
 
@@ -242,7 +245,7 @@ fn make_gaussian_kernel(sigma: f32) -> Vec<f32> {
 // ─── Baked constants ────────────────────────────────────────────────────────
 
 /// All per-stock constant buffers, uploaded once.
-struct StockConsts {
+pub(crate) struct StockConsts {
     expose: Buffer,
     lut: Buffer,
     reduce: Buffer,
@@ -267,7 +270,7 @@ struct StockConsts {
 const GOLDEN: u64 = 0x9E3779B97F4A7C15;
 const SM_STATE_MIX: u64 = 0xD1B54A32D192ED03;
 
-fn bake_consts(ctx: &GpuContext, stock: &FilmStock, params: &FilmParams, width: usize) -> StockConsts {
+pub(crate) fn bake_consts(ctx: &GpuContext, stock: &FilmStock, params: &FilmParams, width: usize) -> StockConsts {
     let num_layers = stock.layers.len();
     let emuls: Vec<(usize, &EmulsionLayer)> = stock.emulsion_layers().collect();
     let num_emul = emuls.len();
@@ -684,19 +687,20 @@ pub async fn process_gpu(
     }
 
     let stock = params.stock.load()?;
-    let consts = bake_consts(ctx, &stock, params, width);
+    let num_emul_hint = stock.emulsion_layers().count();
+    let lease = acquire_film_resources(ctx, &stock, params, width, height, num_emul_hint);
+    let consts = lease.consts();
+    let scratch = lease.scratch();
     let e = consts.num_emul as usize;
 
-    // Planar work buffers (E planes each, layer-major).
-    let planes = ctx.create_f32_buffer(e * n, "film_planes"); // absorbed → fraction
-    let dye = ctx.create_f32_buffer(e * n, "film_dye");
-    let mask = ctx.create_f32_buffer(e * n, "film_mask");
-    let work = ctx.create_f32_buffer(e * n, "film_work"); // diffused inhibitors
-    let btmp = ctx.create_f32_buffer(n, "film_btmp"); // blur horizontal intermediate
-    let bout = ctx.create_f32_buffer(n, "film_bout"); // blur output / bounce / noise
-    let noise = ctx.create_f32_buffer(n, "film_noise"); // raw noise (pre-blur)
-    // Partial sums for grain variance (GRAIN_VAR_PARTIALS_PER × E); reused across emulsions.
-    let var_partial = ctx.create_f32_buffer(GRAIN_VAR_PARTIALS_PER * e.max(1), "film_var_partial");
+    let planes = &scratch.planes;
+    let dye = &scratch.dye;
+    let mask = &scratch.mask;
+    let work = &scratch.work;
+    let btmp = &scratch.btmp;
+    let bout = &scratch.bout;
+    let noise = &scratch.noise;
+    let var_partial = &scratch.var_partial;
 
     // ── Stage 1: expose → absorbed planes ──
     {
@@ -750,9 +754,9 @@ pub async fn process_gpu(
             };
             let blur_ub = bytemuck::bytes_of(&blur_u);
             let mix_ub = bytemuck::bytes_of(&mix_u);
-            let h_bufs = [&planes, &btmp, &kbuf];
-            let v_bufs = [&btmp, &bout, &kbuf];
-            let mix_bufs = [&planes, &bout];
+            let h_bufs = [planes, btmp, &kbuf];
+            let v_bufs = [btmp, bout, &kbuf];
+            let mix_bufs = [planes, bout];
             let d = blur_dispatch(width, height, radius);
             let mix_wg = workgroups(n);
             // Blur H+V + mix in one submit.
@@ -913,9 +917,9 @@ pub async fn process_gpu(
             };
             let blur_ub = bytemuck::bytes_of(&blur_u);
             let adj_ub = bytemuck::bytes_of(&adj_u);
-            let h_bufs = [&dye, &btmp, &kbuf];
-            let v_bufs = [&btmp, &bout, &kbuf];
-            let adj_bufs = [&dye, &bout];
+            let h_bufs = [dye, btmp, &kbuf];
+            let v_bufs = [btmp, bout, &kbuf];
+            let adj_bufs = [dye, bout];
             let d = blur_dispatch(width, height, radius);
             let adj_wg = workgroups(n);
             ctx.dispatch_compute_passes(
@@ -992,9 +996,9 @@ pub async fn process_gpu(
             };
             let noise_ub = bytemuck::bytes_of(&nu);
             let blur_ub = bytemuck::bytes_of(&blur_u);
-            let noise_bufs = [&noise];
-            let h_bufs = [&noise, &btmp, &kbuf];
-            let v_bufs = [&btmp, &work, &kbuf];
+            let noise_bufs = [noise];
+            let h_bufs = [noise, btmp, &kbuf];
+            let v_bufs = [btmp, work, &kbuf];
             let noise_wg = workgroups(n);
             let d = blur_dispatch(width, height, radius);
             ctx.dispatch_compute_passes(

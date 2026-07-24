@@ -4,6 +4,59 @@ use std::sync::{Arc, Mutex};
 use wgpu::util::DeviceExt;
 use crate::pixel::{Image, Pixel};
 
+#[cfg(target_arch = "wasm32")]
+const PRESENT_BLIT_WGSL: &str = r#"
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+}
+
+// img_w/img_h = source buffer; surf_w/surf_h = canvas (fixed full-res extent)
+struct Dims {
+    img_w: u32,
+    img_h: u32,
+    surf_w: u32,
+    surf_h: u32,
+}
+
+@group(0) @binding(0) var<storage, read> pixels: array<vec4<f32>>;
+@group(0) @binding(1) var<uniform> dims: Dims;
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 3.0, -1.0),
+        vec2<f32>(-1.0,  3.0),
+    );
+    var out: VertexOutput;
+    out.position = vec4<f32>(pos[vertex_index], 0.0, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Scale-to-fit (contain) into the locked surface so preview/full share the same framing.
+    let scale = min(
+        f32(dims.surf_w) / f32(dims.img_w),
+        f32(dims.surf_h) / f32(dims.img_h)
+    );
+    let draw_w = f32(dims.img_w) * scale;
+    let draw_h = f32(dims.img_h) * scale;
+    let off_x = (f32(dims.surf_w) - draw_w) * 0.5;
+    let off_y = (f32(dims.surf_h) - draw_h) * 0.5;
+    let fx = (in.position.x - off_x) / scale;
+    let fy = (in.position.y - off_y) / scale;
+    if (fx < 0.0 || fy < 0.0 || fx >= f32(dims.img_w) || fy >= f32(dims.img_h)) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+    let x = u32(fx);
+    let y = u32(fy);
+    let i = y * dims.img_w + x;
+    let c = clamp(pixels[i].rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(c, 1.0);
+}
+"#;
+
 /// Cached compute pipeline keyed by WGSL identity + bind layout shape.
 struct CachedPipeline {
     pipeline: Arc<wgpu::ComputePipeline>,
@@ -33,10 +86,31 @@ fn hash_source(src: &str) -> u64 {
     h.finish()
 }
 
+#[cfg(target_arch = "wasm32")]
+struct PresentState {
+    canvas: web_sys::OffscreenCanvas,
+    surface: wgpu::Surface<'static>,
+    config: wgpu::SurfaceConfiguration,
+    blit_pipeline: wgpu::RenderPipeline,
+    blit_bind_group_layout: wgpu::BindGroupLayout,
+    /// When true, canvas extent stays fixed (full-res) across preview/final presents.
+    extent_locked: bool,
+}
+
 pub struct GpuContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    #[allow(dead_code)] // used by wasm canvas present
+    instance: wgpu::Instance,
+    #[allow(dead_code)] // used by wasm canvas present
+    adapter: wgpu::Adapter,
     pipeline_cache: Mutex<HashMap<PipelineKey, CachedPipeline>>,
+    /// Reused RGBA working buffers (preview + final sizes). Cap 2 to avoid thrash.
+    rgba_pool: Mutex<Vec<GpuImageBuffer>>,
+    /// Reused demosaic mosaic upload buffer (avoid create_buffer_init every run).
+    demosaic_raw_pool: Mutex<Option<(usize, wgpu::Buffer)>>,
+    #[cfg(target_arch = "wasm32")]
+    present: Mutex<Option<PresentState>>,
 }
 
 unsafe impl Send for GpuContext {}
@@ -127,7 +201,13 @@ impl GpuContext {
         Ok(Arc::new(Self {
             device,
             queue,
+            instance,
+            adapter,
             pipeline_cache: Mutex::new(HashMap::new()),
+            rgba_pool: Mutex::new(Vec::new()),
+            demosaic_raw_pool: Mutex::new(None),
+            #[cfg(target_arch = "wasm32")]
+            present: Mutex::new(None),
         }))
     }
 
@@ -138,6 +218,254 @@ impl GpuContext {
     /// Block until queued GPU work completes. Use at readback / true sync points only.
     pub fn poll_wait(&self) {
         self.device.poll(wgpu::Maintain::Wait);
+    }
+
+    /// Attach an OffscreenCanvas surface for GPU present (no CPU readback).
+    #[cfg(target_arch = "wasm32")]
+    pub fn configure_canvas(&self, canvas: web_sys::OffscreenCanvas) -> Result<(), String> {
+        let surface = self
+            .instance
+            .create_surface(wgpu::SurfaceTarget::OffscreenCanvas(canvas.clone()))
+            .map_err(|e| format!("Failed to create canvas surface: {e}"))?;
+
+        let caps = surface.get_capabilities(&self.adapter);
+        let format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| {
+                matches!(
+                    f,
+                    wgpu::TextureFormat::Rgba8Unorm
+                        | wgpu::TextureFormat::Bgra8Unorm
+                        | wgpu::TextureFormat::Rgba8UnormSrgb
+                        | wgpu::TextureFormat::Bgra8UnormSrgb
+                )
+            })
+            .or_else(|| caps.formats.first().copied())
+            .ok_or_else(|| "No surface formats available".to_string())?;
+
+        let width = canvas.width().max(1);
+        let height = canvas.height().max(1);
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width,
+            height,
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: caps
+                .alpha_modes
+                .first()
+                .copied()
+                .unwrap_or(wgpu::CompositeAlphaMode::Opaque),
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&self.device, &config);
+
+        let blit_bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Present Blit Bind Group Layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
+
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Present Blit Shader"),
+                source: wgpu::ShaderSource::Wgsl(PRESENT_BLIT_WGSL.into()),
+            });
+
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Present Blit Pipeline Layout"),
+                bind_group_layouts: &[&blit_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let blit_pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Present Blit Pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
+        *self.present.lock().unwrap() = Some(PresentState {
+            canvas,
+            surface,
+            config,
+            blit_pipeline,
+            blit_bind_group_layout,
+            extent_locked: false,
+        });
+
+        web_sys::console::log_1(
+            &format!("[Pichromatic GPU] Canvas surface configured ({format:?})").into(),
+        );
+        Ok(())
+    }
+
+    /// Lock the present canvas to a fixed pixel extent (full-res). Preview/final then
+    /// share the same surface framing via scale-to-fit, avoiding 1–2px jumps.
+    #[cfg(target_arch = "wasm32")]
+    pub fn set_present_extent(&self, width: u32, height: u32) -> Result<(), String> {
+        let mut present_guard = self.present.lock().unwrap();
+        let present = present_guard
+            .as_mut()
+            .ok_or_else(|| "Canvas surface not configured".to_string())?;
+
+        let width = width.max(1);
+        let height = height.max(1);
+        present.canvas.set_width(width);
+        present.canvas.set_height(height);
+        present.config.width = present.canvas.width().max(1);
+        present.config.height = present.canvas.height().max(1);
+        present
+            .surface
+            .configure(&self.device, &present.config);
+        present.extent_locked = true;
+
+        web_sys::console::log_1(
+            &format!(
+                "[Pichromatic GPU] Present extent locked to {}x{}",
+                present.config.width, present.config.height
+            )
+            .into(),
+        );
+        Ok(())
+    }
+
+    /// Present RGBA f32 storage buffer to the configured canvas. Clamps RGB to [0, 1].
+    #[cfg(target_arch = "wasm32")]
+    pub fn present_image(&self, gpu_buf: &GpuImageBuffer) -> Result<(), String> {
+        let mut present_guard = self.present.lock().unwrap();
+        let present = present_guard
+            .as_mut()
+            .ok_or_else(|| "Canvas surface not configured".to_string())?;
+
+        let img_w = (gpu_buf.width as u32).max(1);
+        let img_h = (gpu_buf.height as u32).max(1);
+
+        if !present.extent_locked {
+            // Fallback before decode locks full-res extent: size to this frame once.
+            present.canvas.set_width(img_w);
+            present.canvas.set_height(img_h);
+            present.config.width = present.canvas.width().max(1);
+            present.config.height = present.canvas.height().max(1);
+            present
+                .surface
+                .configure(&self.device, &present.config);
+        }
+
+        let surf_w = present.config.width;
+        let surf_h = present.config.height;
+
+        let frame = present
+            .surface
+            .get_current_texture()
+            .map_err(|e| format!("Failed to acquire surface texture: {e}"))?;
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let dims = [img_w, img_h, surf_w, surf_h];
+        let dims_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Present Dims Uniform"),
+            contents: bytemuck::cast_slice(&dims),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Present Blit Bind Group"),
+            layout: &present.blit_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: gpu_buf.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: dims_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Present Encoder"),
+            });
+
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Present Blit Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rpass.set_pipeline(&present.blit_pipeline);
+            rpass.set_bind_group(0, &bind_group, &[]);
+            rpass.draw(0..3, 0..1);
+        }
+
+        self.queue.submit(Some(encoder.finish()));
+        frame.present();
+        Ok(())
     }
 
     /// Upload CPU `Image` to a GPU Storage Buffer (layout: RGBA f32 per pixel)
@@ -242,7 +570,7 @@ impl GpuContext {
 
         Image {
             rgb_data,
-            raw_data: vec![],
+            raw_data: std::sync::Arc::from([]),
             metadata: meta,
         }
     }
@@ -299,7 +627,7 @@ impl GpuContext {
 
         Image {
             metadata: meta,
-            raw_data: vec![],
+            raw_data: std::sync::Arc::from([]),
             rgb_data,
         }
     }
@@ -323,6 +651,60 @@ impl GpuContext {
             width,
             height,
         }
+    }
+
+    /// Acquire a reusable RGBA working buffer for `(width, height)`.
+    /// Keeps up to two sizes (preview + final) to avoid multi‑GB realloc thrash.
+    pub fn acquire_rgba_buffer(&self, width: usize, height: usize) -> GpuImageBuffer {
+        let width = width.max(1);
+        let height = height.max(1);
+        let mut pool = self.rgba_pool.lock().unwrap();
+        if let Some(i) = pool
+            .iter()
+            .position(|b| b.width == width && b.height == height)
+        {
+            return pool.remove(i);
+        }
+        self.create_output_buffer(width, height)
+    }
+
+    /// Return an RGBA buffer to the pool for the next pipeline run.
+    pub fn recycle_rgba_buffer(&self, buf: GpuImageBuffer) {
+        let mut pool = self.rgba_pool.lock().unwrap();
+        pool.retain(|b| !(b.width == buf.width && b.height == buf.height));
+        pool.push(buf);
+        while pool.len() > 2 {
+            pool.remove(0);
+        }
+    }
+
+    /// Acquire/reuse an f32 storage buffer and upload `data` via `write_buffer`
+    /// (avoids `create_buffer_init` + WASM heap growth every demosaic).
+    pub fn acquire_f32_storage_write(&self, data: &[f32], label: &str) -> wgpu::Buffer {
+        let count = data.len().max(1);
+        let bytes = bytemuck::cast_slice(data);
+        let mut pool = self.demosaic_raw_pool.lock().unwrap();
+        if let Some((cap, buf)) = pool.take() {
+            if cap >= count {
+                self.queue.write_buffer(&buf, 0, bytes);
+                return buf;
+            }
+            // Too small — drop and recreate.
+        }
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (count * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&buf, 0, bytes);
+        buf
+    }
+
+    pub fn recycle_f32_storage(&self, buf: wgpu::Buffer, count: usize) {
+        *self.demosaic_raw_pool.lock().unwrap() = Some((count.max(1), buf));
     }
 
     /// Allocate an f32 storage buffer (for intermediate plane / scratch data).

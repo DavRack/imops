@@ -44,7 +44,7 @@ pub fn film_version() -> &'static str {
     "0.1.0"
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FilmOutput {
     /// Densitometric ACEScg, Dmin normalized ~1 (scanned negative).
     NegativeLinear,
@@ -183,7 +183,7 @@ mod tests {
         ));
         Image {
             rgb_data: vec![fill; width * height],
-            raw_data: vec![],
+            raw_data: std::sync::Arc::from([]),
             metadata: ImageMetadata {
                 width,
                 height,

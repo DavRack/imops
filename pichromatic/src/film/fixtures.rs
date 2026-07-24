@@ -94,7 +94,7 @@ pub fn colorchecker_image(patch: usize) -> (Image, [[f32; 3]; 24]) {
     }
     let image = Image {
         rgb_data,
-        raw_data: vec![],
+        raw_data: std::sync::Arc::from([]),
         metadata: ImageMetadata {
             width,
             height,

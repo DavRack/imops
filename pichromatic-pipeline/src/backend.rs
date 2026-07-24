@@ -11,7 +11,8 @@ pub enum Backend {
 
 pub enum PipelineImage {
     Cpu(Image),
-    Gpu(GpuImageBuffer, ImageMetadata, Vec<SubPixel>),
+    /// GPU working image + shared Bayer raw (Arc — no per-run clone).
+    Gpu(GpuImageBuffer, ImageMetadata, Arc<[SubPixel]>),
 }
 
 impl PipelineImage {
@@ -20,8 +21,13 @@ impl PipelineImage {
     }
 
     pub fn new_gpu(ctx: &GpuContext, image: &Image) -> Self {
-        let buffer = ctx.upload_image(image);
-        Self::Gpu(buffer, image.metadata.clone(), image.raw_data.clone())
+        let width = image.metadata.width.max(1);
+        let height = image.metadata.height.max(1);
+        let buffer = ctx.acquire_rgba_buffer(width, height);
+        if !image.rgb_data.is_empty() {
+            ctx.update_buffer_from_image(&buffer, image);
+        }
+        Self::Gpu(buffer, image.metadata.clone(), Arc::clone(&image.raw_data))
     }
 
     pub fn to_cpu(&self, ctx: Option<&GpuContext>) -> Image {
@@ -30,7 +36,7 @@ impl PipelineImage {
             Self::Gpu(buf, meta, raw_data) => {
                 let context = ctx.expect("GpuContext required to download GpuImage");
                 let mut img = context.download_image(buf, meta);
-                img.raw_data = raw_data.clone();
+                img.raw_data = Arc::clone(raw_data);
                 img
             }
         }
@@ -42,7 +48,7 @@ impl PipelineImage {
             Self::Gpu(buf, meta, raw_data) => {
                 let context = ctx.expect("GpuContext required to download GpuImage");
                 let mut img = context.download_image_async(buf, meta).await;
-                img.raw_data = raw_data.clone();
+                img.raw_data = Arc::clone(raw_data);
                 img
             }
         }
@@ -52,9 +58,14 @@ impl PipelineImage {
         match self {
             Self::Gpu(buf, meta, _raw_data) => (buf, meta),
             Self::Cpu(img) => {
-                let buf = ctx.upload_image(img);
+                let width = img.metadata.width.max(1);
+                let height = img.metadata.height.max(1);
+                let buf = ctx.acquire_rgba_buffer(width, height);
+                if !img.rgb_data.is_empty() {
+                    ctx.update_buffer_from_image(&buf, img);
+                }
                 let meta = img.metadata.clone();
-                let raw_data = img.raw_data.clone();
+                let raw_data = Arc::clone(&img.raw_data);
                 *self = Self::Gpu(buf, meta, raw_data);
                 match self {
                     Self::Gpu(buf, meta, _raw_data) => (buf, meta),
@@ -70,13 +81,24 @@ impl PipelineImage {
             Self::Gpu(buf, meta, raw_data) => {
                 let context = ctx.expect("GpuContext required to download GpuImage");
                 let mut img = context.download_image(buf, meta);
-                img.raw_data = raw_data.clone();
-                *self = Self::Cpu(img);
+                img.raw_data = Arc::clone(raw_data);
+                // Recycle the GPU buffer before dropping it via replace.
+                let old = std::mem::replace(self, Self::Cpu(img));
+                if let Self::Gpu(buf, _, _) = old {
+                    context.recycle_rgba_buffer(buf);
+                }
                 match self {
                     Self::Cpu(img) => img,
                     _ => unreachable!(),
                 }
             }
+        }
+    }
+
+    /// Recycle the GPU RGBA buffer back into the context pool (if any).
+    pub fn recycle_gpu_buffer(self, ctx: &GpuContext) {
+        if let Self::Gpu(buf, _, _) = self {
+            ctx.recycle_rgba_buffer(buf);
         }
     }
 }

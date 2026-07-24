@@ -16,7 +16,7 @@ fn main() {
         let fill = [y * gain; 3];
         let mut img = Image {
             rgb_data: vec![fill; 64 * 64],
-            raw_data: vec![],
+            raw_data: std::sync::Arc::from([]),
             metadata: ImageMetadata {
                 width: 64,
                 height: 64,
@@ -51,7 +51,7 @@ fn main() {
         let fill = [fill_rel[0] * gain, fill_rel[1] * gain, fill_rel[2] * gain];
         let mut img = Image {
             rgb_data: vec![fill; 64 * 64],
-            raw_data: vec![],
+            raw_data: std::sync::Arc::from([]),
             metadata: ImageMetadata {
                 width: 64,
                 height: 64,

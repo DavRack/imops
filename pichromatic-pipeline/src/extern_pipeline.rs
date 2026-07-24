@@ -118,6 +118,57 @@ pub async fn init_gpu_js() -> bool {
     pichromatic::gpu::GpuContext::global().await.is_some()
 }
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub async fn configure_canvas_js(canvas: web_sys::OffscreenCanvas) -> bool {
+    console_error_panic_hook::set_once();
+    let gpu_ctx = match pichromatic::gpu::GpuContext::global().await {
+        Some(ctx) => ctx,
+        None => {
+            web_sys::console::error_1(
+                &"[Pichromatic WASM Error] Failed to acquire WebGPU GpuContext for canvas".into(),
+            );
+            return false;
+        }
+    };
+    match gpu_ctx.configure_canvas(canvas) {
+        Ok(()) => true,
+        Err(e) => {
+            web_sys::console::error_1(
+                &format!("[Pichromatic WASM Error] configure_canvas failed: {e}").into(),
+            );
+            false
+        }
+    }
+}
+
+/// Lock the OffscreenCanvas present surface to full-res metadata size so preview/final
+/// share identical CSS/intrinsic framing (scale-to-fit blit handles resolution differences).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub async fn set_present_extent_js(width: u32, height: u32) -> bool {
+    console_error_panic_hook::set_once();
+    let gpu_ctx = match pichromatic::gpu::GpuContext::global().await {
+        Some(ctx) => ctx,
+        None => {
+            web_sys::console::error_1(
+                &"[Pichromatic WASM Error] Failed to acquire WebGPU GpuContext for present extent"
+                    .into(),
+            );
+            return false;
+        }
+    };
+    match gpu_ctx.set_present_extent(width, height) {
+        Ok(()) => true,
+        Err(e) => {
+            web_sys::console::error_1(
+                &format!("[Pichromatic WASM Error] set_present_extent failed: {e}").into(),
+            );
+            false
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub fn run_pixel_pipeline_js(image: *const Image, pixel_pipeline: *mut PipelineConfig) -> *const Image {
     console_error_panic_hook::set_once();
@@ -155,6 +206,46 @@ pub async fn run_pixel_pipeline_async_js(image: *const Image, pixel_pipeline: *m
     Box::leak(Box::new(work_image))
 }
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub async fn run_pixel_pipeline_present_async_js(
+    image: *const Image,
+    pixel_pipeline: *mut PipelineConfig,
+) -> Result<JsValue, JsValue> {
+    console_error_panic_hook::set_once();
+    let image_obj = unsafe { &*image };
+    let pipeline_obj = unsafe { &mut *pixel_pipeline };
+
+    let gpu_ctx = match pichromatic::gpu::GpuContext::global().await {
+        Some(ctx) => ctx,
+        None => {
+            return Err(JsValue::from_str(
+                "Failed to acquire WebGPU GpuContext for present",
+            ));
+        }
+    };
+
+    web_sys::console::log_1(
+        &"[Pichromatic WASM] Executing pipeline on WebGPU and presenting to canvas 🚀".into(),
+    );
+    let backend = Backend::Wgpu(gpu_ctx);
+    let (width, height) =
+        crate::pipeline::run_pixel_pipeline_present_async(image_obj, pipeline_obj, &backend)
+            .await
+            .map_err(|e| JsValue::from_str(&e))?;
+
+    let obj = js_sys::Object::new();
+    js_sys::Reflect::set(&obj, &JsValue::from_str("width"), &JsValue::from(width as u32))
+        .map_err(|_| JsValue::from_str("Failed to set width"))?;
+    js_sys::Reflect::set(
+        &obj,
+        &JsValue::from_str("height"),
+        &JsValue::from(height as u32),
+    )
+    .map_err(|_| JsValue::from_str("Failed to set height"))?;
+    Ok(obj.into())
+}
+
 #[no_mangle]
 #[wasm_bindgen]
 pub extern "C" fn crop_bayer_center(
@@ -164,54 +255,46 @@ pub extern "C" fn crop_bayer_center(
     if crop_factor <= 1 {
         return image;
     }
-    let image_obj = unsafe {&*image};
-    // leak image_obj because we need to return a pointer to a section of memory that outlives 
-    // this function
-    let image_obj = Box::leak(Box::new(image_obj));
+    let image_obj = unsafe { &*image };
     let factor = crop_factor;
     let width = image_obj.metadata.width;
     let height = image_obj.metadata.height;
 
-    // 2. Calculate new dimensions
-    let new_width = (width / factor) & !1;
-    let new_height = (height / factor) & !1;
+    // Subsample Bayer 2x2 blocks by `factor`, centered in the source so leftover
+    // blocks don't bias framing top-left (avoids a 1–2px jump vs full-res).
+    let src_blocks_x = width / 2;
+    let src_blocks_y = height / 2;
+    let out_blocks_x = (src_blocks_x / factor).max(1);
+    let out_blocks_y = (src_blocks_y / factor).max(1);
+    let new_width = out_blocks_x * 2;
+    let new_height = out_blocks_y * 2;
+
+    let offset_block_x = (src_blocks_x - out_blocks_x * factor) / 2;
+    let offset_block_y = (src_blocks_y - out_blocks_y * factor) / 2;
 
     let mut result = Vec::with_capacity(new_width * new_height);
 
-    // 2. Iterate over the *destination* coordinates
     for y in 0..new_height {
-        // Determine if we are in the top row (0) or bottom row (1) of a 2x2 block
         let row_offset = y % 2;
-        // Determine which 2x2 block row we are pulling from in the source
-        // Example: If factor is 2, Dest Y 0->Src Y 0, Dest Y 1->Src Y 1, Dest Y 2->Src Y 4
-        let src_block_y = (y / 2) * factor;
+        let src_block_y = (y / 2) * factor + offset_block_y;
         let src_y = (src_block_y * 2) + row_offset;
-
-        // Pre-calculate row start to avoid multiplication in inner loop
         let src_row_start_idx = src_y * width;
 
         for x in 0..new_width {
-            // Determine if we are in the left col (0) or right col (1) of a 2x2 block
             let col_offset = x % 2;
-
-            // Determine which 2x2 block col we are pulling from
-            let src_block_x = (x / 2) * factor;
+            let src_block_x = (x / 2) * factor + offset_block_x;
             let src_x = (src_block_x * 2) + col_offset;
-
-            // 3. Extract pixel
-            // This logic skips (factor-1) 2x2 blocks between every sample
             let idx = src_row_start_idx + src_x;
 
-            // Safety check for production (optional if you trust your math/inputs)
             if idx < image_obj.raw_data.len() {
                 result.push(image_obj.raw_data[idx]);
             } else {
-                result.push(0.0); // Padding if math drifts at edges
+                result.push(0.0);
             }
         }
     }
     let mut new_img = Image::default();
-    new_img.raw_data = result;
+    new_img.raw_data = std::sync::Arc::from(result);
     new_img.metadata = image_obj.metadata.clone();
     new_img.metadata.width = new_width;
     new_img.metadata.height = new_height;
@@ -356,14 +439,14 @@ pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
     };
 
     let mut image = Image{
-        raw_data: raw_image_data,
+        raw_data: raw_image_data.into(),
         rgb_data: vec![],
         metadata: image_metadata,
     };
     let normalized_raw_data = crop_and_normalize(
         &image,
     );
-    image.raw_data = normalized_raw_data;
+    image.raw_data = std::sync::Arc::from(normalized_raw_data);
     image.metadata.width = image.metadata.crop_area.unwrap().d.w;
     image.metadata.height = image.metadata.crop_area.unwrap().d.h;
     image

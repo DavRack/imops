@@ -28,7 +28,7 @@ pub struct Rect {
 }
 
 pub trait DemosaicAlgorithm {
-    fn demosaic(self, width: usize, height: usize, cfa: CFA, input: Vec<SubPixel>) -> Image;
+    fn demosaic(self, width: usize, height: usize, cfa: CFA, input: &[SubPixel]) -> Image;
 }
 
 pub fn demosaic(
@@ -47,7 +47,7 @@ pub fn demosaic(
         image.metadata.width,
         image.metadata.height,
         cfa,
-        image.raw_data
+        &image.raw_data,
     );
 
     original_metadata.width = debayer_image.metadata.width;
@@ -111,7 +111,7 @@ pub mod demosaic_algorithms {
             width: usize,
             height: usize,
             cfa: CFA, // Changed to reference to avoid ownership issues, adjust as needed
-            input: Vec<SubPixel> // Changed to slice to avoid moving/cloning
+            input: &[SubPixel] // Changed to slice to avoid moving/cloning
         ) -> Image {
             // demosaic_neon( width, height, &cfa, &input) // // 1. Allocate Result Buffer Once
             let mut rgb: ImageBuffer = vec![[0.0; 3]; width * height];
@@ -179,7 +179,7 @@ pub mod demosaic_algorithms {
 
             return Image {
                 rgb_data: rgb,
-                raw_data: vec![],
+                raw_data: std::sync::Arc::from([]),
                 metadata: image_metadata,
             }
         }
@@ -192,7 +192,7 @@ pub mod demosaic_algorithms {
             width: usize,
             height: usize,
             cfa: CFA,
-            input: Vec<SubPixel>,
+            input: &[SubPixel],
         ) -> Image {
             let new_width = width / 2;
             let new_height = height / 2;
@@ -227,7 +227,7 @@ pub mod demosaic_algorithms {
 
             return Image {
                 rgb_data: rgb,
-                raw_data: vec![],
+                raw_data: std::sync::Arc::from([]),
                 metadata: image_metadata,
             }
         }
@@ -239,7 +239,7 @@ pub mod demosaic_algorithms {
             width: usize,
             height: usize,
             cfa: CFA,
-            input: Vec<SubPixel>,
+            input: &[SubPixel],
         ) -> Image {
             // Target: 1/4th of the original width and height
             // This results in an image 1/16th the size of the RAW file (Thumbnail/Preview size)
@@ -288,7 +288,7 @@ pub mod demosaic_algorithms {
 
             return Image {
                 rgb_data: rgb,
-                raw_data: vec![],
+                raw_data: std::sync::Arc::from([]),
                 metadata: image_metadata,
             }
         }
@@ -299,7 +299,7 @@ pub mod demosaic_algorithms {
             width: usize,
             height: usize,
             cfa: CFA,
-            input: Vec<SubPixel>,
+            input: &[SubPixel],
         ) -> Image {
             // Target: 1/4th of the original width and height
             // This results in an image 1/16th the size of the RAW file (Thumbnail/Preview size)
@@ -349,7 +349,7 @@ pub mod demosaic_algorithms {
 
             return Image {
                 rgb_data: rgb,
-                raw_data: vec![],
+                raw_data: std::sync::Arc::from([]),
                 metadata: image_metadata,
             }
         }
@@ -371,7 +371,7 @@ pub mod demosaic_algorithms {
             width: usize,
             height: usize,
             cfa: CFA,
-            input: Vec<SubPixel>,
+            input: &[SubPixel],
         ) -> Image {
             let mut rgb: ImageBuffer = vec![[0.0; 3]; width * height];
 
@@ -1372,7 +1372,7 @@ pub mod demosaic_algorithms {
 
             Image {
                 rgb_data: rgb,
-                raw_data: vec![],
+                raw_data: std::sync::Arc::from([]),
                 metadata: image_metadata,
             }
         }
@@ -1404,11 +1404,7 @@ pub fn demosaic_markesteijn_gpu(
 ) -> GpuImageBuffer {
     assert_eq!(raw.len(), width * height, "raw length must equal width*height");
 
-    let raw_buf = ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("demosaic_raw"),
-        contents: bytemuck::cast_slice(raw),
-        usage: wgpu::BufferUsages::STORAGE,
-    });
+    let raw_buf = ctx.acquire_f32_storage_write(raw, "demosaic_raw");
 
     let mut cfa_flat = vec![0u32; 48 * 48];
     for row in 0..48 {
@@ -1422,7 +1418,7 @@ pub fn demosaic_markesteijn_gpu(
         usage: wgpu::BufferUsages::STORAGE,
     });
 
-    let out = ctx.create_output_buffer(width, height);
+    let out = ctx.acquire_rgba_buffer(width, height);
     let params = DemosaicParamsGpu {
         width: width as u32,
         height: height as u32,
@@ -1498,6 +1494,8 @@ pub fn demosaic_markesteijn_gpu(
         bytemuck::bytes_of(&params),
         workgroups,
     );
+    ctx.recycle_f32_storage(raw_buf, raw.len());
+    drop(cfa_buf);
     out
 }
 
@@ -1513,7 +1511,7 @@ mod tests {
         let cfa = CFA::new("RGGB");
         let input = vec![0.5; width * height];
         
-        let image = demosaic_algorithms::Fast{}.demosaic(width, height, cfa, input);
+        let image = demosaic_algorithms::Fast{}.demosaic(width, height, cfa, &input);
         
         assert_eq!(image.metadata.width, width / 2);
         assert_eq!(image.metadata.height, height / 2);
@@ -1535,7 +1533,7 @@ mod tests {
         let cfa = CFA::new("RGGB");
         let input = vec![0.5; width * height];
         
-        let image = demosaic_algorithms::Amaze::default().demosaic(width, height, cfa, input);
+        let image = demosaic_algorithms::Amaze::default().demosaic(width, height, cfa, &input);
         
         assert_eq!(image.metadata.width, width);
         assert_eq!(image.metadata.height, height);
@@ -1557,7 +1555,7 @@ mod tests {
         let cfa = CFA::new("RGGB");
         let input = vec![0.5; width * height];
         
-        let image = demosaic_algorithms::Amaze::default().demosaic(width, height, cfa, input);
+        let image = demosaic_algorithms::Amaze::default().demosaic(width, height, cfa, &input);
         
         assert_eq!(image.metadata.width, width);
         assert_eq!(image.metadata.height, height);

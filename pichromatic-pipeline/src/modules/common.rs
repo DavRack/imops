@@ -30,7 +30,7 @@ pub fn generate_test_image_512x512(seed: u64) -> Image {
 
     Image {
         rgb_data,
-        raw_data,
+        raw_data: raw_data.into(),
         metadata: ImageMetadata {
             width,
             height,

@@ -1,4 +1,5 @@
 use color::{ColorSpaceTag};
+use std::sync::Arc;
 
 use crate::{
     cfa_coeffs::cfa_coeffs,
@@ -19,11 +20,22 @@ pub type Pixel = [SubPixel; CHANNELS_PER_PIXEL];
 
 pub type ImageBuffer = Vec<Pixel>;
 
-#[derive(Clone, Default, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Image {
     pub rgb_data: ImageBuffer,
-    pub raw_data: Vec<SubPixel>,
+    /// Bayer / mosaic samples. Arc so pipeline runs can share without cloning.
+    pub raw_data: Arc<[SubPixel]>,
     pub metadata: ImageMetadata,
+}
+
+impl Default for Image {
+    fn default() -> Self {
+        Self {
+            rgb_data: Vec::new(),
+            raw_data: Arc::from([]),
+            metadata: ImageMetadata::default(),
+        }
+    }
 }
 
 // pub const R_RELATIVE_LUMINANCE: SubPixel = 0.2126;

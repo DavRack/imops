@@ -378,7 +378,7 @@ pub fn to_pipeline_image(img: &DynamicImage) -> Image {
     }
 
     Image {
-        raw_data: vec![],
+        raw_data: std::sync::Arc::from([]),
         rgb_data,
         metadata: ImageMetadata {
             width: width as usize,

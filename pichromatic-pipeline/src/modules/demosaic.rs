@@ -41,14 +41,23 @@ impl PipelineModule for Module<Demosaic> {
             }
             Backend::Wgpu(ctx) => {
                 // Demosaic reads mosaic `raw_data` (not the RGB GPU buffer).
-                let (raw, mut meta) = match image {
-                    PipelineImage::Gpu(_, meta, raw) => (std::mem::take(raw), meta.clone()),
-                    PipelineImage::Cpu(img) => (img.raw_data.clone(), img.metadata.clone()),
+                let (raw, mut meta) = match std::mem::replace(
+                    image,
+                    PipelineImage::Cpu(pichromatic::pixel::Image::default()),
+                ) {
+                    PipelineImage::Gpu(buf, meta, raw) => {
+                        ctx.recycle_rgba_buffer(buf);
+                        (raw, meta)
+                    }
+                    PipelineImage::Cpu(img) => (img.raw_data, img.metadata),
                 };
 
                 if meta.cfa.is_none() || meta.crop_area.is_none() {
-                    // No raw mosaic — keep / create GPU buffer unchanged (test RGB images).
-                    let _ = image.ensure_gpu(ctx);
+                    // No raw mosaic — restore a GPU working buffer.
+                    let width = meta.width.max(1);
+                    let height = meta.height.max(1);
+                    let buf = ctx.acquire_rgba_buffer(width, height);
+                    *image = PipelineImage::Gpu(buf, meta, raw);
                     return;
                 }
 
@@ -75,7 +84,7 @@ impl PipelineModule for Module<Demosaic> {
                 };
 
                 meta.color_space = None;
-                *image = PipelineImage::Gpu(out_buf, meta, vec![]);
+                *image = PipelineImage::Gpu(out_buf, meta, std::sync::Arc::from([]));
             }
         }
     }
@@ -168,7 +177,7 @@ mod tests {
         }
         Image {
             rgb_data: vec![],
-            raw_data,
+            raw_data: raw_data.into(),
             metadata: ImageMetadata {
                 width,
                 height,

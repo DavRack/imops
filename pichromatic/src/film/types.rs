@@ -21,7 +21,7 @@ impl ExposureMeta {
 }
 
 /// Film format → usable frame width for pixel-pitch conversion.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FilmFormat {
     /// 35 mm still: 36.0 mm usable frame width.
     Film35mm,

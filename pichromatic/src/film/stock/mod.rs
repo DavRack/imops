@@ -122,7 +122,7 @@ pub struct FilmStock {
 }
 
 /// Public stock identifiers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StockId {
     BwStub,
     ColorNeg200,
