@@ -11,7 +11,7 @@ pub struct Exp {
 impl Default for Exp {
     fn default() -> Self {
         Self {
-            ev: Parameter::new(0.0, "Exposure compensation value in EV."),
+            ev: Parameter::new_ranged(0.0, -6.0, 6.0, "Exposure compensation value in EV."),
         }
     }
 }

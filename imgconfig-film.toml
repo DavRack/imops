@@ -9,6 +9,10 @@ name = "Demosaic"
 algorithm = "markesteijn"
 
 [[pipeline_modules]]
+name = "Vignette"
+strength = 1.0
+
+[[pipeline_modules]]
 name = "CFACoeffs"
 
 [[pipeline_modules]]
@@ -18,10 +22,6 @@ epsilon = 0.01
 
 [[pipeline_modules]]
 name = "HighlightReconstruction"
-
-[[pipeline_modules]]
-name = "Vignette"
-strength = 1.0
 
 [[pipeline_modules]]
 name = "BaselineExposureCompensation"
@@ -36,14 +36,14 @@ target_color_space = "AcesCg"
 
 [[pipeline_modules]]
 name = "Film"
-stock = "Portra400"
+stock = "Ektar100"
 film_format = "Film35mm"
 seed = 1
 output = "PositiveLinear"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 1.5
+ev = 0
 
 [[pipeline_modules]]
 name = "Contrast"
@@ -59,3 +59,7 @@ target_color_space = "LinearSrgb"
 [[pipeline_modules]]
 name = "Gamma"
 gamma = 2.2
+
+[[pipeline_modules]]
+name = "Rotation"
+angle = "auto"

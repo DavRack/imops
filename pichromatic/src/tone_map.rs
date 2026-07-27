@@ -88,9 +88,6 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         const LUMA_G: f32 = 0.6740817658;
         const LUMA_B: f32 = 0.0536895174;
 
-        // ACES RGC defaults
-        const THR: vec3<f32> = vec3<f32>(0.815, 0.803, 0.88);
-        const LIM: vec3<f32> = vec3<f32>(1.147, 1.264, 1.312);
         const POWER: f32 = 1.2;
         const SIGMOID_C: f32 = 1.219512;
         const CHROMA_K: f32 = 5.0;
@@ -197,6 +194,8 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         }
 
         fn gamut_compress(rgb: vec3<f32>) -> vec3<f32> {
+            let THR = vec3<f32>(0.815, 0.803, 0.88);
+            let LIM = vec3<f32>(1.147, 1.264, 1.312);
             let ach = max(rgb.r, max(rgb.g, rgb.b));
             if (ach == 0.0) {
                 return vec3<f32>(0.0);

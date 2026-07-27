@@ -27,7 +27,11 @@ pub fn parse_config(config: String) -> PipelineConfig {
         let name = name_val.as_str().unwrap_or_else(|| panic!("Module {} name is not a string", i));
         let template = default_modules
             .iter()
-            .find(|m| m.schema().name.to_lowercase() == name.to_lowercase())
+            .find(|m| {
+                let schema_name = m.schema().name.to_lowercase();
+                let requested_name = name.to_lowercase();
+                schema_name == requested_name || (requested_name == "tonemap" && schema_name == "sigmoidtonemap")
+            })
             .unwrap_or_else(|| panic!("wrong pipeline module name '{}'", name));
         let pipeline_module = template.create(module);
 

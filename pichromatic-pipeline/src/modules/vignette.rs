@@ -11,7 +11,7 @@ pub struct Vignette {
 impl Default for Vignette {
     fn default() -> Self {
         Self {
-            strength: Parameter::new(1.0, "Correction strength modifier."),
+            strength: Parameter::new_ranged(1.0, 0.0, 3.0, "Correction strength modifier."),
         }
     }
 }

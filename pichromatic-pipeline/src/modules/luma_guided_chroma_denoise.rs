@@ -12,8 +12,8 @@ pub struct LumaGuidedChromaDenoise {
 impl Default for LumaGuidedChromaDenoise {
     fn default() -> Self {
         Self {
-            radius: Parameter::new(4, "Guided filter radius in pixels."),
-            epsilon: Parameter::new(0.01, "Guided filter edge-preservation epsilon (linear light)."),
+            radius: Parameter::new_ranged(4, 1, 32, "Guided filter radius in pixels."),
+            epsilon: Parameter::new_ranged(0.01, 0.0001, 1.0, "Guided filter edge-preservation epsilon (linear light)."),
         }
     }
 }

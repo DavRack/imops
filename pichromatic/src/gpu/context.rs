@@ -152,13 +152,24 @@ impl GpuContext {
         GLOBAL_GPU_CONTEXT.get().cloned()
     }
 
-    pub fn new_sync() -> Arc<Self> {
+    pub fn try_new_sync() -> Option<Arc<Self>> {
         if let Some(ctx) = GLOBAL_GPU_CONTEXT.get() {
-            return ctx.clone();
+            return Some(ctx.clone());
         }
-        let ctx = pollster::block_on(Self::new());
-        let _ = GLOBAL_GPU_CONTEXT.set(ctx.clone());
-        ctx
+        match pollster::block_on(Self::try_new()) {
+            Ok(ctx) => {
+                let _ = GLOBAL_GPU_CONTEXT.set(ctx.clone());
+                Some(ctx)
+            }
+            Err(e) => {
+                eprintln!("[Pichromatic GPU] GPU initialization failed: {e}");
+                None
+            }
+        }
+    }
+
+    pub fn new_sync() -> Arc<Self> {
+        Self::try_new_sync().expect("Failed to initialize GPU context")
     }
 
     pub async fn try_new() -> Result<Arc<Self>, String> {
@@ -185,12 +196,7 @@ impl GpuContext {
                 &wgpu::DeviceDescriptor {
                     label: Some("Pichromatic GPU Device"),
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits {
-                        max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
-                        max_buffer_size: limits.max_buffer_size,
-                        max_storage_buffers_per_shader_stage: limits.max_storage_buffers_per_shader_stage.max(8),
-                        ..wgpu::Limits::downlevel_defaults()
-                    },
+                    required_limits: limits.clone(),
                     memory_hints: wgpu::MemoryHints::Performance,
                 },
                 None,
@@ -632,6 +638,124 @@ impl GpuContext {
         }
     }
 
+    /// Encode f32 RGBA → clamped RGBA8 on the GPU and download only the u8 bytes.
+    /// Used for preview/editing present when a WebGPU canvas surface is unavailable.
+    pub async fn download_rgba8_async(&self, gpu_buf: &GpuImageBuffer) -> Vec<u8> {
+        let width = gpu_buf.width.max(1);
+        let height = gpu_buf.height.max(1);
+        let num_pixels = width * height;
+        let packed_bytes = (num_pixels * 4) as u64;
+
+        let packed_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Pichromatic RGBA8 Pack Buffer"),
+            size: packed_bytes.max(4),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        #[repr(C)]
+        #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+        struct Params {
+            width: u32,
+            height: u32,
+            _pad: [u32; 2],
+        }
+        let params = Params {
+            width: width as u32,
+            height: height as u32,
+            _pad: [0; 2],
+        };
+
+        let shader = r#"
+            struct Params {
+                width: u32,
+                height: u32,
+                _pad: vec2<u32>,
+            };
+
+            @group(0) @binding(0) var<storage, read> src: array<vec4<f32>>;
+            @group(0) @binding(1) var<storage, read_write> dst: array<u32>;
+            @group(0) @binding(2) var<uniform> params: Params;
+
+            fn pack_rgba8(c: vec3<f32>) -> u32 {
+                let r = u32(clamp(c.r, 0.0, 1.0) * 255.0 + 0.5);
+                let g = u32(clamp(c.g, 0.0, 1.0) * 255.0 + 0.5);
+                let b = u32(clamp(c.b, 0.0, 1.0) * 255.0 + 0.5);
+                return r | (g << 8u) | (b << 16u) | (255u << 24u);
+            }
+
+            @compute @workgroup_size(16, 16)
+            fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let x = global_id.x;
+                let y = global_id.y;
+                if (x >= params.width || y >= params.height) {
+                    return;
+                }
+                let i = y * params.width + x;
+                dst[i] = pack_rgba8(src[i].rgb);
+            }
+        "#;
+
+        let gx = (width as u32 + 15) / 16;
+        let gy = (height as u32 + 15) / 16;
+        self.dispatch_compute_shader_2d_multi(
+            "rgba8_encode",
+            shader,
+            &[&gpu_buf.buffer, &packed_buffer],
+            bytemuck::bytes_of(&params),
+            gx,
+            gy,
+        );
+
+        let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Pichromatic RGBA8 Staging"),
+            size: packed_bytes.max(4),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("RGBA8 Download Encoder"),
+        });
+        encoder.copy_buffer_to_buffer(&packed_buffer, 0, &staging_buffer, 0, packed_bytes.max(4));
+        self.queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.device.poll(wgpu::Maintain::Wait);
+
+        #[cfg(target_arch = "wasm32")]
+        self.device.poll(wgpu::Maintain::Poll);
+
+        receiver
+            .await
+            .unwrap()
+            .expect("Failed to map RGBA8 staging buffer for read");
+
+        let data = buffer_slice.get_mapped_range();
+        let out = data[..(num_pixels * 4).min(data.len())].to_vec();
+        drop(data);
+        staging_buffer.unmap();
+        out
+    }
+
+    /// CPU helper: clamp linear RGB to display RGBA8 (same encoding as GPU path).
+    pub fn image_to_rgba8(image: &Image) -> Vec<u8> {
+        let mut out = Vec::with_capacity(image.rgb_data.len() * 4);
+        for px in &image.rgb_data {
+            out.push((px[0].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+            out.push((px[1].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+            out.push((px[2].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+            out.push(255);
+        }
+        out
+    }
+
     /// Allocate an uninitialized GPU Storage Buffer for output
     pub fn create_output_buffer(&self, width: usize, height: usize) -> GpuImageBuffer {
         let num_pixels = width * height;
@@ -663,6 +787,8 @@ impl GpuContext {
             .iter()
             .position(|b| b.width == width && b.height == height)
         {
+            #[cfg(not(target_arch = "wasm32"))]
+            self.device.poll(wgpu::Maintain::Wait);
             return pool.remove(i);
         }
         self.create_output_buffer(width, height)
@@ -686,6 +812,8 @@ impl GpuContext {
         let mut pool = self.demosaic_raw_pool.lock().unwrap();
         if let Some((cap, buf)) = pool.take() {
             if cap >= count {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.device.poll(wgpu::Maintain::Wait);
                 self.queue.write_buffer(&buf, 0, bytes);
                 return buf;
             }
@@ -1056,5 +1184,30 @@ impl GpuContext {
         );
         self.queue.submit(Some(encoder.finish()));
         drop(keep);
+    }
+}
+
+#[cfg(test)]
+mod rgba8_tests {
+    use super::*;
+    use crate::image::ImageMetadata;
+    use crate::pixel::Image;
+    use pollster::block_on;
+
+    #[test]
+    fn download_rgba8_async_clamps() {
+        let ctx = GpuContext::new_sync();
+        let image = Image {
+            rgb_data: vec![[1.5, -0.2, 0.5]],
+            raw_data: std::sync::Arc::from([]),
+            metadata: ImageMetadata {
+                width: 1,
+                height: 1,
+                ..Default::default()
+            },
+        };
+        let buf = ctx.upload_image(&image);
+        let rgba = block_on(ctx.download_rgba8_async(&buf));
+        assert_eq!(rgba, vec![255, 0, 128, 255]);
     }
 }

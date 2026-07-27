@@ -11,7 +11,7 @@ pub struct Contrast {
 impl Default for Contrast {
     fn default() -> Self {
         Self {
-            c: Parameter::new(1.0, "Contrast adjustment factor."),
+            c: Parameter::new_ranged(1.0, 0.0, 3.0, "Contrast adjustment factor."),
         }
     }
 }

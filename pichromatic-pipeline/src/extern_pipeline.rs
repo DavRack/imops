@@ -23,6 +23,19 @@ fn set_last_error(msg: String) {
 }
 
 #[no_mangle]
+pub extern "C" fn init_gpu_c() -> bool {
+    catch_panic(|| {
+        if let Some(_) = pichromatic::gpu::GpuContext::try_new_sync() {
+            eprintln!("[Pichromatic FFI] GPU pre-warmed and initialized successfully.");
+            true
+        } else {
+            eprintln!("[Pichromatic FFI WARNING] GPU pre-warming failed.");
+            false
+        }
+    }).unwrap_or(false)
+}
+
+#[no_mangle]
 pub extern "C" fn get_last_error_c() -> *mut std::os::raw::c_char {
     let mutex = LAST_ERROR.get_or_init(|| Mutex::new(None));
     if let Ok(guard) = mutex.lock() {
@@ -246,6 +259,52 @@ pub async fn run_pixel_pipeline_present_async_js(
     Ok(obj.into())
 }
 
+/// GPU pipeline + RGBA8 encode on device, then download only u8 (for 2D canvas present).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub async fn run_pixel_pipeline_readback_u8_async_js(
+    image: *const Image,
+    pixel_pipeline: *mut PipelineConfig,
+) -> Result<JsValue, JsValue> {
+    console_error_panic_hook::set_once();
+    let image_obj = unsafe { &*image };
+    let pipeline_obj = unsafe { &mut *pixel_pipeline };
+
+    let backend = match pichromatic::gpu::GpuContext::global().await {
+        Some(ctx) => {
+            web_sys::console::log_1(
+                &"[Pichromatic WASM] Executing pipeline on WebGPU with RGBA8 readback 🚀".into(),
+            );
+            Backend::Wgpu(ctx)
+        }
+        None => {
+            web_sys::console::warn_1(
+                &"[Pichromatic WASM] No WebGPU — CPU pipeline + RGBA8 encode".into(),
+            );
+            Backend::Cpu
+        }
+    };
+
+    let (width, height, pixels) =
+        crate::pipeline::run_pixel_pipeline_readback_u8_async(image_obj, pipeline_obj, &backend)
+            .await
+            .map_err(|e| JsValue::from_str(&e))?;
+
+    let obj = js_sys::Object::new();
+    js_sys::Reflect::set(&obj, &JsValue::from_str("width"), &JsValue::from(width as u32))
+        .map_err(|_| JsValue::from_str("Failed to set width"))?;
+    js_sys::Reflect::set(
+        &obj,
+        &JsValue::from_str("height"),
+        &JsValue::from(height as u32),
+    )
+    .map_err(|_| JsValue::from_str("Failed to set height"))?;
+    let pixels_js = js_sys::Uint8Array::from(pixels.as_slice());
+    js_sys::Reflect::set(&obj, &JsValue::from_str("pixels"), &pixels_js)
+        .map_err(|_| JsValue::from_str("Failed to set pixels"))?;
+    Ok(obj.into())
+}
+
 #[no_mangle]
 #[wasm_bindgen]
 pub extern "C" fn crop_bayer_center(
@@ -365,6 +424,12 @@ pub fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     image
 }
 pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
+    let orientation = match raw_image.orientation {
+        rawler::Orientation::Rotate90 => pichromatic::image::ImageOrientation::Rotate90,
+        rawler::Orientation::Rotate180 => pichromatic::image::ImageOrientation::Rotate180,
+        rawler::Orientation::Rotate270 => pichromatic::image::ImageOrientation::Rotate270,
+        _ => pichromatic::image::ImageOrientation::Normal,
+    };
     let wb_coeffs = raw_image.wb_coeffs.map(|v| if v.is_nan() {0.0} else {v});
     let calibration_matrix_d65 = if let Some(matrix1) = raw_image.camera.color_matrix.get(&Illuminant::A) {
         if let Some(matrix2) = raw_image.camera.color_matrix.get(&Illuminant::D65) {
@@ -436,6 +501,7 @@ pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
         profile_tone_curve: None,
         lens_info: None,
         camera_serial_number: None,
+        orientation,
     };
 
     let mut image = Image{
@@ -526,7 +592,7 @@ pub extern "C" fn get_image_rgb_data_c(
 }
 
 #[no_mangle]
-#[wasm_bindgen]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub extern "C" fn free_image_c(image: *mut Image) {
     if !image.is_null() {
         let image_ptr_val = image as usize;
@@ -563,7 +629,7 @@ pub extern "C" fn free_string_c(ptr: *mut std::os::raw::c_char) {
 }
 
 #[no_mangle]
-#[wasm_bindgen]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub extern "C" fn free_pipeline_c(pipeline: *mut PipelineConfig) {
     if !pipeline.is_null() {
         let pipeline_ptr_val = pipeline as usize;

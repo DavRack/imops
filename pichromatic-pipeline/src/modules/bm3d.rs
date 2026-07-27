@@ -10,7 +10,7 @@ pub struct BM3D {
 impl Default for BM3D {
     fn default() -> Self {
         Self {
-            intensity: Parameter::new(0.0, "Denoising intensity factor."),
+            intensity: Parameter::new_ranged(0.0, 0.0, 1.0, "Denoising intensity factor."),
         }
     }
 }

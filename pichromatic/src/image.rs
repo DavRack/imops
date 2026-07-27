@@ -3,6 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::{cfa::CFA, demosaic::Rect, pixel::SubPixel};
 
+/// EXIF/DNG orientation as a pure clockwise rotation (flips map to [`Normal`] for now).
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageOrientation {
+    #[default]
+    Normal,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ImageMetadata {
     pub crop_area: Option<Rect>,
@@ -40,6 +51,8 @@ pub struct ImageMetadata {
     pub profile_tone_curve: Option<Vec<f32>>,
     pub lens_info: Option<Vec<f32>>,
     pub camera_serial_number: Option<String>,
+    /// Sensor-relative EXIF orientation (pure rotations only).
+    pub orientation: ImageOrientation,
     pub height: usize,
     pub width: usize,
 }

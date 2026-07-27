@@ -20,6 +20,7 @@ pub mod cfa_coeffs;
 pub mod chroma_denoise;
 pub mod luma_guided_chroma_denoise;
 pub mod highlight_reconstruction;
+pub mod rotation;
 
 pub use exp::Exp;
 pub use gamma::Gamma;
@@ -36,22 +37,63 @@ pub use cfa_coeffs::CFACoeffs;
 pub use chroma_denoise::ChromaDenoise;
 pub use luma_guided_chroma_denoise::LumaGuidedChromaDenoise;
 pub use highlight_reconstruction::HighlightReconstruction;
+pub use rotation::Rotation;
 
 // ─── Parameter wrapper type ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parameter<T> {
     pub value: T,
+    pub default_value: T,
+    pub min_value: Option<T>,
+    pub max_value: Option<T>,
     pub description: &'static str,
     pub choices: Option<Vec<String>>,
 }
 
-impl<T> Parameter<T> {
+impl<T: Clone> Parameter<T> {
     pub fn new(value: T, description: &'static str) -> Self {
-        Self { value, description, choices: None }
+        Self {
+            default_value: value.clone(),
+            value,
+            min_value: None,
+            max_value: None,
+            description,
+            choices: None,
+        }
     }
+
     pub fn new_with_choices(value: T, description: &'static str, choices: Vec<String>) -> Self {
-        Self { value, description, choices: Some(choices) }
+        Self {
+            default_value: value.clone(),
+            value,
+            min_value: None,
+            max_value: None,
+            description,
+            choices: Some(choices),
+        }
+    }
+
+    pub fn new_ranged(value: T, min: T, max: T, description: &'static str) -> Self {
+        Self {
+            default_value: value.clone(),
+            value,
+            min_value: Some(min),
+            max_value: Some(max),
+            description,
+            choices: None,
+        }
+    }
+
+    pub fn with_range(mut self, min: T, max: T) -> Self {
+        self.min_value = Some(min);
+        self.max_value = Some(max);
+        self
+    }
+
+    pub fn with_default(mut self, default_val: T) -> Self {
+        self.default_value = default_val;
+        self
     }
 }
 
@@ -61,15 +103,18 @@ impl<T: Serialize> Serialize for Parameter<T> {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Parameter", 3)?;
+        let mut state = serializer.serialize_struct("Parameter", 6)?;
         state.serialize_field("value", &self.value)?;
+        state.serialize_field("default_value", &self.default_value)?;
+        state.serialize_field("min_value", &self.min_value)?;
+        state.serialize_field("max_value", &self.max_value)?;
         state.serialize_field("description", &self.description)?;
         state.serialize_field("choices", &self.choices)?;
         state.end()
     }
 }
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Parameter<T> {
+impl<'de, T: Deserialize<'de> + Clone> Deserialize<'de> for Parameter<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -79,6 +124,12 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Parameter<T> {
             serde_json::Value::Object(mut map) => {
                 if let Some(val_json) = map.remove("value") {
                     let value = T::deserialize(val_json).map_err(serde::de::Error::custom)?;
+                    let default_value = match map.remove("default_value") {
+                        Some(d) => T::deserialize(d).unwrap_or_else(|_| value.clone()),
+                        None => value.clone(),
+                    };
+                    let min_value = map.remove("min_value").and_then(|v| T::deserialize(v).ok());
+                    let max_value = map.remove("max_value").and_then(|v| T::deserialize(v).ok());
                     let description = match map.remove("description") {
                         Some(serde_json::Value::String(s)) => Box::leak(s.into_boxed_str()),
                         _ => "",
@@ -87,15 +138,36 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Parameter<T> {
                         Some(val) => serde_json::from_value(val).ok(),
                         None => None,
                     };
-                    Ok(Self { value, description, choices })
+                    Ok(Self {
+                        value,
+                        default_value,
+                        min_value,
+                        max_value,
+                        description,
+                        choices,
+                    })
                 } else {
                     let value = T::deserialize(serde_json::Value::Object(map)).map_err(serde::de::Error::custom)?;
-                    Ok(Self { value, description: "", choices: None })
+                    Ok(Self {
+                        value: value.clone(),
+                        default_value: value,
+                        min_value: None,
+                        max_value: None,
+                        description: "",
+                        choices: None,
+                    })
                 }
             }
             primitive => {
                 let value = T::deserialize(primitive).map_err(serde::de::Error::custom)?;
-                Ok(Self { value, description: "", choices: None })
+                Ok(Self {
+                    value: value.clone(),
+                    default_value: value,
+                    min_value: None,
+                    max_value: None,
+                    description: "",
+                    choices: None,
+                })
             }
         }
     }
@@ -179,6 +251,8 @@ pub struct FieldSchema {
     pub name: String,
     pub field_type: String,
     pub default_value: serde_json::Value,
+    pub min_value: Option<serde_json::Value>,
+    pub max_value: Option<serde_json::Value>,
     pub description: String,
     pub choices: Option<Vec<String>>,
     pub step: f64,
@@ -195,11 +269,19 @@ pub fn fields_from_config<C: Serialize>(config: &C) -> Vec<FieldSchema> {
         for (field_name, field_val) in map {
             if let serde_json::Value::Object(param_map) = field_val {
                 let value = param_map.get("value").cloned().unwrap_or(serde_json::Value::Null);
-                let description = param_map.get("description")
+                let default_value = param_map
+                    .get("default_value")
+                    .cloned()
+                    .unwrap_or_else(|| value.clone());
+                let min_value = param_map.get("min_value").cloned().filter(|v| !v.is_null());
+                let max_value = param_map.get("max_value").cloned().filter(|v| !v.is_null());
+                let description = param_map
+                    .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let choices = param_map.get("choices")
+                let choices = param_map
+                    .get("choices")
                     .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok());
 
                 let (field_type, step) = match &value {
@@ -219,7 +301,9 @@ pub fn fields_from_config<C: Serialize>(config: &C) -> Vec<FieldSchema> {
                 fields.push(FieldSchema {
                     name: field_name,
                     field_type,
-                    default_value: value,
+                    default_value,
+                    min_value,
+                    max_value,
                     description,
                     choices,
                     step,
@@ -336,6 +420,7 @@ pub fn get_default_modules() -> Vec<Box<dyn PipelineModule>> {
         Box::new(Module::<LCH>::default()),
         Box::new(Module::<SigmoidToneMap>::default()),
         Box::new(Module::<Gamma>::default()),
+        Box::new(Module::<Rotation>::default()),
         Box::new(Module::<BM3D>::default()),
     ]
 }

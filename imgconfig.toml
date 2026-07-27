@@ -67,3 +67,7 @@ name = "SigmoidToneMap"
 [[pipeline_modules]]
 name = "CST"
 target_color_space = "Srgb"
+
+[[pipeline_modules]]
+name = "Rotation"
+angle = "auto"

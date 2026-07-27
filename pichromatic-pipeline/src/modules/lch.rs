@@ -12,9 +12,9 @@ pub struct LCH {
 impl Default for LCH {
     fn default() -> Self {
         Self {
-            lc: Parameter::new(1.0, "Lightness coefficient multiplier."),
-            cc: Parameter::new(1.0, "Chroma (saturation) coefficient multiplier."),
-            hc: Parameter::new(1.0, "Hue coefficient multiplier."),
+            lc: Parameter::new_ranged(1.0, 0.0, 3.0, "Lightness coefficient multiplier."),
+            cc: Parameter::new_ranged(1.0, 0.0, 3.0, "Chroma (saturation) coefficient multiplier."),
+            hc: Parameter::new_ranged(1.0, 0.0, 3.0, "Hue coefficient multiplier."),
         }
     }
 }

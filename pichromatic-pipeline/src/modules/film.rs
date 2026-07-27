@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
 use pichromatic::pixel::Image;
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule};
 
@@ -9,6 +10,77 @@ pub struct Film {
     pub film_format: Parameter<String>,
     pub seed: Parameter<u64>,
     pub output: Parameter<String>,
+}
+
+fn parse_stock(s: &str) -> Option<StockId> {
+    Some(match s {
+        "BwStub" => StockId::BwStub,
+        "ColorNeg200" => StockId::ColorNeg200,
+        "Portra400" => StockId::Portra400,
+        "Ektar100" => StockId::Ektar100,
+        "FujiPro400H" => StockId::FujiPro400H,
+        "EktachromeE100" => StockId::EktachromeE100,
+        "TriX400" => StockId::TriX400,
+        _ => return None,
+    })
+}
+
+fn parse_film_format(s: &str) -> Option<FilmFormat> {
+    Some(match s {
+        "Film35mm" => FilmFormat::Film35mm,
+        "Film6x6" => FilmFormat::Film6x6,
+        "Film4x5" => FilmFormat::Film4x5,
+        _ => return None,
+    })
+}
+
+fn parse_output(s: &str) -> Option<FilmOutput> {
+    Some(match s {
+        "NegativeLinear" => FilmOutput::NegativeLinear,
+        "PositiveLinear" => FilmOutput::PositiveLinear,
+        _ => return None,
+    })
+}
+
+fn film_params_from_config(config: &Film) -> Option<FilmParams> {
+    let stock = match parse_stock(config.stock.value.as_str()) {
+        Some(s) => s,
+        None => {
+            web_sys_warn(&format!("Unknown film stock: {}", config.stock.value));
+            return None;
+        }
+    };
+    let film_format = match parse_film_format(config.film_format.value.as_str()) {
+        Some(f) => f,
+        None => {
+            web_sys_warn(&format!("Unknown film format: {}", config.film_format.value));
+            return None;
+        }
+    };
+    let output = match parse_output(config.output.value.as_str()) {
+        Some(o) => o,
+        None => {
+            web_sys_warn(&format!("Unknown film output: {}", config.output.value));
+            return None;
+        }
+    };
+    Some(FilmParams {
+        stock,
+        film_format,
+        seed: config.seed.value,
+        output,
+    })
+}
+
+fn web_sys_warn(msg: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(msg));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        eprintln!("{msg}");
+    }
 }
 
 impl Default for Film {
@@ -36,7 +108,7 @@ impl Default for Film {
                     "Film4x5".to_string(),
                 ],
             ),
-            seed: Parameter::new(1, "RNG seed for grain (deterministic)."),
+            seed: Parameter::new_ranged(1, 1, 100000, "RNG seed for grain (deterministic)."),
             output: Parameter::new_with_choices(
                 "NegativeLinear".to_string(),
                 "NegativeLinear: densitometric scanned negative. PositiveLinear: mid/Dmin invert from stock film base + mid-gray gain.",
@@ -49,40 +121,14 @@ impl Default for Film {
 impl PipelineModule for Module<Film> {
     fn process_cpu(&self, image: &mut Image) {
         use pichromatic::cst::ColorSpaceTag;
-        use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
 
         // Film requires scene-linear ACEScg (pipeline: CST → Film).
         if !matches!(image.metadata.color_space, Some(ColorSpaceTag::AcesCg)) {
             return;
         }
 
-        let stock = match self.config.stock.value.as_str() {
-            "BwStub" => StockId::BwStub,
-            "ColorNeg200" => StockId::ColorNeg200,
-            "Portra400" => StockId::Portra400,
-            "Ektar100" => StockId::Ektar100,
-            "FujiPro400H" => StockId::FujiPro400H,
-            "EktachromeE100" => StockId::EktachromeE100,
-            "TriX400" => StockId::TriX400,
-            other => panic!("Unknown film stock: {other}"),
-        };
-        let film_format = match self.config.film_format.value.as_str() {
-            "Film35mm" => FilmFormat::Film35mm,
-            "Film6x6" => FilmFormat::Film6x6,
-            "Film4x5" => FilmFormat::Film4x5,
-            other => panic!("Unknown film format: {other}"),
-        };
-        let output = match self.config.output.value.as_str() {
-            "NegativeLinear" => FilmOutput::NegativeLinear,
-            "PositiveLinear" => FilmOutput::PositiveLinear,
-            other => panic!("Unknown film output: {other}"),
-        };
-
-        let params = FilmParams {
-            stock,
-            film_format,
-            seed: self.config.seed.value,
-            output,
+        let Some(params) = film_params_from_config(&self.config) else {
+            return;
         };
 
         pichromatic::film::process(image, &params).expect("Film process failed");
@@ -95,40 +141,14 @@ impl PipelineModule for Module<Film> {
         meta: &mut pichromatic::image::ImageMetadata,
     ) {
         use pichromatic::cst::ColorSpaceTag;
-        use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
 
         // Film requires ACEScg; without it both backends no-op (CST must run first).
         if !matches!(meta.color_space, Some(ColorSpaceTag::AcesCg)) {
             return;
         }
 
-        let stock = match self.config.stock.value.as_str() {
-            "BwStub" => StockId::BwStub,
-            "ColorNeg200" => StockId::ColorNeg200,
-            "Portra400" => StockId::Portra400,
-            "Ektar100" => StockId::Ektar100,
-            "FujiPro400H" => StockId::FujiPro400H,
-            "EktachromeE100" => StockId::EktachromeE100,
-            "TriX400" => StockId::TriX400,
-            other => panic!("Unknown film stock: {other}"),
-        };
-        let film_format = match self.config.film_format.value.as_str() {
-            "Film35mm" => FilmFormat::Film35mm,
-            "Film6x6" => FilmFormat::Film6x6,
-            "Film4x5" => FilmFormat::Film4x5,
-            other => panic!("Unknown film format: {other}"),
-        };
-        let output = match self.config.output.value.as_str() {
-            "NegativeLinear" => FilmOutput::NegativeLinear,
-            "PositiveLinear" => FilmOutput::PositiveLinear,
-            other => panic!("Unknown film output: {other}"),
-        };
-
-        let params = FilmParams {
-            stock,
-            film_format,
-            seed: self.config.seed.value,
-            output,
+        let Some(params) = film_params_from_config(&self.config) else {
+            return;
         };
 
         pollster::block_on(pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params))
@@ -143,39 +163,13 @@ impl PipelineModule for Module<Film> {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
         Box::pin(async move {
             use pichromatic::cst::ColorSpaceTag;
-            use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
 
             if !matches!(meta.color_space, Some(ColorSpaceTag::AcesCg)) {
                 return;
             }
 
-            let stock = match self.config.stock.value.as_str() {
-                "BwStub" => StockId::BwStub,
-                "ColorNeg200" => StockId::ColorNeg200,
-                "Portra400" => StockId::Portra400,
-                "Ektar100" => StockId::Ektar100,
-                "FujiPro400H" => StockId::FujiPro400H,
-                "EktachromeE100" => StockId::EktachromeE100,
-                "TriX400" => StockId::TriX400,
-                other => panic!("Unknown film stock: {other}"),
-            };
-            let film_format = match self.config.film_format.value.as_str() {
-                "Film35mm" => FilmFormat::Film35mm,
-                "Film6x6" => FilmFormat::Film6x6,
-                "Film4x5" => FilmFormat::Film4x5,
-                other => panic!("Unknown film format: {other}"),
-            };
-            let output = match self.config.output.value.as_str() {
-                "NegativeLinear" => FilmOutput::NegativeLinear,
-                "PositiveLinear" => FilmOutput::PositiveLinear,
-                other => panic!("Unknown film output: {other}"),
-            };
-
-            let params = FilmParams {
-                stock,
-                film_format,
-                seed: self.config.seed.value,
-                output,
+            let Some(params) = film_params_from_config(&self.config) else {
+                return;
             };
 
             pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params).await

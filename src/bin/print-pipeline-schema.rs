@@ -33,6 +33,12 @@ fn main() {
                     println!("    - Name:        {}", field.name);
                     println!("      Type:        {}", type_info);
                     println!("      Default:     {}", field.default_value);
+                    if let Some(ref min_val) = field.min_value {
+                        println!("      Min:         {}", min_val);
+                    }
+                    if let Some(ref max_val) = field.max_value {
+                        println!("      Max:         {}", max_val);
+                    }
                     if !field.description.is_empty() {
                         println!("      Description: {}", field.description);
                     }

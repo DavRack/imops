@@ -171,6 +171,26 @@ impl Image {
         self
     }
 
+    /// Rotate RGB clockwise by 90/180/270°. Updates `metadata.width` / `height`.
+    pub fn rotate(&mut self, turn: crate::rotation::QuarterTurn) -> &mut Image {
+        if self.rgb_data.is_empty() {
+            let (nw, nh) = turn.output_size(self.metadata.width, self.metadata.height);
+            self.metadata.width = nw;
+            self.metadata.height = nh;
+            return self;
+        }
+        let (nw, nh, out) = crate::rotation::rotate_rgb(
+            &self.rgb_data,
+            self.metadata.width,
+            self.metadata.height,
+            turn,
+        );
+        self.rgb_data = out;
+        self.metadata.width = nw;
+        self.metadata.height = nh;
+        self
+    }
+
     /// Physically-based analog film simulation. Requires absolute-luminance ACEScg input
     /// (see BaselineExposureCompensation in the pipeline).
     pub fn film(

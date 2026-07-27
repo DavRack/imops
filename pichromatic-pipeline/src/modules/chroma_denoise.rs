@@ -10,7 +10,7 @@ pub struct ChromaDenoise {
 impl Default for ChromaDenoise {
     fn default() -> Self {
         Self {
-            intensity: Parameter::new(0.0, "Chroma denoising intensity factor."),
+            intensity: Parameter::new_ranged(0.0, 0.0, 1.0, "Chroma denoising intensity factor."),
         }
     }
 }

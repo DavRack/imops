@@ -43,7 +43,6 @@ fn main() {
     let mut raw_file = rawler::rawsource::RawSource::new_from_slice(&file_bytes);
     let raw_image =
         rawler::decode(&mut raw_file, &decode_params).expect("failed to decode raw image");
-    let rotation = raw_image.orientation;
     let mut image = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image);
 
     if let Some(parser) = pichromatic_pipeline::dng_metadata::DngMetadataParser::new(&file_bytes) {
@@ -74,7 +73,8 @@ fn main() {
     );
 
     let now = Instant::now();
-    let format = imops::output::save_image(&args.output_path, &image, rotation)
+    // EXIF orientation is applied by the Rotation pipeline module; do not re-apply here.
+    let format = imops::output::save_image(&args.output_path, &image, rawler::Orientation::Normal)
         .unwrap_or_else(|e| panic!("{e}"));
     match format {
         imops::output::OutputFormat::Exr => {

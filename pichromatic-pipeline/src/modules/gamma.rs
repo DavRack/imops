@@ -12,7 +12,7 @@ pub struct Gamma {
 impl Default for Gamma {
     fn default() -> Self {
         Self {
-            gamma: Parameter::new(2.2, "Display gamma (2.2 ≈ sRGB, 2.4 = BT.1886)."),
+            gamma: Parameter::new_ranged(2.2, 0.1, 4.0, "Display gamma (2.2 ≈ sRGB, 2.4 = BT.1886)."),
         }
     }
 }
