@@ -4,7 +4,7 @@ use rayon::prelude::*;
 
 pub fn contrast(image_buffer: &mut ImageBuffer, value: SubPixel) {
     image_buffer.par_iter_mut().for_each(|p| {
-        *p = p.map(|x| MIDDLE_GRAY * (x / MIDDLE_GRAY).powf(value));
+        *p = p.map(|x| MIDDLE_GRAY * (x.abs() / MIDDLE_GRAY).powf(value).copysign(x));
     });
 }
 
@@ -45,7 +45,7 @@ pub fn contrast_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, c: SubPix
             }
             let index = y * params.width + x;
             let p = pixels[index];
-            let rgb = params.pivot * pow(p.rgb / params.pivot, vec3<f32>(params.contrast));
+            let rgb = params.pivot * sign(p.rgb) * pow(abs(p.rgb) / params.pivot, vec3<f32>(params.contrast));
             pixels[index] = vec4<f32>(rgb, p.a);
         }
     "#;
@@ -56,4 +56,18 @@ pub fn contrast_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, c: SubPix
         storage_buffer,
         bytemuck::bytes_of(&params),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fractional_contrast_preserves_finite_negative_channels() {
+        let mut pixels = vec![[-0.1, 0.0, 0.1]];
+        contrast(&mut pixels, 1.5);
+
+        assert!(pixels[0].iter().all(|channel| channel.is_finite()));
+        assert!((pixels[0][0] + pixels[0][2]).abs() < f32::EPSILON);
+    }
 }

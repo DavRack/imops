@@ -12,7 +12,8 @@
 //! finishes the `f64` reduction for `norm` so it matches the CPU path bit-near.
 //! All spatial grain work stays on GPU.
 
-mod shaders;
+#[doc(hidden)]
+pub mod shaders;
 mod workspace;
 
 pub(crate) use workspace::acquire_film_resources;

@@ -6,6 +6,6 @@
 CONFIG="${2:-imgconfig.toml}"
 OUTPUT="${OUTPUT:-result.exr}"
 cargo build --release --bin imops-cli &&
-time ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" --gpu &&
-# time ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" &&
+# time ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" --gpu &&
+time ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" &&
 ./view "$OUTPUT"
