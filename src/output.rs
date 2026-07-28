@@ -3,6 +3,7 @@
 use color::ColorSpaceTag;
 use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::Image;
+use std::borrow::Cow;
 use std::path::Path;
 
 /// Output format selected by path extension (or explicit override).
@@ -29,12 +30,12 @@ impl OutputFormat {
 }
 
 /// Apply EXIF/DNG orientation to an interleaved RGB buffer (top-left origin).
-pub fn apply_orientation(
-    rgb: &[[f32; 3]],
+pub fn apply_orientation<'a>(
+    rgb: &'a [[f32; 3]],
     width: usize,
     height: usize,
     orientation: rawler::Orientation,
-) -> (usize, usize, Vec<[f32; 3]>) {
+) -> (usize, usize, Cow<'a, [[f32; 3]]>) {
     match orientation {
         rawler::Orientation::Rotate90 => {
             let (nw, nh) = (height, width);
@@ -45,7 +46,7 @@ pub fn apply_orientation(
                     out[x * nw + (height - 1 - y)] = rgb[y * width + x];
                 }
             }
-            (nw, nh, out)
+            (nw, nh, Cow::Owned(out))
         }
         rawler::Orientation::Rotate180 => {
             let mut out = vec![[0.0; 3]; width * height];
@@ -54,7 +55,7 @@ pub fn apply_orientation(
                     out[(height - 1 - y) * width + (width - 1 - x)] = rgb[y * width + x];
                 }
             }
-            (width, height, out)
+            (width, height, Cow::Owned(out))
         }
         rawler::Orientation::Rotate270 => {
             let (nw, nh) = (height, width);
@@ -65,9 +66,9 @@ pub fn apply_orientation(
                     out[(width - 1 - x) * nw + y] = rgb[y * width + x];
                 }
             }
-            (nw, nh, out)
+            (nw, nh, Cow::Owned(out))
         }
-        _ => (width, height, rgb.to_vec()),
+        _ => (width, height, Cow::Borrowed(rgb)),
     }
 }
 
@@ -191,12 +192,11 @@ pub fn save_exr(
         AttributeValue::Text(Text::from(transfer)),
     );
 
-    let pixels = pixels.to_vec();
     let layer = Layer::new(
         (width, height),
         layer_attributes,
         Encoding::SMALL_LOSSLESS, // ZIP16 — lossless
-        SpecificChannels::rgb(move |Vec2(x, y)| {
+        SpecificChannels::rgb(|Vec2(x, y)| {
             let p: [f32; 3] = pixels[y * width + x];
             (
                 f16::from_f32(p[0]),
@@ -254,11 +254,24 @@ pub fn save_image(
     );
     match format {
         OutputFormat::Exr => {
-            save_exr(path, w, h, &pixels, &image.metadata)?;
+            save_exr(path, w, h, pixels.as_ref(), &image.metadata)?;
         }
         OutputFormat::Jpeg => {
-            save_jpeg(path, w, h, &pixels)?;
+            save_jpeg(path, w, h, pixels.as_ref())?;
         }
     }
     Ok(format)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_orientation_borrows_pixels() {
+        let pixels = [[0.1, 0.2, 0.3]];
+        let (_, _, oriented) =
+            apply_orientation(&pixels, 1, 1, rawler::Orientation::Normal);
+        assert!(matches!(oriented, Cow::Borrowed(_)));
+    }
 }
