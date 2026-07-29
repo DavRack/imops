@@ -231,6 +231,7 @@ impl DemosaicAlgorithmType {
 }
 
 pub const SUPPORTED_COLOR_SPACES: &[ColorSpaceTag] = &[
+    ColorSpaceTag::LinearSrgb,
     ColorSpaceTag::Srgb,
     ColorSpaceTag::AcesCg,
     ColorSpaceTag::Oklch,

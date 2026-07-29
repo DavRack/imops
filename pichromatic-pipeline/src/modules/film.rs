@@ -118,17 +118,27 @@ impl Default for Film {
     }
 }
 
+fn film_require_acescg(cs: Option<pichromatic::cst::ColorSpaceTag>, where_: &str) {
+    use pichromatic::cst::ColorSpaceTag;
+    if matches!(cs, Some(ColorSpaceTag::AcesCg)) {
+        return;
+    }
+    // Skipping Film after BaselineExposureCompensation leaves absolute-luminance
+    // values (~10²) that SigmoidToneMap compresses to ~1 → pure white on present.
+    let msg = format!(
+        "Film ({where_}): requires ACEScg after CST, got {cs:?}. \
+         Skipping Film produces a near-white image."
+    );
+    web_sys_warn(&msg);
+    panic!("{msg}");
+}
+
 impl PipelineModule for Module<Film> {
     fn process_cpu(&self, image: &mut Image) {
-        use pichromatic::cst::ColorSpaceTag;
-
-        // Film requires scene-linear ACEScg (pipeline: CST → Film).
-        if !matches!(image.metadata.color_space, Some(ColorSpaceTag::AcesCg)) {
-            return;
-        }
+        film_require_acescg(image.metadata.color_space, "cpu");
 
         let Some(params) = film_params_from_config(&self.config) else {
-            return;
+            panic!("Film (cpu): invalid stock/format/output config");
         };
 
         pichromatic::film::process(image, &params).expect("Film process failed");
@@ -140,15 +150,10 @@ impl PipelineModule for Module<Film> {
         gpu_buf: &pichromatic::gpu::GpuImageBuffer,
         meta: &mut pichromatic::image::ImageMetadata,
     ) {
-        use pichromatic::cst::ColorSpaceTag;
-
-        // Film requires ACEScg; without it both backends no-op (CST must run first).
-        if !matches!(meta.color_space, Some(ColorSpaceTag::AcesCg)) {
-            return;
-        }
+        film_require_acescg(meta.color_space, "gpu");
 
         let Some(params) = film_params_from_config(&self.config) else {
-            return;
+            panic!("Film (gpu): invalid stock/format/output config");
         };
 
         pollster::block_on(pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params))
@@ -162,18 +167,39 @@ impl PipelineModule for Module<Film> {
         meta: &'a mut pichromatic::image::ImageMetadata,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
         Box::pin(async move {
-            use pichromatic::cst::ColorSpaceTag;
-
-            if !matches!(meta.color_space, Some(ColorSpaceTag::AcesCg)) {
-                return;
-            }
+            film_require_acescg(meta.color_space, "gpu-async");
 
             let Some(params) = film_params_from_config(&self.config) else {
-                return;
+                panic!("Film (gpu-async): invalid stock/format/output config");
             };
 
-            pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params).await
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(
+                &format!(
+                    "[Film] start stock={:?} format={:?} output={:?} {}x{}",
+                    params.stock,
+                    params.film_format,
+                    params.output,
+                    gpu_buf.width,
+                    gpu_buf.height
+                )
+                .into(),
+            );
+
+            pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params)
+                .await
                 .expect("GPU film process failed");
+
+            // Ensure Film's queue submits are visible before Sigmoid/CST/present.
+            // Without this, wasm can tone-map the pre-Film absolute-luminance
+            // buffer (~white after sigmoid).
+            #[cfg(target_arch = "wasm32")]
+            {
+                if let Err(e) = ctx.end_of_render_fence_async(&gpu_buf.buffer).await {
+                    panic!("Film (gpu-async): post-film fence failed: {e}");
+                }
+                web_sys::console::log_1(&"[Film] done (fence ok)".into());
+            }
         })
     }
 

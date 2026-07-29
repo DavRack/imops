@@ -57,13 +57,27 @@ impl PipelineModule for Module<CST> {
                 pichromatic::cst::cst_gpu(ctx, gpu_buf, source_cs, target_color_space);
             }
             None => {
-                if let Some(cal_matrix) = &meta.calibration_matrix_d65 {
-                    pichromatic::cst::camera_cst_gpu(ctx, gpu_buf, target_color_space, cal_matrix);
-                }
+                // Must convert pixels before tagging — otherwise Film sees "ACEScg"
+                // metadata on still-camera-RGB buffers (→ near-white after sigmoid).
+                let cal_matrix = meta.calibration_matrix_d65.as_ref().unwrap_or_else(|| {
+                    panic!(
+                        "CST → {:?}: color_space is unset and calibration_matrix_d65 is missing",
+                        target_color_space
+                    )
+                });
+                pichromatic::cst::camera_cst_gpu(ctx, gpu_buf, target_color_space, cal_matrix);
             }
         }
         // Must match CPU Image::cst / camera_cst — Film and later CSTs key off this.
         meta.color_space = Some(target_color_space);
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(
+            &format!(
+                "[CST] color_space -> {:?} ({}x{})",
+                target_color_space, gpu_buf.width, gpu_buf.height
+            )
+            .into(),
+        );
     }
 
     fn schema(&self) -> ModuleSchema {
@@ -135,7 +149,7 @@ mod tests {
             },
         };
 
-        // Film pipeline ends with AcesCg → LinearSrgb before gamma encode.
+        // Film display path: AcesCg → LinearSrgb, then a second CST → Srgb (OETF).
         let mut seed_image = generate_test_image_512x512(223);
         seed_image.metadata.color_space = Some(ColorSpaceTag::AcesCg);
         let ctx = GpuContext::new_sync();

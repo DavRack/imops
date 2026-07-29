@@ -36,9 +36,20 @@ pub fn gaussian_blur_separable(buf: &mut [f32], width: usize, height: usize, sig
         });
 }
 
+/// Exact Gaussian kernel radius covering ~99.7% of mass using `ceil(3σ)`.
+/// Returns 0 for `sigma < 1e-3`.
+#[inline]
+pub(crate) fn gaussian_radius(sigma: f32) -> usize {
+    if sigma < 1e-3 {
+        0
+    } else {
+        (3.0 * sigma).ceil().max(1.0) as usize
+    }
+}
+
 fn make_gaussian_kernel(sigma: f32) -> Vec<f32> {
     // Radius ≈ 3σ covers ~99.7% of mass.
-    let radius = (3.0 * sigma).ceil().max(1.0) as usize;
+    let radius = gaussian_radius(sigma);
     let mut k = vec![0.0f32; 2 * radius + 1];
     let inv_2s2 = 1.0 / (2.0 * sigma * sigma);
     let mut sum = 0.0f32;
@@ -67,7 +78,7 @@ fn convolve_1d_reflect(input: &[f32], output: &mut [f32], kernel: &[f32]) {
     }
 }
 
-fn reflect_index(i: isize, len: usize) -> usize {
+pub(crate) fn reflect_index(i: isize, len: usize) -> usize {
     if len == 0 {
         return 0;
     }

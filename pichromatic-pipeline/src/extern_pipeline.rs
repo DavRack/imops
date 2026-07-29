@@ -242,20 +242,26 @@ pub async fn run_pixel_pipeline_present_async_js(
         &"[Pichromatic WASM] Executing pipeline on WebGPU and presenting to canvas 🚀".into(),
     );
     let backend = Backend::Wgpu(gpu_ctx);
-    let (width, height) =
+    let res =
         crate::pipeline::run_pixel_pipeline_present_async(image_obj, pipeline_obj, &backend)
             .await
             .map_err(|e| JsValue::from_str(&e))?;
 
     let obj = js_sys::Object::new();
-    js_sys::Reflect::set(&obj, &JsValue::from_str("width"), &JsValue::from(width as u32))
+    js_sys::Reflect::set(&obj, &JsValue::from_str("width"), &JsValue::from(res.width as u32))
         .map_err(|_| JsValue::from_str("Failed to set width"))?;
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("height"),
-        &JsValue::from(height as u32),
+        &JsValue::from(res.height as u32),
     )
     .map_err(|_| JsValue::from_str("Failed to set height"))?;
+    js_sys::Reflect::set(&obj, &JsValue::from_str("submitMs"), &JsValue::from(res.submit_ms))
+        .map_err(|_| JsValue::from_str("Failed to set submitMs"))?;
+    js_sys::Reflect::set(&obj, &JsValue::from_str("fenceWaitMs"), &JsValue::from(res.fence_wait_ms))
+        .map_err(|_| JsValue::from_str("Failed to set fenceWaitMs"))?;
+    js_sys::Reflect::set(&obj, &JsValue::from_str("totalMs"), &JsValue::from(res.total_ms))
+        .map_err(|_| JsValue::from_str("Failed to set totalMs"))?;
     Ok(obj.into())
 }
 
@@ -357,6 +363,12 @@ pub extern "C" fn crop_bayer_center(
     new_img.metadata = image_obj.metadata.clone();
     new_img.metadata.width = new_width;
     new_img.metadata.height = new_height;
+    if let Some(ref mut crop) = new_img.metadata.crop_area {
+        crop.p.x = 0;
+        crop.p.y = 0;
+        crop.d.w = new_width;
+        crop.d.h = new_height;
+    }
     return Box::leak(Box::new(new_img))
 }
 

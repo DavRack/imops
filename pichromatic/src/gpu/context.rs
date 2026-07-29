@@ -66,7 +66,8 @@ struct CachedPipeline {
 #[derive(Clone, Eq, PartialEq)]
 struct PipelineKey {
     label: String,
-    source_hash: u64,
+    source_ptr: usize,
+    source_len: usize,
     storage_count: u32,
     has_uniform: bool,
 }
@@ -74,16 +75,11 @@ struct PipelineKey {
 impl Hash for PipelineKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.label.hash(state);
-        self.source_hash.hash(state);
+        self.source_ptr.hash(state);
+        self.source_len.hash(state);
         self.storage_count.hash(state);
         self.has_uniform.hash(state);
     }
-}
-
-fn hash_source(src: &str) -> u64 {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    src.hash(&mut h);
-    h.finish()
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -100,6 +96,8 @@ struct PresentState {
 pub struct GpuContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    pub generation: u64,
+    is_lost: Arc<std::sync::atomic::AtomicBool>,
     #[allow(dead_code)] // used by wasm canvas present
     instance: wgpu::Instance,
     #[allow(dead_code)] // used by wasm canvas present
@@ -132,40 +130,64 @@ pub struct ComputePassDesc<'a> {
     pub workgroups_y: u32,
 }
 
-static GLOBAL_GPU_CONTEXT: std::sync::OnceLock<Arc<GpuContext>> = std::sync::OnceLock::new();
+struct GlobalContextHolder {
+    generation: u64,
+    context: Option<Arc<GpuContext>>,
+}
+
+static GLOBAL_GPU_CONTEXT: Mutex<GlobalContextHolder> = Mutex::new(GlobalContextHolder {
+    generation: 0,
+    context: None,
+});
 
 impl GpuContext {
+    pub fn is_lost(&self) -> bool {
+        self.is_lost.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     pub async fn global() -> Option<Arc<Self>> {
-        if let Some(ctx) = GLOBAL_GPU_CONTEXT.get() {
-            return Some(ctx.clone());
+        {
+            let guard = GLOBAL_GPU_CONTEXT.lock().unwrap();
+            if let Some(ctx) = &guard.context {
+                if !ctx.is_lost() {
+                    return Some(ctx.clone());
+                }
+            }
         }
-        match Self::try_new().await {
+
+        let mut guard = GLOBAL_GPU_CONTEXT.lock().unwrap();
+        if let Some(ctx) = &guard.context {
+            if !ctx.is_lost() {
+                return Some(ctx.clone());
+            }
+        }
+
+        let next_gen = guard.generation + 1;
+        match Self::try_new_with_generation(next_gen).await {
             Ok(ctx) => {
-                let _ = GLOBAL_GPU_CONTEXT.set(ctx.clone());
+                guard.generation = next_gen;
+                guard.context = Some(ctx.clone());
                 Some(ctx)
             }
-            Err(_) => None,
+            Err(e) => {
+                eprintln!("[Pichromatic GPU] Recreating GPU context (gen {next_gen}) failed: {e}");
+                None
+            }
         }
     }
 
     pub fn global_cached() -> Option<Arc<Self>> {
-        GLOBAL_GPU_CONTEXT.get().cloned()
+        let guard = GLOBAL_GPU_CONTEXT.lock().unwrap();
+        if let Some(ctx) = &guard.context {
+            if !ctx.is_lost() {
+                return Some(ctx.clone());
+            }
+        }
+        None
     }
 
     pub fn try_new_sync() -> Option<Arc<Self>> {
-        if let Some(ctx) = GLOBAL_GPU_CONTEXT.get() {
-            return Some(ctx.clone());
-        }
-        match pollster::block_on(Self::try_new()) {
-            Ok(ctx) => {
-                let _ = GLOBAL_GPU_CONTEXT.set(ctx.clone());
-                Some(ctx)
-            }
-            Err(e) => {
-                eprintln!("[Pichromatic GPU] GPU initialization failed: {e}");
-                None
-            }
-        }
+        pollster::block_on(Self::global())
     }
 
     pub fn new_sync() -> Arc<Self> {
@@ -173,6 +195,10 @@ impl GpuContext {
     }
 
     pub async fn try_new() -> Result<Arc<Self>, String> {
+        Self::try_new_with_generation(1).await
+    }
+
+    pub async fn try_new_with_generation(generation: u64) -> Result<Arc<Self>, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -189,7 +215,7 @@ impl GpuContext {
 
         let limits = adapter.limits();
         #[cfg(target_arch = "wasm32")]
-        web_sys::console::log_1(&format!("[Pichromatic GPU] WebGPU Adapter limits: max_buffer_size={}, max_storage_binding={}", limits.max_buffer_size, limits.max_storage_buffer_binding_size).into());
+        web_sys::console::log_1(&format!("[Pichromatic GPU] WebGPU Adapter limits (gen {generation}): max_buffer_size={}, max_storage_binding={}", limits.max_buffer_size, limits.max_storage_buffer_binding_size).into());
 
         let (device, queue) = adapter
             .request_device(
@@ -204,9 +230,18 @@ impl GpuContext {
             .await
             .map_err(|e| format!("Failed to create wgpu device: {e}"))?;
 
+        let is_lost = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let is_lost_cb = Arc::clone(&is_lost);
+        device.set_device_lost_callback(move |reason, message| {
+            is_lost_cb.store(true, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("[Pichromatic GPU] Device Lost (generation {generation}): reason={reason:?}, message={message}");
+        });
+
         Ok(Arc::new(Self {
             device,
             queue,
+            generation,
+            is_lost,
             instance,
             adapter,
             pipeline_cache: Mutex::new(HashMap::new()),
@@ -239,14 +274,12 @@ impl GpuContext {
             .formats
             .iter()
             .copied()
-            .find(|f| {
-                matches!(
-                    f,
-                    wgpu::TextureFormat::Rgba8Unorm
-                        | wgpu::TextureFormat::Bgra8Unorm
-                        | wgpu::TextureFormat::Rgba8UnormSrgb
-                        | wgpu::TextureFormat::Bgra8UnormSrgb
-                )
+            .find(|f| matches!(f, wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm))
+            .or_else(|| {
+                caps.formats
+                    .iter()
+                    .copied()
+                    .find(|f| matches!(f, wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb))
             })
             .or_else(|| caps.formats.first().copied())
             .ok_or_else(|| "No surface formats available".to_string())?;
@@ -471,6 +504,53 @@ impl GpuContext {
 
         self.queue.submit(Some(encoder.finish()));
         frame.present();
+        Ok(())
+    }
+
+    /// End-of-render completion fence using a 4-byte MAP_READ|COPY_DST staging buffer
+    /// and a queue-ordered copy from the target buffer after presentation/render submit.
+    pub async fn end_of_render_fence_async(&self, target_buf: &wgpu::Buffer) -> Result<(), String> {
+        let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Pichromatic Completion Fence Staging"),
+            size: 4,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Completion Fence Encoder"),
+            });
+        encoder.copy_buffer_to_buffer(target_buf, 0, &staging_buffer, 0, 4);
+        self.queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.device.poll(wgpu::Maintain::Wait);
+
+        #[cfg(target_arch = "wasm32")]
+        self.device.poll(wgpu::Maintain::Poll);
+
+        let map_res = match receiver.await {
+            Ok(res) => res,
+            Err(_) => {
+                staging_buffer.unmap();
+                return Err("Completion fence channel dropped".to_string());
+            }
+        };
+
+        if let Err(e) = map_res {
+            staging_buffer.unmap();
+            return Err(format!("Completion fence map_async failed: {e:?}"));
+        }
+
+        staging_buffer.unmap();
         Ok(())
     }
 
@@ -940,7 +1020,8 @@ impl GpuContext {
     ) -> (Arc<wgpu::ComputePipeline>, Arc<wgpu::BindGroupLayout>) {
         let key = PipelineKey {
             label: label.to_string(),
-            source_hash: hash_source(wgsl_source),
+            source_ptr: wgsl_source.as_ptr() as usize,
+            source_len: wgsl_source.len(),
             storage_count: storage_count as u32,
             has_uniform,
         };
@@ -1169,21 +1250,90 @@ impl GpuContext {
         uniform_bytes: &[u8],
         workgroups_x: u32,
     ) {
-        let (gx, gy) = Self::fold_workgroups_1d(workgroups_x);
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some(&format!("{label} Encoder")),
         });
-        let keep = self.encode_1d_or_2d_pass(
+        let keep = self.encode_compute_shader_multi(
             &mut encoder,
+            label,
+            wgsl_source,
+            storage_buffers,
+            uniform_bytes,
+            workgroups_x,
+        );
+        self.queue.submit(Some(encoder.finish()));
+        drop(keep);
+    }
+
+    pub fn create_command_encoder(&self, label: &str) -> wgpu::CommandEncoder {
+        self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some(label),
+        })
+    }
+
+    pub fn encode_compute_shader_multi(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        label: &str,
+        wgsl_source: &str,
+        storage_buffers: &[&wgpu::Buffer],
+        uniform_bytes: &[u8],
+        workgroups_x: u32,
+    ) -> (wgpu::BindGroup, Option<wgpu::Buffer>) {
+        let (gx, gy) = Self::fold_workgroups_1d(workgroups_x);
+        self.encode_1d_or_2d_pass(
+            encoder,
             label,
             wgsl_source,
             storage_buffers,
             uniform_bytes,
             gx,
             gy,
-        );
+        )
+    }
+
+    pub fn encode_compute_passes(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        passes: &[ComputePassDesc<'_>],
+    ) -> Vec<(wgpu::BindGroup, Option<wgpu::Buffer>)> {
+        let mut keep = Vec::with_capacity(passes.len());
+        for p in passes {
+            let (gx, gy) = if p.workgroups_y > 0 {
+                (p.workgroups_x.max(1), p.workgroups_y.max(1))
+            } else {
+                Self::fold_workgroups_1d(p.workgroups_x)
+            };
+            keep.push(self.encode_1d_or_2d_pass(
+                encoder,
+                p.label,
+                p.wgsl_source,
+                p.storage_buffers,
+                p.uniform_bytes,
+                gx,
+                gy,
+            ));
+        }
+        keep
+    }
+
+    /// Queue-ordered buffer to buffer copy with checked explicit byte size and no wait.
+    pub(crate) fn copy_buffer_to_buffer(
+        &self,
+        src: &wgpu::Buffer,
+        src_offset: u64,
+        dst: &wgpu::Buffer,
+        dst_offset: u64,
+        size_bytes: u64,
+    ) {
+        if size_bytes == 0 {
+            return;
+        }
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("GpuContext CopyBufferToBuffer Encoder"),
+        });
+        encoder.copy_buffer_to_buffer(src, src_offset, dst, dst_offset, size_bytes);
         self.queue.submit(Some(encoder.finish()));
-        drop(keep);
     }
 }
 
@@ -1209,5 +1359,22 @@ mod rgba8_tests {
         let buf = ctx.upload_image(&image);
         let rgba = block_on(ctx.download_rgba8_async(&buf));
         assert_eq!(rgba, vec![255, 0, 128, 255]);
+    }
+
+    #[test]
+    fn device_loss_recovery_advances_generation() {
+        let ctx1 = match block_on(GpuContext::global()) {
+            Some(c) => c,
+            None => return,
+        };
+        let gen1 = ctx1.generation;
+        assert!(!ctx1.is_lost());
+
+        ctx1.is_lost.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(ctx1.is_lost());
+
+        let ctx2 = block_on(GpuContext::global()).expect("Recreated context after loss");
+        assert!(ctx2.generation > gen1);
+        assert!(!ctx2.is_lost());
     }
 }

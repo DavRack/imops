@@ -45,20 +45,18 @@ output = "PositiveLinear"
 name = "Exp"
 ev = 0
 
-[[pipeline_modules]]
-name = "Contrast"
-c = 1.5
+# [[pipeline_modules]]
+# name = "Contrast"
+# c = 1
 
 [[pipeline_modules]]
 name = "SigmoidToneMap"
 
+# ACEScg → encoded sRGB (OETF). Prefer CST over Gamma so metadata/transfer
+# tags stay correct for viewers and the web canvas.
 [[pipeline_modules]]
 name = "CST"
-target_color_space = "LinearSrgb"
-
-[[pipeline_modules]]
-name = "Gamma"
-gamma = 2.2
+target_color_space = "Srgb"
 
 [[pipeline_modules]]
 name = "Rotation"

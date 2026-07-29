@@ -96,13 +96,23 @@ pub async fn run_pixel_pipeline_with_backend_async(
     };
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PipelineRenderResult {
+    pub width: usize,
+    pub height: usize,
+    pub submit_ms: f64,
+    pub fence_wait_ms: f64,
+    pub total_ms: f64,
+}
+
 /// Run the pipeline on GPU and present to the configured canvas (no CPU readback).
 #[cfg(target_arch = "wasm32")]
 pub async fn run_pixel_pipeline_present_async(
     image: &Image,
     pixel_pipeline: &mut config::PipelineConfig,
     backend: &Backend,
-) -> Result<(usize, usize), String> {
+) -> Result<PipelineRenderResult, String> {
+    let t_start = js_sys::Date::now();
     let ctx = match backend {
         Backend::Wgpu(ctx) => ctx,
         Backend::Cpu => {
@@ -117,10 +127,27 @@ pub async fn run_pixel_pipeline_present_async(
 
     match pipeline_image {
         PipelineImage::Gpu(buf, _meta, _raw) => {
-            let dims = (buf.width, buf.height);
+            let width = buf.width;
+            let height = buf.height;
             ctx.present_image(&buf)?;
+            let t_submit = js_sys::Date::now();
+            if let Err(e) = ctx.end_of_render_fence_async(&buf.buffer).await {
+                return Err(e);
+            }
+            let t_fence = js_sys::Date::now();
             ctx.recycle_rgba_buffer(buf);
-            Ok(dims)
+
+            let total_ms = (t_fence - t_start).max(0.0);
+            let submit_ms = (t_submit - t_start).max(0.0);
+            let fence_wait_ms = (t_fence - t_submit).max(0.0);
+
+            Ok(PipelineRenderResult {
+                width,
+                height,
+                submit_ms,
+                fence_wait_ms,
+                total_ms,
+            })
         }
         PipelineImage::Cpu(_) => Err("Pipeline ended on CPU unexpectedly".to_string()),
     }
