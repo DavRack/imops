@@ -131,7 +131,7 @@ fn pixel_fluence_spectrum(px: &Pixel, grid: &WavelengthGrid) -> [f64; 16] {
     let mut out = [0.0f64; 16];
     for (i, &lambda) in grid.wavelengths_nm.iter().enumerate() {
         let e_rel = 550.0 / lambda;
-        out[i] = spectrum[i] / e_rel;
+        out[i] = (spectrum[i] / e_rel) * crate::film::constants::RADIOMETRIC_SCALE;
     }
     out
 }

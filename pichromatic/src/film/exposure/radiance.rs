@@ -51,14 +51,23 @@ pub fn film_exposure_scale(l_abs: f64) -> f64 {
 
 /// Reciprocity law failure efficiency factor η(t, p).
 ///
-/// For exposures t > 1.0s, reciprocity law failure reduces quantum efficiency:
+/// For long exposures t > 1.0s (LIRF), reciprocity law failure reduces quantum efficiency:
 /// η = (t / 1.0)^(p - 1.0) where p ∈ (0.5, 1.0] is Schwarzschild exponent.
-/// For t <= 1.0s or p >= 1.0, η = 1.0.
+/// For very short exposures t < 1e-3s (HIRF), efficiency also drops.
+/// Note: this relies only on total shutter time, treating the intensity profile as uniform.
 pub fn reciprocity_factor(shutter_seconds: f64, p: f64) -> f64 {
-    if shutter_seconds <= 1.0 || p >= 0.9999 {
-        1.0
+    if p >= 0.9999 {
+        return 1.0;
+    }
+    if shutter_seconds > 1.0 {
+        // LIRF (Low Intensity Reciprocity Failure)
+        shutter_seconds.powf(p - 1.0)
+    } else if shutter_seconds < 0.001 {
+        // HIRF (High Intensity Reciprocity Failure) proxy.
+        // Assuming symmetric exponent for the short end as a simple MVP approximation.
+        (shutter_seconds / 0.001).powf(1.0 - p)
     } else {
-        shutter_seconds.max(1.0).powf(p - 1.0)
+        1.0
     }
 }
 

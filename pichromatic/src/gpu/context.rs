@@ -135,6 +135,8 @@ struct GlobalContextHolder {
     context: Option<Arc<GpuContext>>,
 }
 
+static NEXT_GPU_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 static GLOBAL_GPU_CONTEXT: Mutex<GlobalContextHolder> = Mutex::new(GlobalContextHolder {
     generation: 0,
     context: None,
@@ -195,7 +197,8 @@ impl GpuContext {
     }
 
     pub async fn try_new() -> Result<Arc<Self>, String> {
-        Self::try_new_with_generation(1).await
+        let gen = NEXT_GPU_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self::try_new_with_generation(gen).await
     }
 
     pub async fn try_new_with_generation(generation: u64) -> Result<Arc<Self>, String> {
@@ -1262,6 +1265,8 @@ impl GpuContext {
             workgroups_x,
         );
         self.queue.submit(Some(encoder.finish()));
+        #[cfg(not(target_arch = "wasm32"))]
+        self.device.poll(wgpu::Maintain::Poll);
         drop(keep);
     }
 

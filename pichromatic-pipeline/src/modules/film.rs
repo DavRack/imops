@@ -19,6 +19,7 @@ fn parse_stock(s: &str) -> Option<StockId> {
         "Portra400" => StockId::Portra400,
         "Ektar100" => StockId::Ektar100,
         "FujiPro400H" => StockId::FujiPro400H,
+        "FujichromeVelvia100" => StockId::FujichromeVelvia100,
         "EktachromeE100" => StockId::EktachromeE100,
         "TriX400" => StockId::TriX400,
         _ => return None,
@@ -95,6 +96,7 @@ impl Default for Film {
                     "Portra400".to_string(),
                     "Ektar100".to_string(),
                     "FujiPro400H".to_string(),
+                    "FujichromeVelvia100".to_string(),
                     "EktachromeE100".to_string(),
                     "TriX400".to_string(),
                 ],
@@ -251,6 +253,38 @@ mod tests {
         let gpu_out = gpu_img.to_cpu(Some(&ctx));
 
         assert_images_equal(&cpu_out, &gpu_out);
+    }
+
+    #[test]
+    fn test_film_module_cpu_vs_gpu_positive_linear() {
+        let mut film_config = Film::default();
+        film_config.output.value = "PositiveLinear".to_string();
+        let film_module = Module::<Film> {
+            name: "Film".to_string(),
+            cache: None,
+            config: film_config,
+        };
+
+        let mut seed_image = generate_test_image_512x512(333);
+        for (i, px) in seed_image.rgb_data.iter_mut().enumerate() {
+            let scale = if i % 2 == 0 { 50.0 } else { 0.001 };
+            px[0] *= scale;
+            px[1] *= scale;
+            px[2] *= scale;
+        }
+        seed_image.cst(ColorSpaceTag::AcesCg);
+
+        let ctx = GpuContext::new_sync();
+        let mut cpu_img = PipelineImage::Cpu(seed_image.clone());
+        film_module.process(&Backend::Cpu, &mut cpu_img);
+        let cpu_out = cpu_img.to_cpu(None);
+
+        let mut gpu_img = PipelineImage::new_gpu(&ctx, &seed_image);
+        film_module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_img);
+        let gpu_out = gpu_img.to_cpu(Some(&ctx));
+
+        use crate::modules::common::assert_images_equal_tol;
+        assert_images_equal_tol(&cpu_out, &gpu_out, 0.31);
     }
 
     #[test]

@@ -33,14 +33,6 @@ pub const DEVELOPABILITY_THRESHOLD_ATOMS: u32 = 4;
 /// Order-of-magnitude from published chromogenic emulsion surveys.
 pub const DYE_CLOUD_CORRELATION_UM: f32 = 3.0;
 
-/// Scales silver-count κ (`1/√(ρ_areal·A)`) down to chromogenic *dye-cloud* granularity.
-///
-/// After fixing areal density to `(packing·thickness)/⟨V_crystal⟩`, silver-only κ still
-/// over-predicts scanned color-neg RMS (each dye cloud averages many grains). Factor
-/// 0.15 targets ~0.015–0.03 D mid-density RMS at ~9–12 µm/px. Empirically fit — not
-/// a published constant.
-pub const CHROMOGENIC_DYE_GRAIN_SCALE: f32 = 0.15;
-
 /// Relative absorption cross-section scale (1/µm) for Beer–Lambert in
 /// [`crate::film::exposure::absorption::absorb_stack`].
 ///
@@ -49,6 +41,10 @@ pub const CHROMOGENIC_DYE_GRAIN_SCALE: f32 = 0.15;
 /// comes from `upsample_acescg` directly (no RGB-mean / luminance re-scale).
 /// Single global MVP calibration — not per-stock physics.
 pub const ABSORPTION_SIGMA_SCALE_PER_UM: f64 = 2.0;
+
+/// Absolute radiometric anchor. Converts the relative upsampled proxy spectrum 
+/// into absolute photon fluence to correctly anchor the T=4 crystal threshold model.
+pub const RADIOMETRIC_SCALE: f64 = 6.0;
 
 /// Fraction of each emulsion's absorbed fluence mixed with a local gelatin-scatter
 /// PSF (`AntihalationModel::psf_local_um`). Energy-conserving:

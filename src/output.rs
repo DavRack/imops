@@ -225,14 +225,12 @@ pub fn save_jpeg(
     pixels: &[[f32; 3]],
 ) -> Result<(), String> {
     assert_eq!(width * height, pixels.len());
-    let data: Vec<u8> = pixels
-        .iter()
-        .flat_map(|p| {
-            p.iter()
-                .map(|&c| (c.max(0.0).min(1.0) * 255.0) as u8)
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    let mut data = Vec::with_capacity(pixels.len() * 3);
+    for p in pixels {
+        data.push((p[0].clamp(0.0, 1.0) * 255.0) as u8);
+        data.push((p[1].clamp(0.0, 1.0) * 255.0) as u8);
+        data.push((p[2].clamp(0.0, 1.0) * 255.0) as u8);
+    }
     let img = image::RgbImage::from_vec(width as u32, height as u32, data)
         .ok_or_else(|| "failed to build JPEG buffer".to_string())?;
     img.save(path)

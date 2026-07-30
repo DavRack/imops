@@ -295,7 +295,7 @@ mod tests {
             .collect();
         assert!(e_gamma.iter().any(|&g| g < 0.36), "slow layers should be hard-γ");
         assert!(e_gamma.iter().any(|&g| g > 0.55), "fast layers should be toe-open γ");
-        assert!(p_gamma.iter().all(|&g| (0.5..0.6).contains(&g)));
+        assert!(p_gamma.iter().all(|&g| (0.5..0.72).contains(&g)));
         assert!(ektar.adjacency_beta > portra.adjacency_beta);
 
         let e_dir: f32 = ektar

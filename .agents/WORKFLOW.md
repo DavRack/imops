@@ -1,120 +1,93 @@
-# Assembly Line Multi-Agent Workflow Orchestration
+# Multi-Agent Workflow Orchestration
 
 ## Overview
-This document defines the execution pipelines, shared artifact handoffs, and feedback loop conditions for multi-agent workflows:
-1. `/build-feature`: Feature Development Pipeline (Specification → Research → Coding → Reviews → Integration).
-2. `/askc`: Codebase Q&A & Deep Research Pipeline (**Strictly Read-Only App Code** → Query Spec → Investigation/Probing → Audit → Final Answer).
+This document defines the execution pipeline, shared artifacts, and feedback loop for the `/buildc` workflow, consisting of a Planner & Coder agent and a Reviewer agent.
 
 ---
 
-## Core Workflow Principles
-1. **Strict Scope & Prompt Fidelity (No Invented Goals or Features)**:
-   - Build strictly what the user requested. Agents **MUST NOT** invent arbitrary goals, unrequested feature additions, unstated scope extensions, or artificial constraints/tolerances that were not specified in the user's prompt.
-2. **Clarification Protocol for Ambiguity**:
-   - If a requirement, parameter, design decision, or assumption is genuinely necessary to proceed but was **NOT** specified in the user's request, agents **MUST** explicitly ask the user for clarification rather than inventing arbitrary goals or assumptions on their own.
-3. **No Superficial Symptom Patches or Dummy Fallbacks**:
-   - Agents **MUST NOT** insert dummy fallbacks, fake default numbers, or artificial patches (e.g. magic default gains or silent fallback values) just to avoid failing tests or to "not be wrong".
-   - Trace and fix the true upstream data parser/provider or handle missing data cleanly rather than inventing silent fallback values.
+## Workflow: /buildc (Feature Development & Refactoring)
 
----
+### Core Principles
+- **YAGNI (You Aren't Gonna Need It)**: Both agents strictly follow YAGNI principles. Do not overbuild, do not add unrequested features or preemptive abstractions.
+- **Strict Prompt Fidelity**: Implement exactly what the user asks for.
 
-## Shared Artifacts Pipeline (.scratchpad/)
+### Non functional requirements
+- Performance: this is a real app, the code needs to execute in a rasonable time and memory, for prototiping max 1m max 20gb ram, for production ready max 2s max 4gb ram (not exact values, just guidelines)
+
+### Shared Artifacts Pipeline (.scratchpad/)
 
 ```text
-User Input ──────► [Step 1: Prompt Engineer]
+User Input ──────► [Agent 1: Planner & Coder]
                         │
-                        ▼ (.scratchpad/final_spec.md)
-                   [Step 2: Researcher]
+                        ▼ (Code Files & .scratchpad/plan.md)
+                   [Agent 2: Reviewer]
                         │
-                        ▼ (.scratchpad/docs_context.md)
-                   [Step 3: Coder]
-                        │
-                        ▼ (Code Files)
-                ┌───────┴───────┐
-                ▼ (Parallel)    ▼ (Parallel)
-         [Step 4a: QA]    [Step 4b: SWE]
-                │               │
-                ▼               ▼ (.scratchpad/swe_report.md)
-        (.scratchpad/qa_report.md)
-                └───────┬───────┘
-                        ▼
-               [Step 5: Integrator]
-                        │
-                        ▼
-             [Step 6: Loop Check]
-           /                      \
-   NEEDS_REVISION               PASS
-         /                          \
-(Loop to Step 4)                (Terminate - Success)
+                  ┌─────┴─────┐
+                  ▼           ▼
+           NEEDS_REVISION    PASS
+                  │           │
+      (Loop to Agent 1)     (Terminate - Success)
 ```
 
----
+### Workflow Steps
 
-## Workflow Steps
+#### Step 1: Planning and Implementation
+- **Agent**: `planner_coder` (`.agents/roles/01_planner_coder.md`)
+- **Action**: Plans the implementation following YAGNI principles and writes the code. Fixes issues based on reviewer feedback if in a loop.
+- **Output**: Application codebase updates and (optional) `.scratchpad/plan.md`.
 
-### Step 1: Prompt Refinement
-- **Agent**: `prompt_engineer` (`.agents/roles/01_prompt_engineer.md`)
-- **Action**: Transform trigger prompt into structured spec.
-- **Output**: `.scratchpad/final_spec.md`
+#### Step 2: Code Review & Validation
+- **Agent**: `reviewer` (`.agents/roles/02_reviewer.md`)
+- **Action**: Reviews the code changes made by Agent 1 against a strict set of questions and YAGNI principles.
+- **Output**: `.scratchpad/review_report.md` (Contains Verdict: PASS / NEEDS_REVISION).
 
-### Step 2: Architecture & Context Research
-- **Agent**: `researcher` (`.agents/roles/02_researcher.md`)
-- **Action**: Inspect codebase, find target files, identify dependencies/APIs.
-- **Output**: `.scratchpad/docs_context.md`
-
-### Step 3: Initial Code Implementation
-- **Agent**: `coder` (`.agents/roles/03_coder.md`)
-- **Action**: Implement feature according to spec and research context.
-- **Output**: Application codebase updates.
-
-### Step 4: Parallel Code Review (Concurrent Step)
-- **Step 4a**:
-  - **Agent**: `qa_reviewer` (`.agents/roles/04_qa_reviewer.md`)
-  - **Action**: Audit correctness, boundary conditions, edge cases.
-  - **Output**: `.scratchpad/qa_report.md` (Contains Verdict: PASS / NEEDS_REVISION)
-- **Step 4b**:
-  - **Agent**: `swe_reviewer` (`.agents/roles/05_swe_reviewer.md`)
-  - **Action**: Audit architecture, design patterns, maintainability.
-  - **Output**: `.scratchpad/swe_report.md` (Contains Verdict: PASS / NEEDS_REVISION)
-
-### Step 5: Code Integration & Refactoring
-- **Agent**: `integrator` (`.agents/roles/06_integrator.md`)
-- **Action**: Apply reviewer suggestions from QA and SWE reports.
-- **Output**: Codebase updates.
-
-### Step 6: Self-Correction Loop / Termination Condition
+#### Step 3: Self-Correction Loop / Termination
 - **Check Condition**:
-  - If `.scratchpad/qa_report.md` or `.scratchpad/swe_report.md` contains `NEEDS_REVISION` AND loop count < max_iterations:
-    - **Trigger**: Loop back to **Step 4** (Parallel Reviewers re-audit code).
-  - Else if both contain `PASS`:
+  - If Agent 2's review report contains `NEEDS_REVISION`:
+    - **Trigger**: Loop back to **Step 1** (Agent 1 addresses feedback).
+  - Else if it contains `PASS`:
     - **Trigger**: Complete pipeline with SUCCESS status.
-  - Else (max_iterations reached):
-    - **Trigger**: Terminate with WARNING (max revision attempts reached).
 
 ---
 
-## Codebase Q&A & Research Pipeline (/ask-codebase)
+## Workflow: /investigate (Deep Investigation & Skeptical Review)
 
-### Trigger
-`"/ask-codebase <question>"`
+### Core Principles
+- **2-Agent Pipeline**: Agent 1 conducts the initial creative investigation; Agent 2 critically evaluates and challenges the findings.
+- **Skeptical Approval**: Agent 2 must remain highly skeptical and only approve (`PASS`) when provided with sufficient physical, factual, and mathematical evidence.
+- **User Delivery**: Only after Agent 2 issues a `PASS` is the response finalized and presented to the user.
 
-### Constraint Protocol
-- **STRICT_READ_ONLY_APP_CODE**: Zero modifications to application source files (`pichromatic/`, `pichromatic-pipeline/`, `src/`, etc.).
-- **PROBE_SCRIPTS_ALLOWED**: Agents may create temporary diagnostic scripts in `.scratchpad/scratch/` or run workspace test/benchmark commands to empirically verify behavior.
+### Shared Artifacts Pipeline (.scratchpad/)
 
-### Flow Diagram
 ```text
-User Question ──► [Step 1: Question Clarifier]
-                         │
-                         ▼ (.scratchpad/qa_query_spec.md)
-                  [Step 2: Codebase Investigator] (Searches, probes, runs diagnostic scripts)
-                         │
-                         ▼ (.scratchpad/qa_investigation.md)
-                  [Step 3: QA Analyst] (Audits completeness & zero app code edits)
-                         │
-                         ▼ (.scratchpad/qa_audit_report.md)
-                  [Step 4: Response Synthesizer]
-                         │
-                         ▼ (.scratchpad/final_answer.md)
+User Query ──────► [Agent 1: Lead Investigator]
+                        │
+                        ▼ (.scratchpad/investigation_report.md)
+                   [Agent 2: Skeptical Reviewer]
+                        │
+                  ┌─────┴─────┐
+                  ▼           ▼
+           NEEDS_REVISION    PASS
+                  │           │
+      (Loop to Agent 1)     (Deliver Response to User)
 ```
+
+### Workflow Steps
+
+#### Step 1: Investigation & Research
+- **Agent**: `investigator` (`.agents/roles/03_investigator.md`)
+- **Action**: Performs tight research, explores the problem space, proposes creative/novel solutions, and compiles theoretical and empirical evidence.
+- **Output**: `.scratchpad/investigation_report.md`
+
+#### Step 2: Skeptical Review & Accuracy Audit
+- **Agent**: `skeptical_reviewer` (`.agents/roles/04_skeptical_reviewer.md`)
+- **Action**: Evaluates the report strictly focused on correctness, physical accuracy, factual accuracy, and mathematical rigor. Remains skeptical and requires strong proof.
+- **Output**: `.scratchpad/investigation_review.md` (Contains Verdict: `PASS` or `NEEDS_REVISION`).
+
+#### Step 3: Feedback Loop / User Delivery
+- **Check Condition**:
+  - If `investigation_review.md` contains `NEEDS_REVISION`:
+    - **Trigger**: Loop back to **Step 1** (Agent 1 addresses doubts and provides additional evidence).
+  - Else if it contains `PASS`:
+    - **Trigger**: Present the verified investigation response to the user.
 

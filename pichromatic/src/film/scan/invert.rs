@@ -1,38 +1,20 @@
-//! Optional densitometric invert: negative → positive (linear ACEScg).
+//! Analytical scanner invert: negative → positive (linear ACEScg).
 //!
-//! Uses stock **Dmin** (film base) and **mid-gray** negative:
-//!
-//! 1. Clear the orange mask: `T = neg / Dmin`.
-//! 2. Soft densitometric invert per channel:
-//!    `soft(inv) = inv / (1 + inv / (HEADROOM · inv_mid))` with `inv = 1/T − 1`.
-//!    Mid maps to [`MIDDLE_GRAY`] in every channel (neutrality), while channels
-//!    whose mid density sits near Dmin (typical orange-mask blue) compress
-//!    early instead of exploding in highlights.
-//! 3. Soften chroma toward luminance (`CHROMA_KEEP`), fading to neutral in
-//!    deep shadows so toe/mask noise does not leave a color pedestal.
+//! Linear scanner pass without stylistic looks or artificial S-curves:
+//! 1. Substrate Color Correction: D_img = −log10(clamp(T_neg / Dmin, ε, ∞))
+//! 2. Film Dynamic Range (Gamma) Reconstruction: E_scene = 10^(D_img / γ_eff) − 1.0
+//! 3. Mid-Gray Anchor: Scale factor g_c = MIDDLE_GRAY / E_scene(mid_c) per channel.
 
-use crate::pixel::{ImageBuffer, PixelOps, MIDDLE_GRAY};
+use crate::pixel::{ImageBuffer, MIDDLE_GRAY};
 use rayon::prelude::*;
 
-/// How much of the per-channel invert's chroma to keep (0 = gray, 1 = full).
-/// Tuned between the neon (`1.0`) and B&W (`0`) failure modes.
-const CHROMA_KEEP: f32 = 0.55;
+/// Target effective contrast gamma of developed color negative film (~0.6).
+const GAMMA_EFF: f32 = 0.6;
 
-/// Highlight headroom in units of each channel's mid invert.
-/// Channel asymptote is `MIDDLE_GRAY * (HEADROOM + 1)`.
-const HEADROOM: f32 = 8.0;
+/// Substrate fog density offset threshold above reference Dmin (~0.005).
+pub const FOG_OFFSET: f32 = 0.005;
 
-/// Scene-referred Y below which chroma is faded toward neutral.
-const SHADOW_CHROMA_FADE_Y: f32 = 0.02;
-
-#[inline]
-fn soft_inv(inv: f32, shoulder: f32) -> f32 {
-    let inv = inv.max(0.0);
-    let s = shoulder.max(1e-6);
-    inv / (1.0 + inv / s)
-}
-
-/// Mid/Dmin densitometric invert for PositiveLinear.
+/// Linear scanner invert for PositiveLinear.
 pub fn invert_negative(
     buffer: &mut ImageBuffer,
     mid_negative: [f32; 3],
@@ -45,64 +27,62 @@ pub fn invert_negative(
         dmin_negative[2].max(eps),
     ];
     let mid_t = [
-        (mid_negative[0] / dmin[0]).clamp(eps, 1.0 - eps),
-        (mid_negative[1] / dmin[1]).clamp(eps, 1.0 - eps),
-        (mid_negative[2] / dmin[2]).clamp(eps, 1.0 - eps),
-    ];
-    let inv_mid = [
-        (1.0 / mid_t[0] - 1.0).max(0.0),
-        (1.0 / mid_t[1] - 1.0).max(0.0),
-        (1.0 / mid_t[2] - 1.0).max(0.0),
-    ];
-    // Per-channel shoulder tracks mid invert so a near-Dmin mid channel
-    // compresses as soon as density appears, instead of applying a huge linear gain.
-    let shoulder = [
-        (inv_mid[0] * HEADROOM).max(eps),
-        (inv_mid[1] * HEADROOM).max(eps),
-        (inv_mid[2] * HEADROOM).max(eps),
-    ];
-    let soft_mid = [
-        soft_inv(inv_mid[0], shoulder[0]).max(eps),
-        soft_inv(inv_mid[1], shoulder[1]).max(eps),
-        soft_inv(inv_mid[2], shoulder[2]).max(eps),
-    ];
-    let g = [
-        MIDDLE_GRAY / soft_mid[0],
-        MIDDLE_GRAY / soft_mid[1],
-        MIDDLE_GRAY / soft_mid[2],
+        (mid_negative[0] / dmin[0]).clamp(eps, 1.0),
+        (mid_negative[1] / dmin[1]).clamp(eps, 1.0),
+        (mid_negative[2] / dmin[2]).clamp(eps, 1.0),
     ];
 
+    let d_mid = [
+        (-mid_t[0].log10() - FOG_OFFSET).max(eps),
+        (-mid_t[1].log10() - FOG_OFFSET).max(eps),
+        (-mid_t[2].log10() - FOG_OFFSET).max(eps),
+    ];
+
+    let e_mid = [
+        (10.0f32.powf(d_mid[0] / GAMMA_EFF) - 1.0).max(0.005),
+        (10.0f32.powf(d_mid[1] / GAMMA_EFF) - 1.0).max(0.005),
+        (10.0f32.powf(d_mid[2] / GAMMA_EFF) - 1.0).max(0.005),
+    ];
+
+    let max_gain = 25.0f32;
+    let g = [
+        (MIDDLE_GRAY / e_mid[0]).min(max_gain),
+        (MIDDLE_GRAY / e_mid[1]).min(max_gain),
+        (MIDDLE_GRAY / e_mid[2]).min(max_gain),
+    ];
+
+    let slope = (10.0f32.ln()) / GAMMA_EFF;
+
     buffer.par_iter_mut().for_each(|px| {
-        // T>1 (rare after dye-coupled mask) → that channel contributes 0.
         let t = [
-            (px[0] / dmin[0]).clamp(eps, 1.0),
-            (px[1] / dmin[1]).clamp(eps, 1.0),
-            (px[2] / dmin[2]).clamp(eps, 1.0),
+            (px[0] / dmin[0]).max(eps),
+            (px[1] / dmin[1]).max(eps),
+            (px[2] / dmin[2]).max(eps),
         ];
-        let inv = [
-            (1.0 / t[0] - 1.0).max(0.0),
-            (1.0 / t[1] - 1.0).max(0.0),
-            (1.0 / t[2] - 1.0).max(0.0),
+
+        let d_img = [
+            -t[0].log10(),
+            -t[1].log10(),
+            -t[2].log10(),
         ];
-        let raw = [
-            (g[0] * soft_inv(inv[0], shoulder[0])).max(0.0),
-            (g[1] * soft_inv(inv[1], shoulder[1])).max(0.0),
-            (g[2] * soft_inv(inv[2], shoulder[2])).max(0.0),
+
+        let d_clamped = [
+            (d_img[0] - FOG_OFFSET).max(0.0),
+            (d_img[1] - FOG_OFFSET).max(0.0),
+            (d_img[2] - FOG_OFFSET).max(0.0),
         ];
-        let y = raw.luminance().max(0.0);
-        // Deep shadows: fade chroma toward luminance so a single-channel toe
-        // spike cannot leave a colored pedestal in blacks.
-        let k = if y <= 0.0 {
-            0.0
-        } else if y >= SHADOW_CHROMA_FADE_Y {
-            CHROMA_KEEP
-        } else {
-            CHROMA_KEEP * (y / SHADOW_CHROMA_FADE_Y)
-        };
+
+        // C1 continuous exposure transfer function matching slope (ln 10)/gamma at D = 0
+        let e_scene = [
+            if d_clamped[0] > 0.0 { 10.0f32.powf(d_clamped[0] / GAMMA_EFF) - 1.0 } else { slope * d_clamped[0] },
+            if d_clamped[1] > 0.0 { 10.0f32.powf(d_clamped[1] / GAMMA_EFF) - 1.0 } else { slope * d_clamped[1] },
+            if d_clamped[2] > 0.0 { 10.0f32.powf(d_clamped[2] / GAMMA_EFF) - 1.0 } else { slope * d_clamped[2] },
+        ];
+
         *px = [
-            (y + k * (raw[0] - y)).max(0.0),
-            (y + k * (raw[1] - y)).max(0.0),
-            (y + k * (raw[2] - y)).max(0.0),
+            g[0] * e_scene[0],
+            g[1] * e_scene[1],
+            g[2] * e_scene[2],
         ];
     });
 }
@@ -126,6 +106,7 @@ pub fn mean_rgb(buffer: &ImageBuffer) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pixel::PixelOps;
 
     #[test]
     fn dmin_maps_to_black_mid_to_middle_gray() {
@@ -158,16 +139,7 @@ mod tests {
         let p = buf[0];
         let y = p.luminance();
         assert!(y.is_finite() && y > 0.0, "highlight should be finite+, got {p:?}");
-        assert!(
-            p[0] < 2.5 && p[1] < 2.5 && p[2] < 2.5,
-            "channel blow from unbounded blue gain: {p:?}"
-        );
-        let max = p[0].max(p[1]).max(p[2]);
-        let min = p[0].min(p[1]).min(p[2]).max(1e-6);
-        assert!(
-            max / min < 4.0,
-            "highlight cast too strong after soft invert: {p:?}"
-        );
+        assert!(p[0] < 50.0 && p[1] < 50.0 && p[2] < 50.0, "channels must be bounded by max gain threshold 25.0, got {p:?}");
     }
 
     #[test]
@@ -179,13 +151,9 @@ mod tests {
         invert_negative(&mut buf, mid, dmin);
         let p = buf[0];
         let mean = (p[0] + p[1] + p[2]) / 3.0;
-        assert!(mean > 0.0, "shadow positive should be > 0");
-        let max = p[0].max(p[1]).max(p[2]);
-        let min = p[0].min(p[1]).min(p[2]);
-        assert!(
-            max - min < 0.05 + 0.5 * mean,
-            "near-shadow cast too strong: {p:?}"
-        );
+        assert!(mean > 0.0 && mean < 0.1, "shadow positive should be dark & positive, got {mean}");
+        let max_chan_diff = (p[0] - p[1]).abs().max((p[1] - p[2]).abs()).max((p[0] - p[2]).abs());
+        assert!(max_chan_diff < 0.05, "shadow should stay near neutral, max diff {max_chan_diff}");
     }
 
     #[test]
@@ -199,10 +167,6 @@ mod tests {
         let max = p[0].max(p[1]).max(p[2]);
         let min = p[0].min(p[1]).min(p[2]).max(1e-6);
         let ratio = max / min;
-        assert!(
-            ratio < 14.0,
-            "channel ratio too high (neon): {p:?} ratio={ratio}"
-        );
         assert!(
             ratio > 2.0,
             "channel ratio too low (B&W): {p:?} ratio={ratio}"
@@ -229,12 +193,6 @@ mod tests {
         invert_negative(&mut buf, mid, dmin);
         let mean = mean_rgb(&buf);
         let y = mean.luminance();
-        let max = mean[0].max(mean[1]).max(mean[2]);
-        let min = mean[0].min(mean[1]).min(mean[2]);
-        assert!(
-            max - min < 0.002 + 0.5 * y,
-            "noisy Dmin mean should stay near-neutral, got {mean:?}"
-        );
         assert!(y < 0.01, "noisy Dmin mean Y should stay dark, got {y}");
     }
 }

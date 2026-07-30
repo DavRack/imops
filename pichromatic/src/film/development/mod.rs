@@ -4,7 +4,6 @@ pub mod diffusion;
 pub mod grain;
 pub mod reduction;
 
-use crate::film::constants::CHROMOGENIC_DYE_GRAIN_SCALE;
 use crate::film::development::diffusion::{apply_adjacency, apply_dir_inhibition};
 use crate::film::development::grain::{apply_grain, scale_kappa};
 use crate::film::development::reduction::reduce;
@@ -31,6 +30,7 @@ pub fn develop(
 
     let mut d_max = Vec::new();
     let mut kappas = Vec::new();
+    let mut crystal_sizes = Vec::new();
     for (layer_idx, layer) in stock.layers.iter().enumerate() {
         if layer.kind != LayerKind::Emulsion {
             continue;
@@ -38,11 +38,12 @@ pub fn develop(
         let coupler = layer.coupler.as_ref().unwrap();
         d_max.push(coupler.d_max);
         let kappa_ref = stock.grain_kappa[layer_idx].unwrap_or(0.0);
-        // κ(pitch) = κ_1µm / pitch, then chromogenic dye-cloud scale (not silver-count).
-        let kappa = scale_kappa(kappa_ref, pixel_pitch_um) * CHROMOGENIC_DYE_GRAIN_SCALE;
+        // κ(pitch) = κ_1µm / pitch
+        let kappa = scale_kappa(kappa_ref, pixel_pitch_um);
         kappas.push(kappa);
+        crystal_sizes.push(layer.crystal_size.clone());
     }
-    apply_grain(&mut dyes, &d_max, &kappas, pixel_pitch_um, seed);
+    apply_grain(&mut dyes, &d_max, &kappas, pixel_pitch_um, seed, &crystal_sizes);
 
     dyes
 }

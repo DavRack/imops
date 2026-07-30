@@ -3,15 +3,14 @@
 //! For crystal diameter s ~ LogNormal(μ, σ) (s in µm), the expected developable
 //! fraction at absorbed fluence Φ is:
 //!
-//!   f(Φ) = 1 − E_s[ exp(−k · s² · Φ) ]
+//!   f(Φ) = 1 − E_s[ P(X < 4; λ = k · s² · Φ) ]
 //!
 //! Photon arrivals are Poisson; developability at the single-crystal level uses
-//! the T = 4 silver-atom sensitivity-speck threshold folded into calibration
-//! constant `k` (see film-implementation.md §5.5 and DEVELOPABILITY_THRESHOLD_ATOMS).
+//! the T = 4 silver-atom sensitivity-speck threshold.
 //!
 //! Equivalence: a crystal is treated as developable once the Poisson mean of
 //! absorbed photons (∝ s² Φ) yields a non-zero probability of ≥ T latent atoms;
-//! the continuum population average collapses to the Laplace-transform form above
+//! the continuum population average collapses to the expectation of the Poisson CDF
 //! with `k` absorbing QE and geometric factors.
 //!
 //! This LUT is a memoized physical integral, not an artist curve. The expectation
@@ -28,7 +27,7 @@ pub struct DevelopableFractionLut {
     pub log10_fluence: Vec<f64>,
     /// Developable fraction f ∈ [0, 1] at each sample.
     pub fraction: Vec<f64>,
-    /// Absorption/quantum calibration factor k in f = 1 − E[exp(−k s² Φ)].
+    /// Absorption/quantum calibration factor k in f = 1 − E[P(X<4; k s² Φ)].
     pub k: f64,
 }
 
@@ -87,7 +86,7 @@ impl DevelopableFractionLut {
     }
 }
 
-/// E_s[ exp(−k s² Φ) ] for ln(s) ~ N(μ, σ²).
+/// E_s[ P(X < 4; λ = k s² Φ) ] for ln(s) ~ N(μ, σ²).
 fn expected_survival(dist: &LogNormalDist, k: f64, phi: f64) -> f64 {
     const N: usize = 64;
     const Z_MAX: f64 = 8.0;
@@ -99,13 +98,14 @@ fn expected_survival(dist: &LogNormalDist, k: f64, phi: f64) -> f64 {
         let trap_w = if i == 0 || i == N { 0.5 } else { 1.0 };
         let pdf = inv_sqrt_2pi * (-0.5 * z * z).exp();
         let s = (dist.mu_ln + dist.sigma_ln * z).exp();
-        let g = (-k * s * s * phi).exp();
-        acc += trap_w * pdf * g * dz;
+        let lambda = k * s * s * phi;
+        let p_not_dev = (-lambda).exp() * (1.0 + lambda + lambda * lambda / 2.0 + lambda * lambda * lambda / 6.0);
+        acc += trap_w * pdf * p_not_dev * dz;
     }
     acc
 }
 
-fn expected_developable_fraction(dist: &LogNormalDist, k: f64, phi: f64) -> f64 {
+pub(crate) fn expected_developable_fraction(dist: &LogNormalDist, k: f64, phi: f64) -> f64 {
     (1.0 - expected_survival(dist, k, phi)).clamp(0.0, 1.0)
 }
 

@@ -783,11 +783,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
     for (var j = 0u; j < e_count; j = j + 1u) {
-        var total = 0.0;
+        var total_delta = 0.0;
         for (var s = 0u; s < e_count; s = s + 1u) {
-            total = total + mat[s * e_count + j] * diffused[s * u.n + i];
+            let weight = mat[s * e_count + j];
+            let diff = diffused[s * u.n + i] - dye[s * u.n + i];
+            total_delta = total_delta + weight * diff;
         }
-        dye[j * u.n + i] = dye[j * u.n + i] * exp(-total);
+        dye[j * u.n + i] = dye[j * u.n + i] * exp(-total_delta);
     }
 }
 "#;
@@ -805,12 +807,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
     for (var j = 0u; j < e_count; j = j + 1u) {
-        var total = 0.0;
+        var total_delta = 0.0;
         for (var s = 0u; s < e_count; s = s + 1u) {
-            total = total + mat[s * e_count + j] * arena[u.work_base + s * u.n + i];
+            let weight = mat[s * e_count + j];
+            let diff = arena[u.work_base + s * u.n + i] - arena[u.dye_base + s * u.n + i];
+            total_delta = total_delta + weight * diff;
         }
         let idx = u.dye_base + j * u.n + i;
-        arena[idx] = arena[idx] * exp(-total);
+        arena[idx] = arena[idx] * exp(-total_delta);
     }
 }
 "#;
@@ -961,11 +965,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i >= u.n) { return; }
     let d0 = dye[u.off + i];
     let dens = clamp(d0, 0.0, u.dmax);
-    let eps_toe = 0.02 * u.dmax;
+    let eps_toe = 0.05 * u.dmax;
     let taper = min(dens / (dens + eps_toe), 1.0);
     let sd = taper * sqrt(max(dens * (u.dmax - dens), 0.0));
-    var dd = dens + u.kappa * sd * noise[u.noise_off + i] * u.norm;
-    dd = clamp(dd, 0.0, u.dmax * 1.05);
+    let noisy = dens + u.kappa * sd * noise[u.noise_off + i] * u.norm;
+    let knee = 0.005 * u.dmax;
+    var dd = noisy;
+    if (noisy < knee) {
+        dd = (knee * knee) / (2.0 * knee - noisy);
+    }
+    dd = min(dd, u.dmax * 1.05);
     dye[u.off + i] = dd;
 }
 "#;
@@ -1023,41 +1032,29 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let inv_base = mat_base + 9u;
         let dmin = vec3<f32>(sc[inv_base], sc[inv_base + 1u], sc[inv_base + 2u]);
         let g_val = vec3<f32>(sc[inv_base + 3u], sc[inv_base + 4u], sc[inv_base + 5u]);
-        let shoulder = vec3<f32>(sc[inv_base + 6u], sc[inv_base + 7u], sc[inv_base + 8u]);
-        let wr = sc[inv_base + 9u];
-        let wg = sc[inv_base + 10u];
-        let wb = sc[inv_base + 11u];
-        let chroma_keep = sc[inv_base + 12u];
-        let fade_y = sc[inv_base + 13u];
-        let eps = sc[inv_base + 14u];
+        let slope = sc[inv_base + 6u];
+        let gamma_eff = sc[inv_base + 7u];
+        let eps = sc[inv_base + 8u];
+        let fog_offset = sc[inv_base + 9u];
 
         let tc = vec3<f32>(
-            clamp(rgb.x / dmin.x, eps, 1.0),
-            clamp(rgb.y / dmin.y, eps, 1.0),
-            clamp(rgb.z / dmin.z, eps, 1.0),
+            max(rgb.x / dmin.x, eps),
+            max(rgb.y / dmin.y, eps),
+            max(rgb.z / dmin.z, eps),
         );
-        let inv_val = vec3<f32>(
-            max(1.0 / tc.x - 1.0, 0.0),
-            max(1.0 / tc.y - 1.0, 0.0),
-            max(1.0 / tc.z - 1.0, 0.0),
+        let d_img = vec3<f32>(-log(tc.x) * 0.43429448, -log(tc.y) * 0.43429448, -log(tc.z) * 0.43429448);
+        let d_clamped = max(d_img - vec3<f32>(fog_offset), vec3<f32>(0.0));
+
+        var e_scene = vec3<f32>(0.0);
+        if (d_clamped.x > 0.0) { e_scene.x = pow(10.0, d_clamped.x / gamma_eff) - 1.0; } else { e_scene.x = slope * d_clamped.x; }
+        if (d_clamped.y > 0.0) { e_scene.y = pow(10.0, d_clamped.y / gamma_eff) - 1.0; } else { e_scene.y = slope * d_clamped.y; }
+        if (d_clamped.z > 0.0) { e_scene.z = pow(10.0, d_clamped.z / gamma_eff) - 1.0; } else { e_scene.z = slope * d_clamped.z; }
+
+        rgb = vec3<f32>(
+            g_val.x * e_scene.x,
+            g_val.y * e_scene.y,
+            g_val.z * e_scene.z,
         );
-        let soft_x = inv_val.x / (1.0 + inv_val.x / max(shoulder.x, 1e-6));
-        let soft_y = inv_val.y / (1.0 + inv_val.y / max(shoulder.y, 1e-6));
-        let soft_z = inv_val.z / (1.0 + inv_val.z / max(shoulder.z, 1e-6));
-        let raw = vec3<f32>(
-            max(g_val.x * soft_x, 0.0),
-            max(g_val.y * soft_y, 0.0),
-            max(g_val.z * soft_z, 0.0),
-        );
-        let y_lum = max(wr * raw.x + wg * raw.y + wb * raw.z, 0.0);
-        var k = 0.0;
-        if (y_lum >= fade_y) {
-            k = chroma_keep;
-        } else if (y_lum > 0.0) {
-            k = chroma_keep * (y_lum / fade_y);
-        }
-        let gray = vec3<f32>(y_lum);
-        rgb = mix(gray, raw, k);
     }
 
     pixels[i] = vec4<f32>(rgb.x, rgb.y, rgb.z, pixels[i].w);
@@ -1117,12 +1114,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         if (kappa > 0.0 && d_max > 0.0) {
             let dens_clamped = clamp(d0, 0.0, d_max);
-            let eps_toe = 0.02 * d_max;
+            let eps_toe = 0.05 * d_max;
             let taper = min(dens_clamped / (dens_clamped + eps_toe), 1.0);
             let sd = taper * sqrt(max(dens_clamped * (d_max - dens_clamped), 0.0));
             let n_val = arena[u.noise_base + e * u.root_n + root_idx];
-            di = dens_clamped + kappa * sd * n_val * get_norm(e);
-            di = clamp(di, 0.0, d_max * 1.05);
+            let noisy = dens_clamped + kappa * sd * n_val * get_norm(e);
+            let knee = 0.005 * d_max;
+            if (noisy < knee) {
+                di = (knee * knee) / (2.0 * knee - noisy);
+            } else {
+                di = noisy;
+            }
+            di = min(di, d_max * 1.05);
         }
 
         let dm = arena[u.mask_base + e * u.root_n + root_idx];
@@ -1152,41 +1155,29 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let inv_base = mat_base + 9u;
         let dmin = vec3<f32>(sc[inv_base], sc[inv_base + 1u], sc[inv_base + 2u]);
         let g_val = vec3<f32>(sc[inv_base + 3u], sc[inv_base + 4u], sc[inv_base + 5u]);
-        let shoulder = vec3<f32>(sc[inv_base + 6u], sc[inv_base + 7u], sc[inv_base + 8u]);
-        let wr = sc[inv_base + 9u];
-        let wg = sc[inv_base + 10u];
-        let wb = sc[inv_base + 11u];
-        let chroma_keep = sc[inv_base + 12u];
-        let fade_y = sc[inv_base + 13u];
-        let eps = sc[inv_base + 14u];
+        let slope = sc[inv_base + 6u];
+        let gamma_eff = sc[inv_base + 7u];
+        let eps = sc[inv_base + 8u];
+        let fog_offset = sc[inv_base + 9u];
 
         let tc = vec3<f32>(
-            clamp(rgb.x / dmin.x, eps, 1.0),
-            clamp(rgb.y / dmin.y, eps, 1.0),
-            clamp(rgb.z / dmin.z, eps, 1.0),
+            max(rgb.x / dmin.x, eps),
+            max(rgb.y / dmin.y, eps),
+            max(rgb.z / dmin.z, eps),
         );
-        let inv_val = vec3<f32>(
-            max(1.0 / tc.x - 1.0, 0.0),
-            max(1.0 / tc.y - 1.0, 0.0),
-            max(1.0 / tc.z - 1.0, 0.0),
+        let d_img = vec3<f32>(-log(tc.x) * 0.43429448, -log(tc.y) * 0.43429448, -log(tc.z) * 0.43429448);
+        let d_clamped = max(d_img - vec3<f32>(fog_offset), vec3<f32>(0.0));
+
+        var e_scene = vec3<f32>(0.0);
+        if (d_clamped.x > 0.0) { e_scene.x = pow(10.0, d_clamped.x / gamma_eff) - 1.0; } else { e_scene.x = slope * d_clamped.x; }
+        if (d_clamped.y > 0.0) { e_scene.y = pow(10.0, d_clamped.y / gamma_eff) - 1.0; } else { e_scene.y = slope * d_clamped.y; }
+        if (d_clamped.z > 0.0) { e_scene.z = pow(10.0, d_clamped.z / gamma_eff) - 1.0; } else { e_scene.z = slope * d_clamped.z; }
+
+        rgb = vec3<f32>(
+            g_val.x * e_scene.x,
+            g_val.y * e_scene.y,
+            g_val.z * e_scene.z,
         );
-        let soft_x = inv_val.x / (1.0 + inv_val.x / max(shoulder.x, 1e-6));
-        let soft_y = inv_val.y / (1.0 + inv_val.y / max(shoulder.y, 1e-6));
-        let soft_z = inv_val.z / (1.0 + inv_val.z / max(shoulder.z, 1e-6));
-        let raw = vec3<f32>(
-            max(g_val.x * soft_x, 0.0),
-            max(g_val.y * soft_y, 0.0),
-            max(g_val.z * soft_z, 0.0),
-        );
-        let y_lum = max(wr * raw.x + wg * raw.y + wb * raw.z, 0.0);
-        var k = 0.0;
-        if (y_lum >= fade_y) {
-            k = chroma_keep;
-        } else if (y_lum > 0.0) {
-            k = chroma_keep * (y_lum / fade_y);
-        }
-        let gray = vec3<f32>(y_lum);
-        rgb = mix(gray, raw, k);
     }
 
     pixels[out_idx] = vec4<f32>(rgb.x, rgb.y, rgb.z, 1.0);
@@ -1292,7 +1283,7 @@ pub const COPY_SCALAR_CORE_ROI: &str = r#"
 struct U {
     core_x: u32, core_y: u32, core_w: u32, core_h: u32,
     core_n: u32, root_w: u32, root_off_x: u32, root_off_y: u32,
-    img_w: u32, src_off: u32, p0: u32, p1: u32,
+    dst_off: u32, src_off: u32, p0: u32, p1: u32,
 };
 @group(0) @binding(0) var<storage, read_write> dst: array<f32>;
 @group(0) @binding(1) var<storage, read_write> src: array<f32>;
@@ -1306,14 +1297,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let cx = i % u.core_w;
     let cy = i / u.core_w;
 
-    let gx = u.core_x + cx;
-    let gy = u.core_y + cy;
-    let out_idx = gy * u.img_w + gx;
-
     let lx = u.root_off_x + cx;
     let ly = u.root_off_y + cy;
     let src_idx = u.src_off + ly * u.root_w + lx;
 
-    dst[out_idx] = src[src_idx];
+    dst[u.dst_off + i] = src[src_idx];
 }
 "#;

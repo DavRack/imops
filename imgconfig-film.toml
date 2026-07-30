@@ -30,27 +30,38 @@ name = "BaselineExposureCompensation"
 name = "Exp"
 ev = 0.0
 
+# [[pipeline_modules]]
+# name = "Contrast"
+# c = 0.5
+
 [[pipeline_modules]]
 name = "CST"
 target_color_space = "AcesCg"
 
 [[pipeline_modules]]
 name = "Film"
-stock = "Ektar100"
+stock = "Portra400"
 film_format = "Film35mm"
 seed = 1
 output = "PositiveLinear"
 
-[[pipeline_modules]]
-name = "Exp"
-ev = 0
+# [[pipeline_modules]]
+# name = "Film"
+# stock = "Ektar100"
+# film_format = "Film35mm"
+# seed = 1
+# output = "PositiveLinear"
+
+# [[pipeline_modules]]
+# name = "Exp"
+# ev = 0
 
 # [[pipeline_modules]]
 # name = "Contrast"
 # c = 1
 
-[[pipeline_modules]]
-name = "SigmoidToneMap"
+# [[pipeline_modules]]
+# name = "SigmoidToneMap"
 
 # ACEScg → encoded sRGB (OETF). Prefer CST over Gamma so metadata/transfer
 # tags stay correct for viewers and the web canvas.

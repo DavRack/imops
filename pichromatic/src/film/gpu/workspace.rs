@@ -409,6 +409,7 @@ impl FilmGpuWorkspace {
         ctx: &GpuContext,
         stock: &FilmStock,
         params: &FilmParams,
+        meta: &crate::image::ImageMetadata,
         width: usize,
     ) -> (ConstsKey, StockConsts) {
         self.check_generation(ctx);
@@ -416,7 +417,7 @@ impl FilmGpuWorkspace {
         if let Some(i) = self.consts.iter().position(|(k, _)| *k == key) {
             return self.consts.remove(i);
         }
-        (key, bake_consts(ctx, stock, params, width))
+        (key, bake_consts(ctx, stock, params, meta, width))
     }
 
     fn restore_consts(&mut self, key: ConstsKey, consts: StockConsts, generation: u64) {
@@ -508,13 +509,14 @@ pub fn acquire_film_resources(
     ctx: &GpuContext,
     stock: &FilmStock,
     params: &FilmParams,
+    meta: &crate::image::ImageMetadata,
     width: usize,
     height: usize,
     num_emul: usize,
 ) -> FilmGpuLease {
     let mut ws = WORKSPACE.0.lock().unwrap();
     let scratch = ws.take_scratch(ctx, width, height, num_emul);
-    let (consts_key, consts) = ws.take_consts(ctx, stock, params, width);
+    let (consts_key, consts) = ws.take_consts(ctx, stock, params, meta, width);
     FilmGpuLease {
         scratch: Some(scratch),
         consts: Some(consts),
@@ -527,6 +529,7 @@ pub(super) fn acquire_film_roi_resources(
     ctx: &GpuContext,
     stock: &FilmStock,
     params: &FilmParams,
+    meta: &crate::image::ImageMetadata,
     roi_width: usize,
     roi_height: usize,
     img_width: usize,
@@ -535,7 +538,7 @@ pub(super) fn acquire_film_roi_resources(
 ) -> Result<FilmRoiLease, crate::film::FilmError> {
     let mut ws = WORKSPACE.0.lock().unwrap();
     let roi_scratch = ws.take_roi_scratch(ctx, roi_width, roi_height, img_width, img_height, num_emul)?;
-    let (consts_key, consts) = ws.take_consts(ctx, stock, params, img_width);
+    let (consts_key, consts) = ws.take_consts(ctx, stock, params, meta, img_width);
     Ok(FilmRoiLease {
         roi_scratch: Some(roi_scratch),
         consts: Some(consts),
@@ -550,10 +553,11 @@ pub fn acquire_film_consts(
     ctx: &GpuContext,
     stock: &FilmStock,
     params: &FilmParams,
+    meta: &crate::image::ImageMetadata,
     width: usize,
 ) -> FilmGpuLease {
     let mut ws = WORKSPACE.0.lock().unwrap();
-    let (consts_key, consts) = ws.take_consts(ctx, stock, params, width);
+    let (consts_key, consts) = ws.take_consts(ctx, stock, params, meta, width);
     FilmGpuLease {
         scratch: None,
         consts: Some(consts),
@@ -682,7 +686,7 @@ mod roi_workspace_tests {
 
         assert_eq!(norms.len(), 2);
         assert_eq!(norms[0], (0, 1.0f32));
-        assert_eq!(norms[1], (1, 0.5f32));
+        assert_eq!(norms[1], (1, 1.0f32));
     }
 
     #[test]

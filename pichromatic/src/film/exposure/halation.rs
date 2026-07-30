@@ -44,7 +44,7 @@ pub fn apply_spatial_exposure_effects(
         }
     }
 
-    // --- 2. Wide support bounce with cross-layer bleed ---
+    // --- 2. Wide support bounce with multi-bounce geometry and cross-layer bleed ---
     let sigma_wide = sigma_px_from_um(stock.antihalation.psf_halation_um, pixel_pitch_um);
     if sigma_wide < 1e-3 {
         return;
@@ -60,10 +60,29 @@ pub fn apply_spatial_exposure_effects(
         return;
     }
 
-    // Bounce source: deepest emulsion (last plane), which sits nearest the support.
+    // Multi-bounce back reflection geometry (N=3 bounces with decay rho=0.5)
     let deep = absorbed_planes.len() - 1;
-    let mut bounce = absorbed_planes[deep].clone();
-    gaussian_blur_separable(&mut bounce, width, height, sigma_wide);
+    const N_BOUNCES: usize = 3;
+    const RHO: f32 = 0.5;
+    let mut decay_weights = [0.0f32; N_BOUNCES];
+    let mut sum_decay = 0.0f32;
+    for k in 0..N_BOUNCES {
+        decay_weights[k] = RHO.powi(k as i32);
+        sum_decay += decay_weights[k];
+    }
+    for k in 0..N_BOUNCES {
+        decay_weights[k] /= sum_decay;
+    }
+
+    let mut multi_bounce = vec![0.0f32; n];
+    for (k, &wk) in decay_weights.iter().enumerate() {
+        let bounce_k_sigma = sigma_wide * ((k + 1) as f32).sqrt();
+        let mut b_k = absorbed_planes[deep].clone();
+        gaussian_blur_separable(&mut b_k, width, height, bounce_k_sigma);
+        for p in 0..n {
+            multi_bounce[p] += wk * b_k[p];
+        }
+    }
 
     // Compute bleed weights derived from each layer's spectral sensitivity peak wavelength.
     let bleed = if use_stock_layers {
@@ -86,7 +105,7 @@ pub fn apply_spatial_exposure_effects(
         if gain <= 0.0 {
             continue;
         }
-        for (p, &b) in plane.iter_mut().zip(bounce.iter()) {
+        for (p, &b) in plane.iter_mut().zip(multi_bounce.iter()) {
             *p += gain * b;
         }
     }

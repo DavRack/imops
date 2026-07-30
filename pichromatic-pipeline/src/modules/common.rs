@@ -60,7 +60,7 @@ pub fn test_pipeline_module_cpu_vs_gpu(module: &dyn PipelineModule, seed: u64) {
 }
 
 /// Compares CPU ground truth image against GPU output image pixel by pixel.
-pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
+pub fn assert_images_equal_tol(cpu_image: &Image, gpu_image: &Image, rel_tol: f32) {
     assert_eq!(
         cpu_image.rgb_data.len(),
         gpu_image.rgb_data.len(),
@@ -79,7 +79,8 @@ pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
     {
         for ch in 0..3 {
             let diff = (c_pixel[ch] - g_pixel[ch]).abs();
-            if diff > 1e-4 {
+            let tol = rel_tol * c_pixel[ch].abs().max(1.0);
+            if diff > tol {
                 mismatch_count += 1;
                 if mismatch_count <= 10 {
                     eprintln!(
@@ -110,7 +111,6 @@ pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
         cpu_image.raw_data.len(),
         gpu_image.raw_data.len()
     );
-
     let mut raw_mismatch_count = 0;
 
     for (idx, (c_subpixel, g_subpixel)) in cpu_image
@@ -141,6 +141,10 @@ pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
         cpu_image.metadata, gpu_image.metadata,
         "Metadata mismatch between CPU and GPU output!"
     );
+}
+
+pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
+    assert_images_equal_tol(cpu_image, gpu_image, 1e-4);
 }
 
 #[cfg(test)]

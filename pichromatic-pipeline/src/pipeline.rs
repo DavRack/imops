@@ -44,7 +44,9 @@ pub fn run_pixel_pipeline_with_backend(
 
     let modules = &mut pixel_pipeline.pipeline_modules;
     for module in modules.iter_mut() {
+        let t_mod = std::time::Instant::now();
         module.process(backend, &mut pipeline_image);
+        println!("  [Module] {:?} took {:.2?}", module.schema().name, t_mod.elapsed());
     }
 
     *image = match backend {

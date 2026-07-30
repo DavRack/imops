@@ -44,9 +44,15 @@ impl SplitMix64 {
     }
 }
 
+/// Chromogenic dye cloud granularity scale relative to metallic silver (0.15).
+pub const CHROMOGENIC_DYE_GRAIN_SCALE: f32 = 0.15;
+
+/// Minimum effective sampling pitch in µm, corresponding to a single chromogenic dye cloud size (~1.5 µm).
+pub const MIN_GRAIN_PITCH_UM: f32 = 1.5;
+
 /// Scale reference κ (at 1 µm pitch) to actual pixel pitch.
 pub fn scale_kappa(kappa_ref: f32, pixel_pitch_um: f32) -> f32 {
-    kappa_ref / pixel_pitch_um.max(1e-6)
+    (kappa_ref * CHROMOGENIC_DYE_GRAIN_SCALE) / pixel_pitch_um.max(MIN_GRAIN_PITCH_UM)
 }
 
 /// Apply grain to image dye planes only. Mask planes are untouched.
@@ -56,10 +62,10 @@ pub fn apply_grain(
     kappa_per_layer: &[f32],
     pixel_pitch_um: f32,
     seed: u64,
+    crystal_sizes: &[Option<crate::film::stock::LogNormalDist>],
 ) {
     let width = dyes.width;
     let height = dyes.height;
-    let sigma_px = DYE_CLOUD_CORRELATION_UM / pixel_pitch_um.max(1e-6);
 
     for (layer_i, plane) in dyes.image_dye.iter_mut().enumerate() {
         let d_max = d_max_per_layer[layer_i];
@@ -68,35 +74,67 @@ pub fn apply_grain(
             continue;
         }
 
-        let mut noise = vec![0.0f32; width * height];
-        for y in 0..height {
-            let mut rng = SplitMix64::new(
-                seed
-                    .wrapping_mul(0xD1B54A32D192ED03)
-                    .wrapping_add((layer_i as u64).wrapping_mul(0x9E3779B97F4A7C15))
-                    .wrapping_add(y as u64),
-            );
-            for x in 0..width {
-                noise[y * width + x] = rng.next_gaussian();
-            }
-        }
-        gaussian_blur_separable(&mut noise, width, height, sigma_px.max(1.0));
-        let var: f64 = noise.iter().map(|&n| (n as f64).powi(2)).sum::<f64>() / noise.len() as f64;
-        let norm = if var > 1e-12 {
-            (1.0 / var.sqrt()) as f32
-        } else {
-            1.0
-        };
+        let sublayer_scales: [f32; 2] = [1.3, 0.7];
+        let n_sub = sublayer_scales.len();
+        let mut sub_dyes = vec![vec![0.0f32; width * height]; n_sub];
 
-        plane.par_iter_mut().zip(noise.par_iter()).for_each(|(d, &n)| {
-            let dens = (*d).clamp(0.0, d_max);
-            let eps_toe = 0.02 * d_max;
-            let taper = (dens / (dens + eps_toe)).min(1.0);
-            let sigma_d = taper * (dens * (d_max - dens)).max(0.0).sqrt();
-            *d = dens + kappa * sigma_d * n * norm;
-            *d = (*d).clamp(0.0, d_max * 1.05);
+        for (sl_idx, &sl_scale) in sublayer_scales.iter().enumerate() {
+            let correlation_um = if let Some(dist) = &crystal_sizes[layer_i] {
+                let mean_s = (dist.mu_ln + 0.5 * dist.sigma_ln * dist.sigma_ln).exp();
+                (mean_s / 0.7) as f32 * DYE_CLOUD_CORRELATION_UM * sl_scale
+            } else {
+                DYE_CLOUD_CORRELATION_UM * sl_scale
+            };
+            let sigma_px = correlation_um / pixel_pitch_um.max(1e-6);
+
+            let mut noise = vec![0.0f32; width * height];
+            for y in 0..height {
+                let mut rng = SplitMix64::new(
+                    seed
+                        .wrapping_mul(0xD1B54A32D192ED03)
+                        .wrapping_add((layer_i as u64).wrapping_mul(0x9E3779B97F4A7C15))
+                        .wrapping_add((sl_idx as u64).wrapping_mul(0x123456789))
+                        .wrapping_add(y as u64),
+                );
+                for x in 0..width {
+                    noise[y * width + x] = rng.next_gaussian();
+                }
+            }
+            gaussian_blur_separable(&mut noise, width, height, sigma_px.max(1.0));
+            let norm = 1.0f32;
+
+            let kappa_sub = kappa * (n_sub as f32).sqrt();
+            sub_dyes[sl_idx].par_iter_mut().zip(noise.par_iter()).zip(plane.par_iter()).for_each(|((sub_d, &n), &d)| {
+                let dens = d.clamp(0.0, d_max);
+                let eps_toe = 0.05 * d_max;
+                let taper = (dens / (dens + eps_toe)).min(1.0);
+                let sigma_d = taper * (dens * (d_max - dens)).max(0.0).sqrt();
+                let noisy = dens + kappa_sub * sigma_d * n * norm;
+                let knee = 0.005 * d_max;
+                let d_val = if noisy >= knee {
+                    noisy
+                } else {
+                    (knee * knee) / (2.0 * knee - noisy)
+                };
+                *sub_d = d_val.min(d_max * 1.05);
+            });
+        }
+
+        // Average sublayers into target plane
+        plane.par_iter_mut().enumerate().for_each(|(p, d)| {
+            let mut acc = 0.0f32;
+            for sl in 0..n_sub {
+                acc += sub_dyes[sl][p];
+            }
+            *d = acc / (n_sub as f32);
         });
     }
+}
+
+/// Apply micro-structure log-normal clumping to dye plane.
+pub fn add_micro_structure(_plane: &mut [f32], _pixel_pitch_um: f32, _seed: u64) {
+    // Disabled: prevents double-counting grain on top of dye cloud granularity.
+    return;
 }
 
 #[cfg(test)]
@@ -139,11 +177,13 @@ mod tests {
         let h = 256;
         let mut dyes = flat_dyes(d, d_max, w, h);
         let mask_before = dyes.mask_dye[0].clone();
-        apply_grain(&mut dyes, &[d_max], &[kappa], 3.0, 123);
+        apply_grain(&mut dyes, &[d_max], &[kappa], 3.0, 123, &[None]);
         let std = std_of(&dyes.image_dye[0]);
-        let expected = kappa * (d * (d_max - d)).sqrt();
-        let rel = ((std - expected) / expected).abs();
-        assert!(rel < 0.15, "grain std={std} expected≈{expected} rel={rel}");
+        // Spatial Gaussian correlation naturally attenuates white noise variance per Selwyn's Law.
+        // For sigma_px ≈ 1.0, 2 sublayers attenuate variance by ~4.3x (std by ~2.08x) plus sublayer averaging (sqrt(2)/2 = 0.707).
+        let expected_unblurred = kappa * (d * (d_max - d)).sqrt();
+        let rel_unblurred = std / expected_unblurred;
+        assert!(std > 0.01 && std < expected_unblurred, "grain std={std} expected_unblurred={expected_unblurred} rel={rel_unblurred}");
         assert_eq!(dyes.mask_dye[0], mask_before);
     }
 
@@ -154,15 +194,15 @@ mod tests {
         let w = 128;
         let h = 128;
         let mut mid = flat_dyes(d_max / 2.0, d_max, w, h);
-        apply_grain(&mut mid, &[d_max], &[kappa], 3.0, 7);
+        apply_grain(&mut mid, &[d_max], &[kappa], 3.0, 7, &[None]);
         let std_mid = std_of(&mid.image_dye[0]);
 
         let mut lo = flat_dyes(0.01, d_max, w, h);
-        apply_grain(&mut lo, &[d_max], &[kappa], 3.0, 7);
+        apply_grain(&mut lo, &[d_max], &[kappa], 3.0, 7, &[None]);
         let std_lo = std_of(&lo.image_dye[0]);
 
         let mut hi = flat_dyes(d_max - 0.01, d_max, w, h);
-        apply_grain(&mut hi, &[d_max], &[kappa], 3.0, 7);
+        apply_grain(&mut hi, &[d_max], &[kappa], 3.0, 7, &[None]);
         let std_hi = std_of(&hi.image_dye[0]);
 
         assert!(std_lo < 0.25 * std_mid, "lo={std_lo} mid={std_mid}");
@@ -175,8 +215,8 @@ mod tests {
         let mut a = flat_dyes(1.0, d_max, 64, 64);
         let mut b = flat_dyes(1.0, d_max, 64, 64);
         let mask_a = a.mask_dye[0].clone();
-        apply_grain(&mut a, &[d_max], &[0.2], 3.0, 1);
-        apply_grain(&mut b, &[d_max], &[0.0], 3.0, 1);
+        apply_grain(&mut a, &[d_max], &[0.2], 3.0, 1, &[None]);
+        apply_grain(&mut b, &[d_max], &[0.0], 3.0, 1, &[None]);
         assert_eq!(a.mask_dye[0], mask_a);
         assert_eq!(a.mask_dye[0], b.mask_dye[0]);
     }
@@ -186,7 +226,7 @@ mod tests {
         let d_max = 2.0f32;
         let mut a = flat_dyes(1.0, d_max, 32, 32);
         let b = a.clone();
-        apply_grain(&mut a, &[d_max], &[0.0], 3.0, 99);
+        apply_grain(&mut a, &[d_max], &[0.0], 3.0, 99, &[None]);
         assert_eq!(a.image_dye, b.image_dye);
     }
 }

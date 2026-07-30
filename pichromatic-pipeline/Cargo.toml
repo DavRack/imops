@@ -35,3 +35,8 @@ js-sys = "0.3"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.17", features = ["js"] }
 
+
+[[bin]]
+name = "dump_schema"
+path = "src/bin_schema.rs"
+

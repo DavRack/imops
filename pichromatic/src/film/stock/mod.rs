@@ -5,6 +5,7 @@ pub mod color_neg_200;
 pub mod ektachrome_e100;
 pub mod ektar_100;
 pub mod fuji_pro_400h;
+pub mod fujichrome_velvia_100;
 pub mod portra_400;
 pub mod trix_400;
 
@@ -129,6 +130,7 @@ pub enum StockId {
     Portra400,
     Ektar100,
     FujiPro400H,
+    FujichromeVelvia100,
     EktachromeE100,
     TriX400,
 }
@@ -141,6 +143,7 @@ impl StockId {
             StockId::Portra400 => portra_400::load(),
             StockId::Ektar100 => ektar_100::load(),
             StockId::FujiPro400H => fuji_pro_400h::load(),
+            StockId::FujichromeVelvia100 => fujichrome_velvia_100::load(),
             StockId::EktachromeE100 => ektachrome_e100::load(),
             StockId::TriX400 => trix_400::load(),
         }
@@ -219,6 +222,7 @@ impl FilmStock {
             .enumerate()
             .filter(|(_, l)| l.kind == LayerKind::Emulsion)
     }
+
 }
 
 #[cfg(test)]
