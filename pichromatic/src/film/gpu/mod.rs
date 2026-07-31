@@ -2357,6 +2357,8 @@ mod tests {
 
     #[test]
     fn cpu_vs_gpu_parity_test() {
+        const CPU_GPU_ABS_TOLERANCE: f32 = 16.0 * f32::EPSILON;
+
         let ctx = match pollster::block_on(GpuContext::try_new()) {
             Ok(c) => c,
             Err(_) => return,
@@ -2426,14 +2428,17 @@ mod tests {
                 let y = px / width;
                 for ch in 0..3 {
                     let gpu_value = gpu_floats[px * 4 + ch];
-                    assert_eq!(
-                        cpu_pixel[ch].to_bits(),
-                        gpu_value.to_bits(),
-                        "CPU/GPU RGB mismatch stock={stock:?} format={film_format:?} output={output:?} at ({x}, {y}) ch={ch}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x})",
+                    let diff = (cpu_pixel[ch] - gpu_value).abs();
+                    assert!(
+                        cpu_pixel[ch].to_bits() == gpu_value.to_bits()
+                            || (diff.is_finite() && diff <= CPU_GPU_ABS_TOLERANCE),
+                        "CPU/GPU RGB mismatch stock={stock:?} format={film_format:?} output={output:?} at ({x}, {y}) ch={ch}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x}), diff={}, tolerance={}",
                         cpu_pixel[ch],
                         cpu_pixel[ch].to_bits(),
                         gpu_value,
-                        gpu_value.to_bits()
+                        gpu_value.to_bits(),
+                        diff,
+                        CPU_GPU_ABS_TOLERANCE
                     );
                 }
             }

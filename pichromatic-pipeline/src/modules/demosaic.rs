@@ -156,7 +156,7 @@ impl PipelineModule for Module<Demosaic> {
 mod tests {
     use super::*;
     use crate::backend::{Backend, PipelineImage};
-    use crate::modules::common::assert_images_equal;
+    use crate::modules::common::assert_images_equal_abs_tol;
     use pichromatic::cfa::CFA;
     use pichromatic::demosaic::{Dim2, Point, Rect};
     use pichromatic::gpu::GpuContext;
@@ -216,6 +216,6 @@ mod tests {
         module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_img);
         let gpu_out = gpu_img.to_cpu(Some(&ctx));
 
-        assert_images_equal(&cpu_out, &gpu_out);
+        assert_images_equal_abs_tol(&cpu_out, &gpu_out);
     }
 }

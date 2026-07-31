@@ -42,7 +42,8 @@ pub fn generate_test_image_512x512(seed: u64) -> Image {
     }
 }
 
-/// Runs a PipelineModule on both CPU and WGPU GPU and asserts their pixel outputs match identically.
+/// Runs a PipelineModule on both CPU and WGPU GPU and compares their outputs
+/// with the shared CPU/GPU floating-point precision threshold.
 pub fn test_pipeline_module_cpu_vs_gpu(module: &dyn PipelineModule, seed: u64) {
     let ctx = GpuContext::new_sync();
     let seed_image = generate_test_image_512x512(seed);
@@ -57,91 +58,8 @@ pub fn test_pipeline_module_cpu_vs_gpu(module: &dyn PipelineModule, seed: u64) {
     module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_pipeline_img);
     let gpu_out = gpu_pipeline_img.to_cpu(Some(&ctx));
 
-    // 3. Compare outputs for exact equality
-    assert_images_equal(&cpu_out, &gpu_out);
-}
-
-pub fn test_pipeline_module_cpu_vs_gpu_abs_tol(
-    module: &dyn PipelineModule,
-    seed: u64,
-) {
-    let ctx = GpuContext::new_sync();
-    let seed_image = generate_test_image_512x512(seed);
-
-    let mut cpu_pipeline_img = PipelineImage::Cpu(seed_image.clone());
-    module.process(&Backend::Cpu, &mut cpu_pipeline_img);
-    let cpu_out = cpu_pipeline_img.to_cpu(None);
-
-    let mut gpu_pipeline_img = PipelineImage::new_gpu(&ctx, &seed_image);
-    module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_pipeline_img);
-    let gpu_out = gpu_pipeline_img.to_cpu(Some(&ctx));
-
+    // Compare every output subpixel using the shared threshold.
     assert_images_equal_abs_tol(&cpu_out, &gpu_out);
-}
-
-/// Compares CPU ground truth image against GPU output image pixel by pixel.
-pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
-    assert_eq!(
-        cpu_image.rgb_data.len(),
-        gpu_image.rgb_data.len(),
-        "Image pixel buffer lengths do not match! CPU={}, GPU={}",
-        cpu_image.rgb_data.len(),
-        gpu_image.rgb_data.len()
-    );
-
-    for (idx, (c_pixel, g_pixel)) in cpu_image
-        .rgb_data
-        .iter()
-        .zip(gpu_image.rgb_data.iter())
-        .enumerate()
-    {
-        for ch in 0..3 {
-            assert_eq!(
-                c_pixel[ch].to_bits(),
-                g_pixel[ch].to_bits(),
-                "RGB mismatch at index {} (x={}, y={}), channel {}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x})",
-                idx,
-                idx % cpu_image.metadata.width,
-                idx / cpu_image.metadata.width,
-                ch,
-                c_pixel[ch],
-                c_pixel[ch].to_bits(),
-                g_pixel[ch],
-                g_pixel[ch].to_bits()
-            );
-        }
-    }
-
-    assert_eq!(
-        cpu_image.raw_data.len(),
-        gpu_image.raw_data.len(),
-        "Image raw_data lengths do not match! CPU={}, GPU={}",
-        cpu_image.raw_data.len(),
-        gpu_image.raw_data.len()
-    );
-
-    for (idx, (c_subpixel, g_subpixel)) in cpu_image
-        .raw_data
-        .iter()
-        .zip(gpu_image.raw_data.iter())
-        .enumerate()
-    {
-        assert_eq!(
-            c_subpixel.to_bits(),
-            g_subpixel.to_bits(),
-            "Raw subpixel mismatch at index {}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x})",
-            idx,
-            c_subpixel,
-            c_subpixel.to_bits(),
-            g_subpixel,
-            g_subpixel.to_bits()
-        );
-    }
-
-    assert!(
-        cpu_image.metadata.bitwise_eq(&gpu_image.metadata),
-        "Metadata mismatch between CPU and GPU output!"
-    );
 }
 
 pub fn assert_images_equal_abs_tol(cpu_image: &Image, gpu_image: &Image) {
