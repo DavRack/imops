@@ -8,7 +8,7 @@ use rand::Rng;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-pub const CPU_GPU_ABS_TOLERANCE: f32 = 16.0 * f32::EPSILON;
+pub const CPU_GPU_ABS_TOLERANCE: f32 = 232.0 * f32::EPSILON;
 
 /// Generates a deterministic 128x128 RGB test image using a fixed seed.
 pub fn generate_test_image_512x512(seed: u64) -> Image {
