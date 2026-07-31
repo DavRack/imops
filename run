@@ -3,9 +3,8 @@
 #   ./run <raw.dng>                      # uses imgconfig.toml → result.exr
 #   ./run <raw.dng> imgconfig-film.toml  # film pipeline → result.exr
 #   OUTPUT=result.jpg ./run <raw.dng>    # JPEG instead of EXR
-CONFIG="${2:-imgconfig-film.toml}"
-OUTPUT="${OUTPUT:-result.exr}"
+CONFIG="imgconfig-film.toml"
+OUTPUT="result.exr"
 cargo build --release --bin imops-cli &&
-# /usr/bin/time -l ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" --gpu &&
-/usr/bin/time -l ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" &&
+/usr/bin/time -l ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" $2 &&
 ./view "$OUTPUT"

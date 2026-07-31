@@ -813,17 +813,28 @@ fn blur_plane(
     radius: u32,
 ) {
     let n = width * height;
-    let u = BlurU {
+    let u_h = BlurU {
         width: width as u32,
         height: height as u32,
         n: n as u32,
         radius,
         src_off,
+        dst_off: 0,
+        _p0: 0,
+        _p1: 0,
+    };
+    let u_v = BlurU {
+        width: width as u32,
+        height: height as u32,
+        n: n as u32,
+        radius,
+        src_off: 0,
         dst_off,
         _p0: 0,
         _p1: 0,
     };
-    let ub = bytemuck::bytes_of(&u);
+    let ub_h = bytemuck::bytes_of(&u_h);
+    let ub_v = bytemuck::bytes_of(&u_v);
     let h_bufs = [src, btmp, kernel];
     let v_bufs = [btmp, dst, kernel];
     let d = blur_dispatch(width, height, radius);
@@ -834,7 +845,7 @@ fn blur_plane(
                 label: d.h_label,
                 wgsl_source: d.h_wgsl,
                 storage_buffers: &h_bufs,
-                uniform_bytes: ub,
+                uniform_bytes: ub_h,
                 workgroups_x: d.h_gx,
                 workgroups_y: d.h_gy,
             },
@@ -842,7 +853,7 @@ fn blur_plane(
                 label: d.v_label,
                 wgsl_source: d.v_wgsl,
                 storage_buffers: &v_bufs,
-                uniform_bytes: ub,
+                uniform_bytes: ub_v,
                 workgroups_x: d.v_gx,
                 workgroups_y: d.v_gy,
             },
@@ -1118,6 +1129,31 @@ pub async fn process_gpu(
 }
 
 /// Full GPU film simulation — current full-frame oracle (not directly public).
+fn dbg_dump(name: &str, ctx: &GpuContext, buf: &wgpu::Buffer, n: usize, e: usize) {
+    if std::env::var("FILM_DBG").as_deref() != Ok("1") {
+        return;
+    }
+    let floats = ctx.download_f32(buf, n * e);
+    let mut sum = vec![0.0f64; e];
+    let mut min = vec![f32::MAX; e];
+    let mut max = vec![f32::MIN; e];
+    for (i, &v) in floats.iter().enumerate() {
+        let plane = i / n;
+        sum[plane] += v as f64;
+        min[plane] = min[plane].min(v);
+        max[plane] = max[plane].max(v);
+    }
+    for p in 0..e {
+        eprintln!(
+            "  [{name}] plane {p}: mean={:.6} min={:.6} max={:.6} first8={:?}",
+            sum[p] / n as f64,
+            min[p],
+            max[p],
+            &floats[p * n..p * n + 8]
+        );
+    }
+}
+
 async fn process_gpu_full_frame(
     ctx: &GpuContext,
     gpu_buf: &GpuImageBuffer,
@@ -1177,6 +1213,7 @@ async fn process_gpu_full_frame(
             workgroups(n),
         );
     }
+    dbg_dump("after_expose", ctx, planes, n, e);
 
     // ── Stage 2: spatial exposure effects (local scatter + halation) ──
     // Local gelatin scatter (always-on if σ_local ≥ 1e-3).
@@ -1186,12 +1223,22 @@ async fn process_gpu_full_frame(
             let f = LOCAL_SCATTER_MIX;
             let keep = 1.0 - f;
             for plane_e in 0..e {
-                let blur_u = BlurU {
+                let blur_u_h = BlurU {
                     width: width as u32,
                     height: height as u32,
                     n: n as u32,
                     radius,
                     src_off: (plane_e * n) as u32,
+                    dst_off: 0,
+                    _p0: 0,
+                    _p1: 0,
+                };
+                let blur_u_v = BlurU {
+                    width: width as u32,
+                    height: height as u32,
+                    n: n as u32,
+                    radius,
+                    src_off: 0,
                     dst_off: 0,
                     _p0: 0,
                     _p1: 0,
@@ -1206,7 +1253,8 @@ async fn process_gpu_full_frame(
                     _p2: 0,
                     _p3: 0,
                 };
-                let blur_ub = bytemuck::bytes_of(&blur_u);
+                let blur_ub_h = bytemuck::bytes_of(&blur_u_h);
+                let blur_ub_v = bytemuck::bytes_of(&blur_u_v);
                 let mix_ub = bytemuck::bytes_of(&mix_u);
                 let h_bufs = [planes, btmp, kbuf.as_ref()];
                 let v_bufs = [btmp, bout, kbuf.as_ref()];
@@ -1221,7 +1269,7 @@ async fn process_gpu_full_frame(
                             label: d.h_label,
                             wgsl_source: d.h_wgsl,
                             storage_buffers: &h_bufs,
-                            uniform_bytes: blur_ub,
+                            uniform_bytes: blur_ub_h,
                             workgroups_x: d.h_gx,
                             workgroups_y: d.h_gy,
                         },
@@ -1229,7 +1277,7 @@ async fn process_gpu_full_frame(
                             label: d.v_label,
                             wgsl_source: d.v_wgsl,
                             storage_buffers: &v_bufs,
-                            uniform_bytes: blur_ub,
+                            uniform_bytes: blur_ub_v,
                             workgroups_x: d.v_gx,
                             workgroups_y: d.v_gy,
                         },
@@ -1277,6 +1325,7 @@ async fn process_gpu_full_frame(
             workgroups(n),
         );
     }
+    dbg_dump("after_halation", ctx, planes, n, e);
 
     // ── Stage 3: capture LUT (absorbed fluence → developable fraction) ──
     {
@@ -1294,6 +1343,7 @@ async fn process_gpu_full_frame(
             workgroups(n),
         );
     }
+    dbg_dump("after_lut", ctx, planes, n, e);
 
     // ── Stage 4: reduce (fraction → image/mask dye density) ──
     {
@@ -1311,6 +1361,7 @@ async fn process_gpu_full_frame(
             workgroups(n),
         );
     }
+    dbg_dump("after_reduce_dye", ctx, dye, n, e);
 
     // ── Stage 5: DIR interlayer inhibition ──
     if !stock.dir_inhibition_matrix.is_empty() {
@@ -1351,12 +1402,22 @@ async fn process_gpu_full_frame(
         if let Some((ref kbuf, radius)) = consts.adj_kernel {
             let radius = radius;
             for plane_e in 0..e {
-                let blur_u = BlurU {
+                let blur_u_h = BlurU {
                     width: width as u32,
                     height: height as u32,
                     n: n as u32,
                     radius,
                     src_off: (plane_e * n) as u32,
+                    dst_off: 0,
+                    _p0: 0,
+                    _p1: 0,
+                };
+                let blur_u_v = BlurU {
+                    width: width as u32,
+                    height: height as u32,
+                    n: n as u32,
+                    radius,
+                    src_off: 0,
                     dst_off: 0,
                     _p0: 0,
                     _p1: 0,
@@ -1367,7 +1428,8 @@ async fn process_gpu_full_frame(
                     beta: consts.adjacency_beta,
                     _p0: 0,
                 };
-                let blur_ub = bytemuck::bytes_of(&blur_u);
+                let blur_ub_h = bytemuck::bytes_of(&blur_u_h);
+                let blur_ub_v = bytemuck::bytes_of(&blur_u_v);
                 let adj_ub = bytemuck::bytes_of(&adj_u);
                 let h_bufs = [dye, btmp, kbuf.as_ref()];
                 let v_bufs = [btmp, bout, kbuf.as_ref()];
@@ -1381,7 +1443,7 @@ async fn process_gpu_full_frame(
                             label: d.h_label,
                             wgsl_source: d.h_wgsl,
                             storage_buffers: &h_bufs,
-                            uniform_bytes: blur_ub,
+                            uniform_bytes: blur_ub_h,
                             workgroups_x: d.h_gx,
                             workgroups_y: d.h_gy,
                         },
@@ -1389,7 +1451,7 @@ async fn process_gpu_full_frame(
                             label: d.v_label,
                             wgsl_source: d.v_wgsl,
                             storage_buffers: &v_bufs,
-                            uniform_bytes: blur_ub,
+                            uniform_bytes: blur_ub_v,
                             workgroups_x: d.v_gx,
                             workgroups_y: d.v_gy,
                         },
@@ -1430,7 +1492,17 @@ async fn process_gpu_full_frame(
                 _p1: 0,
                 _p2: 0,
             };
-            let blur_u = BlurU {
+            let blur_u_h = BlurU {
+                width: width as u32,
+                height: height as u32,
+                n: n as u32,
+                radius,
+                src_off: 0,
+                dst_off: 0,
+                _p0: 0,
+                _p1: 0,
+            };
+            let blur_u_v = BlurU {
                 width: width as u32,
                 height: height as u32,
                 n: n as u32,
@@ -1441,7 +1513,8 @@ async fn process_gpu_full_frame(
                 _p1: 0,
             };
             let noise_ub = bytemuck::bytes_of(&nu);
-            let blur_ub = bytemuck::bytes_of(&blur_u);
+            let blur_ub_h = bytemuck::bytes_of(&blur_u_h);
+            let blur_ub_v = bytemuck::bytes_of(&blur_u_v);
             let noise_bufs = [noise];
             let h_bufs = [noise, btmp, kbuf.as_ref()];
             let v_bufs = [btmp, work, kbuf.as_ref()];
@@ -1462,7 +1535,7 @@ async fn process_gpu_full_frame(
                         label: d.h_label,
                         wgsl_source: d.h_wgsl,
                         storage_buffers: &h_bufs,
-                        uniform_bytes: blur_ub,
+                        uniform_bytes: blur_ub_h,
                         workgroups_x: d.h_gx,
                         workgroups_y: d.h_gy,
                     },
@@ -1470,7 +1543,7 @@ async fn process_gpu_full_frame(
                         label: d.v_label,
                         wgsl_source: d.v_wgsl,
                         storage_buffers: &v_bufs,
-                        uniform_bytes: blur_ub,
+                        uniform_bytes: blur_ub_v,
                         workgroups_x: d.v_gx,
                         workgroups_y: d.v_gy,
                     },
@@ -2362,3 +2435,4 @@ mod tests {
         }
     }
 }
+
