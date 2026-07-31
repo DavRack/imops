@@ -32,11 +32,11 @@ pub use gpu::process_gpu;
 pub use stock::StockId;
 pub use types::{ExposureMeta, FilmFormat};
 
-use color::ColorSpaceTag;
 use crate::film::development::develop;
-use crate::film::exposure::expose_with_pitch_and_shutter;
+use crate::film::exposure::{expose_with_pitch_and_shutter, expose_with_pitch_shutter_and_scale};
 use crate::film::scan::{scan, ScanMode};
 use crate::pixel::Image;
+use color::ColorSpaceTag;
 
 /// Module version string for linkage / checkpoint tracking.
 pub fn film_version() -> &'static str {
@@ -95,15 +95,20 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
 
     let stock = params.stock.load()?;
     let pitch = params.film_format.pixel_pitch_um(width);
-    let shutter = image.metadata.shutter_seconds.unwrap_or(1.0 / stock.box_iso.0);
+    let shutter = image
+        .metadata
+        .shutter_seconds
+        .unwrap_or(1.0 / stock.box_iso.0);
 
-    let latent = expose_with_pitch_and_shutter(
+    let capture_scale = camera_capture_scale(&image.metadata, stock.box_iso.0);
+    let latent = expose_with_pitch_shutter_and_scale(
         &image.rgb_data,
         width,
         height,
         &stock,
         pitch,
         shutter,
+        capture_scale,
     );
     let dyes = develop(&stock, &latent, params.seed, pitch);
 
@@ -143,8 +148,7 @@ pub(crate) fn mid_negative_acescg(
     const N: usize = 32;
     let g = relative_to_absolute_y(MIDDLE_GRAY, stock.box_iso.0);
     let rgb = vec![[g, g, g]; N * N];
-    let latent =
-        expose_with_pitch_and_shutter(&rgb, N, N, stock, pitch_um, shutter_seconds);
+    let latent = expose_with_pitch_and_shutter(&rgb, N, N, stock, pitch_um, shutter_seconds);
     // Same development as process (DIR + adjacency + grain); mean kills grain.
     let dyes = develop(stock, &latent, 0, pitch_um);
     let buf = scan(stock, &dyes, ScanMode::NegativeLinear);
@@ -163,6 +167,25 @@ fn relative_to_absolute_y(y_rel: f32, box_iso: f32) -> f32 {
     ) as f32
 }
 
+/// Reapply the camera exposure after `BaselineExposureCompensation` made the
+/// input absolute. Normalized to Sunny-16 at the stock box ISO, preserving the
+/// existing stock calibration; invalid metadata keeps the legacy fallback path.
+pub(crate) fn camera_capture_scale(meta: &crate::image::ImageMetadata, box_iso: f32) -> f32 {
+    match (meta.shutter_seconds, meta.f_number, meta.iso) {
+        (Some(t), Some(n), Some(iso))
+            if t.is_finite()
+                && n.is_finite()
+                && iso.is_finite()
+                && t > 0.0
+                && n > 0.0
+                && iso > 0.0 =>
+        {
+            64.0 * box_iso * t / (n * n)
+        }
+        _ => 1.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +196,51 @@ mod tests {
     fn to_absolute_rgb(rgb: [f32; 3], box_iso: f32) -> [f32; 3] {
         let g = relative_to_absolute_y(1.0, box_iso);
         [rgb[0] * g, rgb[1] * g, rgb[2] * g]
+    }
+
+    #[test]
+    fn camera_reexposure_keeps_equivalent_capture_film_input_equal() {
+        let a = ImageMetadata {
+            shutter_seconds: Some(1.0 / 100.0),
+            f_number: Some(4.0),
+            iso: Some(200.0),
+            ..Default::default()
+        };
+        let b = ImageMetadata {
+            shutter_seconds: Some(1.0 / 25.0),
+            f_number: Some(8.0),
+            iso: Some(200.0),
+            ..Default::default()
+        };
+        let input_a = crate::film::exposure::radiance::absolute_luminance_gain(
+            a.shutter_seconds.unwrap() as f64,
+            a.f_number.unwrap() as f64,
+            a.iso.unwrap() as f64,
+        ) as f32
+            * camera_capture_scale(&a, 400.0);
+        let input_b = crate::film::exposure::radiance::absolute_luminance_gain(
+            b.shutter_seconds.unwrap() as f64,
+            b.f_number.unwrap() as f64,
+            b.iso.unwrap() as f64,
+        ) as f32
+            * camera_capture_scale(&b, 400.0);
+        assert!((input_a - input_b).abs() < 1e-5, "{input_a} != {input_b}");
+        assert!((input_a - 1600.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn camera_reexposure_preserves_stock_to_camera_iso_ratio() {
+        let meta = ImageMetadata {
+            shutter_seconds: Some(1.0 / 100.0),
+            f_number: Some(4.0),
+            iso: Some(200.0),
+            ..Default::default()
+        };
+        let input =
+            crate::film::exposure::radiance::absolute_luminance_gain(1.0 / 100.0, 4.0, 200.0)
+                as f32
+                * camera_capture_scale(&meta, 400.0);
+        assert!((input - 800.0 * 400.0 / 200.0).abs() < 1e-4);
     }
 
     fn make_image(width: usize, height: usize, fill_rel: [f32; 3], box_iso: f32) -> Image {
@@ -241,8 +309,8 @@ mod tests {
         for &y in &levels {
             let mut img = make_image(8, 8, [y, y, y], 100.0);
             process(&mut img, &params).unwrap();
-            let mean_y: f32 = img.rgb_data.iter().map(|p| p.luminance()).sum::<f32>()
-                / img.rgb_data.len() as f32;
+            let mean_y: f32 =
+                img.rgb_data.iter().map(|p| p.luminance()).sum::<f32>() / img.rgb_data.len() as f32;
             scanned_y.push(mean_y);
         }
         for i in 1..scanned_y.len() {
@@ -433,10 +501,7 @@ mod tests {
         let params = color_params(FilmOutput::PositiveLinear);
         process(&mut img, &params).unwrap();
         let means = crate::film::fixtures::sample_patch_means(&img, patch);
-        let ys: Vec<f32> = (18..24)
-            .rev()
-            .map(|i| means[i].luminance())
-            .collect();
+        let ys: Vec<f32> = (18..24).rev().map(|i| means[i].luminance()).collect();
         for i in 1..ys.len() {
             assert!(
                 ys[i] + 1e-4 >= ys[i - 1],
@@ -521,8 +586,6 @@ mod tests {
         assert!(mean[0].is_finite() && mean[1].is_finite() && mean[2].is_finite());
     }
 
-
-
     #[test]
     fn stock_dmin_drives_invert_not_image_guess() {
         let stock = StockId::ColorNeg200.load().unwrap();
@@ -533,6 +596,9 @@ mod tests {
             "normalized Dmin peak must be 1, got {dmin:?}"
         );
         // Orange mask: R > G > B on the film base.
-        assert!(dmin[0] > dmin[1] && dmin[1] > dmin[2], "expected orange Dmin {dmin:?}");
+        assert!(
+            dmin[0] > dmin[1] && dmin[1] > dmin[2],
+            "expected orange Dmin {dmin:?}"
+        );
     }
 }

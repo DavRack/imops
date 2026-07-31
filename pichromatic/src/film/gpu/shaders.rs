@@ -405,11 +405,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var phi: array<f32, 16>;
     for (var k = 0u; k < 16u; k = k + 1u) {
         let s = w0 * ec[k] + w1 * ec[16u + k] + w2 * ec[32u + k];
-        phi[k] = s * ec[57u + k];
+        phi[k] = s * ec[57u + k] * ec[73u];
     }
 
-    let off_od = 73u;
-    let off_pl = 73u + u.num_layers * 16u;
+    let off_od = 74u;
+    let off_pl = 74u + u.num_layers * 16u;
     var emul = 0u;
     for (var l = 0u; l < u.num_layers; l = l + 1u) {
         var absorbed: array<f32, 16>;
@@ -674,7 +674,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         dye[e * u.n + i] = d;
         var m = 0.0;
         if (rc[4u * e_count + e] != 0.0) {
-            m = rc[2u * e_count + e] * (1.0 - clamp(d / dmax, 0.0, 1.0));
+            m = rc[2u * e_count + e];
         }
         mask[e * u.n + i] = m;
     }
@@ -707,7 +707,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         dye[u.dye_base + e * u.n + i] = d;
         var m = 0.0;
         if (rc[4u * e_count + e] != 0.0) {
-            m = rc[2u * e_count + e] * (1.0 - clamp(d / dmax, 0.0, 1.0));
+            m = rc[2u * e_count + e];
         }
         mask[u.mask_base + e * u.n + i] = m;
     }
@@ -760,7 +760,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         arena[u.dye_base + e * u.n + i] = d;
         var m = 0.0;
         if (rc[4u * e_count + e] != 0.0) {
-            m = rc[2u * e_count + e] * (1.0 - clamp(d / dmax, 0.0, 1.0));
+            m = rc[2u * e_count + e];
         }
         arena[u.mask_base + e * u.n + i] = m;
 

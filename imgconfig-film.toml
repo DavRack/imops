@@ -1,8 +1,8 @@
 #### Pixel Pipeline — physically-based film (PositiveLinear) ####
 # Usage: ./run <raw.dng> imgconfig-film.toml
 #
-# PositiveLinear inverts inside the Film module using the stock film-base Dmin
-# (mask / d_max / scanner light) and a mid-gray gain calibration — negative→positive only.
+# PositiveLinear is a diagnostic negative invert; the following display transform
+# provides bounded tone and gamut mapping, not a measured film-print profile.
 
 [[pipeline_modules]]
 name = "Demosaic"
@@ -52,6 +52,10 @@ output = "PositiveLinear"
 # seed = 1
 # output = "PositiveLinear"
 
+[[pipeline_modules]]
+name = "Exp"
+ev = -1.0
+
 # [[pipeline_modules]]
 # name = "Exp"
 # ev = 0
@@ -60,14 +64,13 @@ output = "PositiveLinear"
 # name = "Contrast"
 # c = 1
 
-# [[pipeline_modules]]
-# name = "SigmoidToneMap"
+[[pipeline_modules]]
+name = "SigmoidToneMap"
 
-# ACEScg → encoded sRGB (OETF). Prefer CST over Gamma so metadata/transfer
-# tags stay correct for viewers and the web canvas.
+# EXR is linear display-referred sRGB. JPEG output is sRGB-OETF encoded by the writer.
 [[pipeline_modules]]
 name = "CST"
-target_color_space = "Srgb"
+target_color_space = "LinearSrgb"
 
 [[pipeline_modules]]
 name = "Rotation"

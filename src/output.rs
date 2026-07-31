@@ -165,10 +165,9 @@ pub fn save_exr(
         );
     }
     if let Some(ev) = meta.baseline_exposure {
-        layer_attributes.other.insert(
-            Text::from("baselineExposure"),
-            AttributeValue::F32(ev),
-        );
+        layer_attributes
+            .other
+            .insert(Text::from("baselineExposure"), AttributeValue::F32(ev));
     }
     layer_attributes.other.insert(
         Text::from("colorSpace"),
@@ -178,7 +177,9 @@ pub fn save_exr(
     // `ColorSpaceTag::Srgb` from the `color` crate is *encoded* sRGB (OETF
     // applied by CST). `LinearSrgb` is scene/display-linear — do not claim OETF.
     let transfer = match meta.color_space {
-        Some(ColorSpaceTag::Srgb) | Some(ColorSpaceTag::DisplayP3) => "sRGB-OETF / display-referred",
+        Some(ColorSpaceTag::Srgb) | Some(ColorSpaceTag::DisplayP3) => {
+            "sRGB-OETF / display-referred"
+        }
         Some(ColorSpaceTag::AcesCg)
         | Some(ColorSpaceTag::Aces2065_1)
         | Some(ColorSpaceTag::LinearSrgb)
@@ -217,24 +218,43 @@ pub fn save_exr(
         .map_err(|e| format!("EXR write failed: {e}"))
 }
 
-/// Write 8-bit JPEG (display preview). Clamps to [0, 1] then quantizes.
+/// Write an encoded-sRGB 8-bit JPEG display preview.
 pub fn save_jpeg(
     path: &str,
     width: usize,
     height: usize,
     pixels: &[[f32; 3]],
+    color_space: Option<ColorSpaceTag>,
 ) -> Result<(), String> {
     assert_eq!(width * height, pixels.len());
     let mut data = Vec::with_capacity(pixels.len() * 3);
     for p in pixels {
-        data.push((p[0].clamp(0.0, 1.0) * 255.0) as u8);
-        data.push((p[1].clamp(0.0, 1.0) * 255.0) as u8);
-        data.push((p[2].clamp(0.0, 1.0) * 255.0) as u8);
+        let encoded = match color_space {
+            Some(ColorSpaceTag::Srgb) => *p,
+            Some(source) => source.convert(ColorSpaceTag::Srgb, *p),
+            None => *p,
+        };
+        data.push((encoded[0].clamp(0.0, 1.0) * 255.0) as u8);
+        data.push((encoded[1].clamp(0.0, 1.0) * 255.0) as u8);
+        data.push((encoded[2].clamp(0.0, 1.0) * 255.0) as u8);
     }
     let img = image::RgbImage::from_vec(width as u32, height as u32, data)
         .ok_or_else(|| "failed to build JPEG buffer".to_string())?;
     img.save(path)
         .map_err(|e| format!("JPEG write failed: {e}"))
+}
+
+fn exr_source(image: &Image) -> Cow<'_, Image> {
+    if matches!(
+        image.metadata.color_space,
+        Some(ColorSpaceTag::Srgb | ColorSpaceTag::DisplayP3)
+    ) {
+        let mut linear = image.clone();
+        linear.cst(ColorSpaceTag::LinearSrgb);
+        Cow::Owned(linear)
+    } else {
+        Cow::Borrowed(image)
+    }
 }
 
 /// Save pipeline output; format from path extension (`.exr` default, `.jpg`/`.jpeg` → JPEG).
@@ -244,18 +264,25 @@ pub fn save_image(
     orientation: rawler::Orientation,
 ) -> Result<OutputFormat, String> {
     let format = OutputFormat::from_path(path);
-    let (w, h, pixels) = apply_orientation(
-        &image.rgb_data,
-        image.metadata.width,
-        image.metadata.height,
-        orientation,
-    );
     match format {
         OutputFormat::Exr => {
-            save_exr(path, w, h, pixels.as_ref(), &image.metadata)?;
+            let source = exr_source(image);
+            let (w, h, pixels) = apply_orientation(
+                &source.rgb_data,
+                source.metadata.width,
+                source.metadata.height,
+                orientation,
+            );
+            save_exr(path, w, h, pixels.as_ref(), &source.metadata)?;
         }
         OutputFormat::Jpeg => {
-            save_jpeg(path, w, h, pixels.as_ref())?;
+            let (w, h, pixels) = apply_orientation(
+                &image.rgb_data,
+                image.metadata.width,
+                image.metadata.height,
+                orientation,
+            );
+            save_jpeg(path, w, h, pixels.as_ref(), image.metadata.color_space)?;
         }
     }
     Ok(format)
@@ -268,8 +295,21 @@ mod tests {
     #[test]
     fn normal_orientation_borrows_pixels() {
         let pixels = [[0.1, 0.2, 0.3]];
-        let (_, _, oriented) =
-            apply_orientation(&pixels, 1, 1, rawler::Orientation::Normal);
+        let (_, _, oriented) = apply_orientation(&pixels, 1, 1, rawler::Orientation::Normal);
         assert!(matches!(oriented, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn exr_source_only_copies_encoded_pixels() {
+        let mut image = Image::default();
+        image.rgb_data.push([0.5; 3]);
+        image.metadata.color_space = Some(ColorSpaceTag::LinearSrgb);
+        assert!(matches!(exr_source(&image), Cow::Borrowed(_)));
+
+        image.metadata.color_space = Some(ColorSpaceTag::Srgb);
+        let source = exr_source(&image);
+        assert!(matches!(source, Cow::Owned(_)));
+        assert_eq!(source.metadata.color_space, Some(ColorSpaceTag::LinearSrgb));
+        assert!((source.rgb_data[0][0] - 0.214_041_14).abs() < 1e-6);
     }
 }

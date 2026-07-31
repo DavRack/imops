@@ -58,6 +58,17 @@ impl SpectralCurve {
         Self { grid, samples }
     }
 
+    /// CIE D50 relative SPD sampled at 400–700 nm / 20 nm, normalized at 560 nm.
+    pub fn d50() -> Self {
+        Self::new(
+            WavelengthGrid::mvp(),
+            vec![
+                0.49308, 0.68701, 1.04405, 1.17812, 1.15923, 1.09354, 1.04790, 1.04046, 1.0,
+                0.95788, 0.90006, 0.876987, 0.80026, 0.80214, 0.71609, 0.74349,
+            ],
+        )
+    }
+
     /// Linear interpolation of the curve at `wavelength_nm`.
     pub fn evaluate(&self, wavelength_nm: f64) -> f64 {
         let w = &self.grid.wavelengths_nm;

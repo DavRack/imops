@@ -21,12 +21,7 @@ use rayon::prelude::*;
 ///
 /// Always applies local gelatin scatter (`psf_local_um`) and support-reflection
 /// halation with cross-layer bleed from the stock antihalation model.
-pub fn expose(
-    rgb: &ImageBuffer,
-    width: usize,
-    height: usize,
-    stock: &FilmStock,
-) -> LatentPlanes {
+pub fn expose(rgb: &ImageBuffer, width: usize, height: usize, stock: &FilmStock) -> LatentPlanes {
     expose_with_pitch(rgb, width, height, stock, 10.0)
 }
 
@@ -50,6 +45,28 @@ pub fn expose_with_pitch_and_shutter(
     pixel_pitch_um: f32,
     shutter_seconds: f32,
 ) -> LatentPlanes {
+    expose_with_pitch_shutter_and_scale(
+        rgb,
+        width,
+        height,
+        stock,
+        pixel_pitch_um,
+        shutter_seconds,
+        1.0,
+    )
+}
+
+/// Like [`expose_with_pitch_and_shutter`] with the camera aperture/shutter
+/// re-exposure factor that follows camera-relative → absolute conversion.
+pub fn expose_with_pitch_shutter_and_scale(
+    rgb: &ImageBuffer,
+    width: usize,
+    height: usize,
+    stock: &FilmStock,
+    pixel_pitch_um: f32,
+    shutter_seconds: f32,
+    capture_scale: f32,
+) -> LatentPlanes {
     use crate::film::exposure::radiance::reciprocity_factor;
 
     let n = width * height;
@@ -68,7 +85,7 @@ pub fn expose_with_pitch_and_shutter(
     let per_pixel: Vec<Vec<f32>> = rgb
         .par_iter()
         .map(|px| {
-            let spectrum = pixel_fluence_spectrum(px, &grid);
+            let spectrum = pixel_fluence_spectrum(px, &grid, capture_scale);
             let (layers, _) = absorb_stack(&stock.layers, &spectrum, sigma_scale);
             let mut emulsion_abs = Vec::with_capacity(emulsion_count);
             for la in &layers {
@@ -121,7 +138,7 @@ pub fn expose_with_pitch_and_shutter(
     }
 }
 
-fn pixel_fluence_spectrum(px: &Pixel, grid: &WavelengthGrid) -> [f64; 16] {
+fn pixel_fluence_spectrum(px: &Pixel, grid: &WavelengthGrid, capture_scale: f32) -> [f64; 16] {
     // Upsample already CIE-matches ACEScg including magnitude. Convert to relative
     // photon fluence only — do **not** re-scale by mean(R,G,B) or by luminance.
     // Luminance scaling under-exposes saturated blues (low Y, high shortwave energy
@@ -131,7 +148,9 @@ fn pixel_fluence_spectrum(px: &Pixel, grid: &WavelengthGrid) -> [f64; 16] {
     let mut out = [0.0f64; 16];
     for (i, &lambda) in grid.wavelengths_nm.iter().enumerate() {
         let e_rel = 550.0 / lambda;
-        out[i] = (spectrum[i] / e_rel) * crate::film::constants::RADIOMETRIC_SCALE;
+        out[i] = (spectrum[i] / e_rel)
+            * crate::film::constants::RADIOMETRIC_SCALE
+            * capture_scale as f64;
     }
     out
 }
@@ -146,8 +165,8 @@ mod fluence_scale_tests {
         let grid = WavelengthGrid::mvp();
         let blue = [0.0f32, 0.0, 1.0];
         let gray = [1.0f32, 1.0, 1.0];
-        let s_b = pixel_fluence_spectrum(&blue, &grid);
-        let s_g = pixel_fluence_spectrum(&gray, &grid);
+        let s_b = pixel_fluence_spectrum(&blue, &grid, 1.0);
+        let s_g = pixel_fluence_spectrum(&gray, &grid, 1.0);
         // Shortwave bins (≤450 nm): blue stimulus must deposit far more than gray.
         let short_b: f64 = s_b.iter().take(3).sum();
         let short_g: f64 = s_g.iter().take(3).sum();
@@ -157,15 +176,18 @@ mod fluence_scale_tests {
         );
         // Must not collapse to near-zero just because CIE Y is small.
         let e_b: f64 = s_b.iter().sum();
-        assert!(e_b > 0.05 * s_g.iter().sum::<f64>(), "blue total energy too small: {e_b}");
+        assert!(
+            e_b > 0.05 * s_g.iter().sum::<f64>(),
+            "blue total energy too small: {e_b}"
+        );
         let _ = blue.luminance();
     }
 
     #[test]
     fn neutral_spectrum_scales_with_rgb() {
         let grid = WavelengthGrid::mvp();
-        let a = pixel_fluence_spectrum(&[0.1, 0.1, 0.1], &grid);
-        let b = pixel_fluence_spectrum(&[0.2, 0.2, 0.2], &grid);
+        let a = pixel_fluence_spectrum(&[0.1, 0.1, 0.1], &grid, 1.0);
+        let b = pixel_fluence_spectrum(&[0.2, 0.2, 0.2], &grid, 1.0);
         let ea: f64 = a.iter().sum();
         let eb: f64 = b.iter().sum();
         assert!((eb / ea.max(1e-30) - 2.0).abs() < 0.05, "ratio={}", eb / ea);

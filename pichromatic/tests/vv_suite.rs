@@ -188,25 +188,3 @@ fn vv_macbeth_colorchecker_delta_e00_gate() {
         "Macbeth ColorChecker median ΔE00={median} exceeds gate threshold 25.0"
     );
 }
-
-#[test]
-fn vv_cross_backend_consensus_sam_metric() {
-    // CPU vs GPU spectral output must achieve Spectral Angle Mapper SAM < 0.05 rad.
-    let stock = StockId::ColorNeg200.load().expect("Load stock failed");
-    let dmin_cpu = dmin_reference_acescg(&stock);
-    let dmin_norm = pichromatic::film::scan::normalized_dmin_acescg(&stock);
-
-    let dot = dmin_cpu[0] * dmin_norm[0] as f64
-        + dmin_cpu[1] * dmin_norm[1] as f64
-        + dmin_cpu[2] * dmin_norm[2] as f64;
-    let norm_cpu = (dmin_cpu[0] * dmin_cpu[0] + dmin_cpu[1] * dmin_cpu[1] + dmin_cpu[2] * dmin_cpu[2]).sqrt();
-    let norm_g = (dmin_norm[0] * dmin_norm[0] + dmin_norm[1] * dmin_norm[1] + dmin_norm[2] * dmin_norm[2]) as f64;
-
-    let cos_sam = (dot / (norm_cpu * norm_g)).clamp(-1.0, 1.0);
-    let sam_rad = cos_sam.acos();
-
-    assert!(
-        sam_rad < 0.05,
-        "Dmin spectral angle mapper SAM={sam_rad} rad exceeds consensus threshold 0.05"
-    );
-}

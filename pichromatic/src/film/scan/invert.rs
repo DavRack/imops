@@ -9,80 +9,84 @@ use crate::pixel::{ImageBuffer, MIDDLE_GRAY};
 use rayon::prelude::*;
 
 /// Target effective contrast gamma of developed color negative film (~0.6).
-const GAMMA_EFF: f32 = 0.6;
+pub const GAMMA_EFF: f32 = 0.6;
 
 /// Substrate fog density offset threshold above reference Dmin (~0.005).
 pub const FOG_OFFSET: f32 = 0.005;
 
-/// Linear scanner invert for PositiveLinear.
-pub fn invert_negative(
-    buffer: &mut ImageBuffer,
-    mid_negative: [f32; 3],
-    dmin_negative: [f32; 3],
-) {
+/// Shared CPU/GPU calibration for the diagnostic negative invert.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InvertConstants {
+    pub dmin: [f32; 3],
+    pub gain: [f32; 3],
+    pub slope: f32,
+    pub gamma_eff: f32,
+    pub eps: f32,
+    pub fog_offset: f32,
+}
+
+pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> InvertConstants {
     let eps = 1e-6f32;
-    let dmin = [
-        dmin_negative[0].max(eps),
-        dmin_negative[1].max(eps),
-        dmin_negative[2].max(eps),
-    ];
+    let dmin = dmin_negative.map(|v| v.max(eps));
     let mid_t = [
         (mid_negative[0] / dmin[0]).clamp(eps, 1.0),
         (mid_negative[1] / dmin[1]).clamp(eps, 1.0),
         (mid_negative[2] / dmin[2]).clamp(eps, 1.0),
     ];
+    let d_mid = mid_t.map(|v| (-v.log10() - FOG_OFFSET).max(eps));
+    let e_mid = d_mid.map(|v| (10.0f32.powf(v / GAMMA_EFF) - 1.0).max(0.005));
+    InvertConstants {
+        dmin,
+        gain: e_mid.map(|v| (MIDDLE_GRAY / v).min(25.0)),
+        slope: 10.0f32.ln() / GAMMA_EFF,
+        gamma_eff: GAMMA_EFF,
+        eps,
+        fog_offset: FOG_OFFSET,
+    }
+}
 
-    let d_mid = [
-        (-mid_t[0].log10() - FOG_OFFSET).max(eps),
-        (-mid_t[1].log10() - FOG_OFFSET).max(eps),
-        (-mid_t[2].log10() - FOG_OFFSET).max(eps),
-    ];
-
-    let e_mid = [
-        (10.0f32.powf(d_mid[0] / GAMMA_EFF) - 1.0).max(0.005),
-        (10.0f32.powf(d_mid[1] / GAMMA_EFF) - 1.0).max(0.005),
-        (10.0f32.powf(d_mid[2] / GAMMA_EFF) - 1.0).max(0.005),
-    ];
-
-    let max_gain = 25.0f32;
-    let g = [
-        (MIDDLE_GRAY / e_mid[0]).min(max_gain),
-        (MIDDLE_GRAY / e_mid[1]).min(max_gain),
-        (MIDDLE_GRAY / e_mid[2]).min(max_gain),
-    ];
-
-    let slope = (10.0f32.ln()) / GAMMA_EFF;
+/// Linear scanner invert for PositiveLinear.
+pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_negative: [f32; 3]) {
+    let constants = invert_constants(mid_negative, dmin_negative);
 
     buffer.par_iter_mut().for_each(|px| {
         let t = [
-            (px[0] / dmin[0]).max(eps),
-            (px[1] / dmin[1]).max(eps),
-            (px[2] / dmin[2]).max(eps),
+            (px[0] / constants.dmin[0]).max(constants.eps),
+            (px[1] / constants.dmin[1]).max(constants.eps),
+            (px[2] / constants.dmin[2]).max(constants.eps),
         ];
 
-        let d_img = [
-            -t[0].log10(),
-            -t[1].log10(),
-            -t[2].log10(),
-        ];
+        let d_img = [-t[0].log10(), -t[1].log10(), -t[2].log10()];
 
         let d_clamped = [
-            (d_img[0] - FOG_OFFSET).max(0.0),
-            (d_img[1] - FOG_OFFSET).max(0.0),
-            (d_img[2] - FOG_OFFSET).max(0.0),
+            (d_img[0] - constants.fog_offset).max(0.0),
+            (d_img[1] - constants.fog_offset).max(0.0),
+            (d_img[2] - constants.fog_offset).max(0.0),
         ];
 
         // C1 continuous exposure transfer function matching slope (ln 10)/gamma at D = 0
         let e_scene = [
-            if d_clamped[0] > 0.0 { 10.0f32.powf(d_clamped[0] / GAMMA_EFF) - 1.0 } else { slope * d_clamped[0] },
-            if d_clamped[1] > 0.0 { 10.0f32.powf(d_clamped[1] / GAMMA_EFF) - 1.0 } else { slope * d_clamped[1] },
-            if d_clamped[2] > 0.0 { 10.0f32.powf(d_clamped[2] / GAMMA_EFF) - 1.0 } else { slope * d_clamped[2] },
+            if d_clamped[0] > 0.0 {
+                10.0f32.powf(d_clamped[0] / constants.gamma_eff) - 1.0
+            } else {
+                constants.slope * d_clamped[0]
+            },
+            if d_clamped[1] > 0.0 {
+                10.0f32.powf(d_clamped[1] / constants.gamma_eff) - 1.0
+            } else {
+                constants.slope * d_clamped[1]
+            },
+            if d_clamped[2] > 0.0 {
+                10.0f32.powf(d_clamped[2] / constants.gamma_eff) - 1.0
+            } else {
+                constants.slope * d_clamped[2]
+            },
         ];
 
         *px = [
-            g[0] * e_scene[0],
-            g[1] * e_scene[1],
-            g[2] * e_scene[2],
+            constants.gain[0] * e_scene[0],
+            constants.gain[1] * e_scene[1],
+            constants.gain[2] * e_scene[2],
         ];
     });
 }
@@ -138,8 +142,14 @@ mod tests {
         invert_negative(&mut buf, mid, dmin);
         let p = buf[0];
         let y = p.luminance();
-        assert!(y.is_finite() && y > 0.0, "highlight should be finite+, got {p:?}");
-        assert!(p[0] < 50.0 && p[1] < 50.0 && p[2] < 50.0, "channels must be bounded by max gain threshold 25.0, got {p:?}");
+        assert!(
+            y.is_finite() && y > 0.0,
+            "highlight should be finite+, got {p:?}"
+        );
+        assert!(
+            p[0] < 50.0 && p[1] < 50.0 && p[2] < 50.0,
+            "channels must be bounded by max gain threshold 25.0, got {p:?}"
+        );
     }
 
     #[test]
@@ -151,9 +161,18 @@ mod tests {
         invert_negative(&mut buf, mid, dmin);
         let p = buf[0];
         let mean = (p[0] + p[1] + p[2]) / 3.0;
-        assert!(mean > 0.0 && mean < 0.1, "shadow positive should be dark & positive, got {mean}");
-        let max_chan_diff = (p[0] - p[1]).abs().max((p[1] - p[2]).abs()).max((p[0] - p[2]).abs());
-        assert!(max_chan_diff < 0.05, "shadow should stay near neutral, max diff {max_chan_diff}");
+        assert!(
+            mean > 0.0 && mean < 0.1,
+            "shadow positive should be dark & positive, got {mean}"
+        );
+        let max_chan_diff = (p[0] - p[1])
+            .abs()
+            .max((p[1] - p[2]).abs())
+            .max((p[0] - p[2]).abs());
+        assert!(
+            max_chan_diff < 0.05,
+            "shadow should stay near neutral, max diff {max_chan_diff}"
+        );
     }
 
     #[test]

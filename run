@@ -6,6 +6,6 @@
 CONFIG="${2:-imgconfig-film.toml}"
 OUTPUT="${OUTPUT:-result.exr}"
 cargo build --release --bin imops-cli &&
-/usr/bin/time -l ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" --gpu &&
-# /usr/bin/time -l ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" &&
+# /usr/bin/time -l ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" --gpu &&
+/usr/bin/time -l ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" &&
 ./view "$OUTPUT"

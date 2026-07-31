@@ -12,9 +12,9 @@
 //! finishes the `f64` reduction for `norm` so it matches the CPU path bit-near.
 //! All spatial grain work stays on GPU.
 
+mod roi;
 #[doc(hidden)]
 pub mod shaders;
-mod roi;
 mod workspace;
 
 pub(crate) use workspace::acquire_film_resources;
@@ -23,8 +23,8 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::Buffer;
 
 use crate::film::constants::{
-    ABSORPTION_SIGMA_SCALE_PER_UM, DYE_CLOUD_CORRELATION_UM,
-    LOCAL_SCATTER_MIX, MASK_DENSITY_FRACTION_OF_DMAX,
+    ABSORPTION_SIGMA_SCALE_PER_UM, DYE_CLOUD_CORRELATION_UM, LOCAL_SCATTER_MIX,
+    MASK_DENSITY_FRACTION_OF_DMAX,
 };
 use crate::film::development::grain::scale_kappa;
 use crate::film::exposure::halation::{
@@ -422,7 +422,7 @@ pub(crate) fn bake_consts(
     let a2w = inv3(m); // acescg → weights (row-major)
 
     // ── expose consts ──
-    // Layout: b0(16) b1(16) b2(16) M(9) lambda_factor(16) od(L*16) produces_latent(L)
+    // Layout: b0(16) b1(16) b2(16) M(9) lambda_factor(16) capture_scale od(L*16) produces_latent(L)
     let mut expose: Vec<f32> = Vec::new();
     for &v in &b0 {
         expose.push(v as f32);
@@ -442,6 +442,7 @@ pub(crate) fn bake_consts(
         let lambda = 400.0 + 20.0 * i as f64;
         expose.push(((lambda / 550.0) * crate::film::constants::RADIOMETRIC_SCALE) as f32);
     }
+    expose.push(crate::film::camera_capture_scale(meta, stock.box_iso.0));
     let sigma_scale = ABSORPTION_SIGMA_SCALE_PER_UM;
     for layer in &stock.layers {
         let mut od = [0.0f64; 16];
@@ -576,66 +577,29 @@ pub(crate) fn bake_consts(
     let is_reversal = stock.layers.iter().any(|l| l.is_reversal);
     let do_invert = !is_reversal && params.output == FilmOutput::PositiveLinear;
     if do_invert {
-        use crate::film::exposure::expose_with_pitch_and_shutter;
-        use crate::film::scan::{scan as cpu_scan, ScanMode};
-        use crate::pixel::MIDDLE_GRAY;
-
         let pitch_um = params.film_format.pixel_pitch_um(width);
         let shutter = meta.shutter_seconds.unwrap_or(1.0 / stock.box_iso.0);
         let dmin = crate::film::scan::normalized_dmin_acescg(stock);
-        let mid = {
-            const N: usize = 32;
-            let g = {
-                use crate::film::exposure::radiance::{
-                    relative_to_absolute_luminance, sunny16_exposure,
-                };
-                use crate::film::units::IsoSpeed;
-                let ex = sunny16_exposure(IsoSpeed(stock.box_iso.0));
-                relative_to_absolute_luminance(
-                    MIDDLE_GRAY as f64,
-                    shutter as f64,
-                    ex.f_number as f64,
-                    ex.iso as f64,
-                ) as f32
-            };
-            let rgb = vec![[g, g, g]; N * N];
-            let latent = expose_with_pitch_and_shutter(&rgb, N, N, stock, pitch_um, shutter);
-            let dyes = crate::film::development::develop(stock, &latent, 0, pitch_um);
-            let buf = cpu_scan(stock, &dyes, ScanMode::NegativeLinear);
-            crate::film::scan::mean_rgb(&buf)
-        };
-
-        let gamma_eff = 0.6f32;
-        let eps = 1e-6f32;
-        let dmin_c = [dmin[0].max(eps), dmin[1].max(eps), dmin[2].max(eps)];
-        let mid_t = [
-            (mid[0] / dmin_c[0]).clamp(eps, 1.0),
-            (mid[1] / dmin_c[1]).clamp(eps, 1.0),
-            (mid[2] / dmin_c[2]).clamp(eps, 1.0),
-        ];
-        let fog_offset = crate::film::scan::invert::FOG_OFFSET;
-        let d_mid = [
-            (-mid_t[0].log10() - fog_offset).max(eps),
-            (-mid_t[1].log10() - fog_offset).max(eps),
-            (-mid_t[2].log10() - fog_offset).max(eps),
-        ];
-        let e_mid = [
-            (10.0f32.powf(d_mid[0] / gamma_eff) - 1.0).max(eps),
-            (10.0f32.powf(d_mid[1] / gamma_eff) - 1.0).max(eps),
-            (10.0f32.powf(d_mid[2] / gamma_eff) - 1.0).max(eps),
-        ];
-        let g = [
-            MIDDLE_GRAY / e_mid[0],
-            MIDDLE_GRAY / e_mid[1],
-            MIDDLE_GRAY / e_mid[2],
-        ];
-        let slope = (10.0f32.ln()) / gamma_eff;
+        let mid = crate::film::mid_negative_acescg(stock, pitch_um, shutter);
+        let invert = crate::film::scan::invert::invert_constants(mid, dmin);
 
         scan.extend_from_slice(&[
-            dmin_c[0], dmin_c[1], dmin_c[2],
-            g[0], g[1], g[2],
-            slope, gamma_eff, eps,
-            fog_offset, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            invert.dmin[0],
+            invert.dmin[1],
+            invert.dmin[2],
+            invert.gain[0],
+            invert.gain[1],
+            invert.gain[2],
+            invert.slope,
+            invert.gamma_eff,
+            invert.eps,
+            invert.fog_offset,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
         ]);
     }
 
@@ -723,7 +687,9 @@ pub(crate) fn bake_consts(
         let grain_sigma = (correlation_um / pitch.max(1e-6)).max(1.0);
         let k_grain = make_gaussian_kernel(grain_sigma);
         let rad_grain = crate::film::blur::gaussian_radius(grain_sigma) as u32;
-        let buf_grain = std::sync::Arc::new(ctx.create_f32_buffer_init(&k_grain, &format!("stock_k_grain_{e}")));
+        let buf_grain = std::sync::Arc::new(
+            ctx.create_f32_buffer_init(&k_grain, &format!("stock_k_grain_{e}")),
+        );
         grain_kernels.push((buf_grain, rad_grain));
     }
 
@@ -1129,15 +1095,9 @@ async fn grain_variance_norms(
     ctx.dispatch_compute_passes("film_grain_var", &passes);
 
     let active_planes: Vec<usize> = active.iter().map(|&(plane_e, _)| plane_e).collect();
-    finish_grain_variance_from_partials(
-        ctx,
-        partial,
-        n,
-        layout.out_n as usize,
-        &active_planes,
-    )
-    .await
-    .unwrap_or_default()
+    finish_grain_variance_from_partials(ctx, partial, n, layout.out_n as usize, &active_planes)
+        .await
+        .unwrap_or_default()
 }
 
 /// Stable public entry point for the GPU film simulation.
@@ -1740,7 +1700,10 @@ async fn process_gpu_roi(
             }
 
             // Enqueue variance partial reduction for this emulsion's slot
-            let total_core_n: usize = plans.iter().map(|p| (p.core.width * p.core.height) as usize).sum();
+            let total_core_n: usize = plans
+                .iter()
+                .map(|p| (p.core.width * p.core.height) as usize)
+                .sum();
             let mut encoder = ctx.create_command_encoder("film_roi_grain_var");
             let (_, keep_var) = enqueue_grain_variance_from_spill(
                 ctx,
@@ -1792,8 +1755,10 @@ async fn process_gpu_roi(
                 .checked_mul(root_n as u64)
                 .and_then(|elems| elems.checked_mul(4))
                 .ok_or(FilmError::InvalidDimensions)?;
-            let offset_f32 = u32::try_from(offset_bytes / 4).map_err(|_| FilmError::InvalidDimensions)?;
-            base.checked_add(offset_f32).ok_or(FilmError::InvalidDimensions)
+            let offset_f32 =
+                u32::try_from(offset_bytes / 4).map_err(|_| FilmError::InvalidDimensions)?;
+            base.checked_add(offset_f32)
+                .ok_or(FilmError::InvalidDimensions)
         };
 
         // Stage 1: EXPOSE_ROI
@@ -2232,9 +2197,30 @@ mod tests {
             .collect();
 
         let test_cases = [
-            (StockId::Portra400, FilmFormat::Film35mm, "checker", &pattern_checker, FilmOutput::PositiveLinear, 32),
-            (StockId::ColorNeg200, FilmFormat::Film6x6, "sine", &pattern_sine, FilmOutput::NegativeLinear, 47),
-            (StockId::TriX400, FilmFormat::Film35mm, "checker", &pattern_checker, FilmOutput::PositiveLinear, 32),
+            (
+                StockId::Portra400,
+                FilmFormat::Film35mm,
+                "checker",
+                &pattern_checker,
+                FilmOutput::PositiveLinear,
+                32,
+            ),
+            (
+                StockId::ColorNeg200,
+                FilmFormat::Film6x6,
+                "sine",
+                &pattern_sine,
+                FilmOutput::NegativeLinear,
+                47,
+            ),
+            (
+                StockId::TriX400,
+                FilmFormat::Film35mm,
+                "checker",
+                &pattern_checker,
+                FilmOutput::PositiveLinear,
+                32,
+            ),
         ];
 
         for (stock, film_format, fix_name, pattern, output, core_size) in test_cases {
@@ -2254,7 +2240,14 @@ mod tests {
             let gpu_buf_roi = ctx.create_output_buffer(width, height);
             ctx.queue
                 .write_buffer(&gpu_buf_roi.buffer, 0, bytemuck::cast_slice(pattern));
-            pollster::block_on(process_gpu_roi(&ctx, &gpu_buf_roi, &meta, &params, core_size)).unwrap();
+            pollster::block_on(process_gpu_roi(
+                &ctx,
+                &gpu_buf_roi,
+                &meta,
+                &params,
+                core_size,
+            ))
+            .unwrap();
             let roi_floats = ctx.download_f32(&gpu_buf_roi.buffer, width * height * 4);
 
             assert_eq!(ff_floats.len(), roi_floats.len());
@@ -2309,8 +2302,16 @@ mod tests {
         let pattern_uniform: Vec<[f32; 4]> = vec![[0.18, 0.18, 0.18, 1.0]; n];
 
         let test_cases = [
-            (StockId::Portra400, FilmFormat::Film35mm, FilmOutput::PositiveLinear),
-            (StockId::ColorNeg200, FilmFormat::Film6x6, FilmOutput::NegativeLinear),
+            (
+                StockId::Portra400,
+                FilmFormat::Film35mm,
+                FilmOutput::PositiveLinear,
+            ),
+            (
+                StockId::ColorNeg200,
+                FilmFormat::Film6x6,
+                FilmOutput::NegativeLinear,
+            ),
         ];
 
         for (stock, film_format, output) in test_cases {
@@ -2332,7 +2333,8 @@ mod tests {
 
             // GPU run
             let gpu_buf = ctx.create_output_buffer(width, height);
-            ctx.queue.write_buffer(&gpu_buf.buffer, 0, bytemuck::cast_slice(&pattern_uniform));
+            ctx.queue
+                .write_buffer(&gpu_buf.buffer, 0, bytemuck::cast_slice(&pattern_uniform));
             pollster::block_on(process_gpu_full_frame(&ctx, &gpu_buf, &meta, &params)).unwrap();
             let gpu_floats = ctx.download_f32(&gpu_buf.buffer, width * height * 4);
 

@@ -8,11 +8,8 @@ use rayon::prelude::*;
 ///
 /// `D_image = D_max * f_eff^(1/γ_eff)` with `f_eff = f` (negative) or `1−f` (reversal).
 ///
-/// Residual colored-coupler mask is the coupler **not** converted to image dye:
-/// `D_mask = mask_scale * (1 − D_image/D_max)`. Coupling mask to the same
-/// `f_eff^(1/γ)` as the image dye is required — a linear `(1−f)` mask clears in
-/// the toe before dye forms when `γ < 1`, which makes scanned `T > Dmin` and
-/// crushes PositiveLinear blacks after the Dmin invert.
+/// Coloured film base stays constant while image dye develops. This keeps every
+/// developed negative at or below the synthetic Dmin scan reference.
 pub fn reduce(stock: &FilmStock, latent: &LatentPlanes) -> DyePlanes {
     let n = latent.width * latent.height;
     let mut image_dye = Vec::new();
@@ -34,22 +31,23 @@ pub fn reduce(stock: &FilmStock, latent: &LatentPlanes) -> DyePlanes {
 
         let mut d_img = vec![0.0f32; n];
         let is_reversal = layer.is_reversal;
-        d_img.par_iter_mut().zip(f_plane.par_iter()).for_each(|(d, &f)| {
-            let eff_f = if is_reversal {
-                1.0 - f.clamp(0.0, 1.0)
-            } else {
-                f.clamp(0.0, 1.0)
-            };
-            *d = d_max * eff_f.powf(inv_gamma);
-        });
+        d_img
+            .par_iter_mut()
+            .zip(f_plane.par_iter())
+            .for_each(|(d, &f)| {
+                let eff_f = if is_reversal {
+                    1.0 - f.clamp(0.0, 1.0)
+                } else {
+                    f.clamp(0.0, 1.0)
+                };
+                *d = d_max * eff_f.powf(inv_gamma);
+            });
 
         if coupler.mask_epsilon.is_some() {
             use crate::film::constants::MASK_DENSITY_FRACTION_OF_DMAX;
             let mask_scale = d_max * MASK_DENSITY_FRACTION_OF_DMAX;
             let mut d_mask = vec![0.0f32; n];
-            d_mask.par_iter_mut().zip(d_img.par_iter()).for_each(|(m, &di)| {
-                *m = mask_scale * (1.0 - (di / d_max).clamp(0.0, 1.0));
-            });
+            d_mask.par_iter_mut().for_each(|m| *m = mask_scale);
             mask_dye.push(d_mask);
         } else {
             mask_dye.push(vec![0.0f32; n]);
@@ -64,5 +62,44 @@ pub fn reduce(stock: &FilmStock, latent: &LatentPlanes) -> DyePlanes {
         height: latent.height,
         image_dye,
         mask_dye,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::film::{constants::MASK_DENSITY_FRACTION_OF_DMAX, StockId};
+
+    #[test]
+    fn coloured_base_is_not_cleared_by_development() {
+        let stock = StockId::Portra400.load().unwrap();
+        let emulsion_count = stock
+            .layers
+            .iter()
+            .filter(|l| l.kind == LayerKind::Emulsion)
+            .count();
+        let latent = LatentPlanes {
+            width: 2,
+            height: 1,
+            layers: vec![vec![0.0, 1.0]; emulsion_count],
+        };
+        let dyes = reduce(&stock, &latent);
+        for (layer, mask) in stock
+            .layers
+            .iter()
+            .filter(|l| l.kind == LayerKind::Emulsion)
+            .zip(&dyes.mask_dye)
+        {
+            let expected = layer
+                .coupler
+                .as_ref()
+                .unwrap()
+                .mask_epsilon
+                .as_ref()
+                .map_or(0.0, |_| {
+                    layer.coupler.as_ref().unwrap().d_max * MASK_DENSITY_FRACTION_OF_DMAX
+                });
+            assert_eq!(mask, &vec![expected; 2]);
+        }
     }
 }

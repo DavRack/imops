@@ -286,7 +286,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         adjacency_beta: 0.30,
         dir_diffusion_length: Microns(16.0),
         dir_inhibition_matrix: dir_matrix,
-        scanner_light: SpectralCurve::constant(1.0),
+        scanner_light: SpectralCurve::d50(),
         capture_luts: vec![],
         grain_kappa: vec![],
     };
