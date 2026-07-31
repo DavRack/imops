@@ -60,7 +60,7 @@ pub fn test_pipeline_module_cpu_vs_gpu(module: &dyn PipelineModule, seed: u64) {
 }
 
 /// Compares CPU ground truth image against GPU output image pixel by pixel.
-pub fn assert_images_equal_tol(cpu_image: &Image, gpu_image: &Image, rel_tol: f32) {
+pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
     assert_eq!(
         cpu_image.rgb_data.len(),
         gpu_image.rgb_data.len(),
@@ -69,8 +69,6 @@ pub fn assert_images_equal_tol(cpu_image: &Image, gpu_image: &Image, rel_tol: f3
         gpu_image.rgb_data.len()
     );
 
-    let mut mismatch_count = 0;
-
     for (idx, (c_pixel, g_pixel)) in cpu_image
         .rgb_data
         .iter()
@@ -78,31 +76,21 @@ pub fn assert_images_equal_tol(cpu_image: &Image, gpu_image: &Image, rel_tol: f3
         .enumerate()
     {
         for ch in 0..3 {
-            let diff = (c_pixel[ch] - g_pixel[ch]).abs();
-            let tol = rel_tol * c_pixel[ch].abs().max(1.0);
-            if diff > tol {
-                mismatch_count += 1;
-                if mismatch_count <= 10 {
-                    eprintln!(
-                        "Pixel mismatch at index {} (x={}, y={}), channel {}: CPU={:.9}, GPU={:.9}, diff={:.9}",
-                        idx,
-                        idx % cpu_image.metadata.width,
-                        idx / cpu_image.metadata.width,
-                        ch,
-                        c_pixel[ch],
-                        g_pixel[ch],
-                        diff
-                    );
-                }
-            }
+            assert_eq!(
+                c_pixel[ch].to_bits(),
+                g_pixel[ch].to_bits(),
+                "RGB mismatch at index {} (x={}, y={}), channel {}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x})",
+                idx,
+                idx % cpu_image.metadata.width,
+                idx / cpu_image.metadata.width,
+                ch,
+                c_pixel[ch],
+                c_pixel[ch].to_bits(),
+                g_pixel[ch],
+                g_pixel[ch].to_bits()
+            );
         }
     }
-
-    assert!(
-        mismatch_count == 0,
-        "CPU and GPU images differ! Total mismatches: {}",
-        mismatch_count
-    );
 
     assert_eq!(
         cpu_image.raw_data.len(),
@@ -111,7 +99,6 @@ pub fn assert_images_equal_tol(cpu_image: &Image, gpu_image: &Image, rel_tol: f3
         cpu_image.raw_data.len(),
         gpu_image.raw_data.len()
     );
-    let mut raw_mismatch_count = 0;
 
     for (idx, (c_subpixel, g_subpixel)) in cpu_image
         .raw_data
@@ -119,32 +106,22 @@ pub fn assert_images_equal_tol(cpu_image: &Image, gpu_image: &Image, rel_tol: f3
         .zip(gpu_image.raw_data.iter())
         .enumerate()
     {
-        let diff = (c_subpixel - g_subpixel).abs();
-        if diff > 1e-4 {
-            raw_mismatch_count += 1;
-            if raw_mismatch_count <= 10 {
-                eprintln!(
-                    "Raw subpixel mismatch at index {}: CPU={:.9}, GPU={:.9}, diff={:.9}",
-                    idx, c_subpixel, g_subpixel, diff
-                );
-            }
-        }
+        assert_eq!(
+            c_subpixel.to_bits(),
+            g_subpixel.to_bits(),
+            "Raw subpixel mismatch at index {}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x})",
+            idx,
+            c_subpixel,
+            c_subpixel.to_bits(),
+            g_subpixel,
+            g_subpixel.to_bits()
+        );
     }
 
     assert!(
-        raw_mismatch_count == 0,
-        "CPU and GPU raw_data differ! Total mismatches: {}",
-        raw_mismatch_count
-    );
-
-    assert_eq!(
-        cpu_image.metadata, gpu_image.metadata,
+        cpu_image.metadata.bitwise_eq(&gpu_image.metadata),
         "Metadata mismatch between CPU and GPU output!"
     );
-}
-
-pub fn assert_images_equal(cpu_image: &Image, gpu_image: &Image) {
-    assert_images_equal_tol(cpu_image, gpu_image, 1e-4);
 }
 
 #[cfg(test)]

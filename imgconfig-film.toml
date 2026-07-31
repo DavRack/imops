@@ -52,9 +52,6 @@ output = "PositiveLinear"
 # seed = 1
 # output = "PositiveLinear"
 
-[[pipeline_modules]]
-name = "Exp"
-ev = 0.0
 
 # [[pipeline_modules]]
 # name = "Exp"
@@ -70,7 +67,7 @@ name = "SigmoidToneMap"
 # EXR is linear display-referred sRGB. JPEG output is sRGB-OETF encoded by the writer.
 [[pipeline_modules]]
 name = "CST"
-target_color_space = "LinearSrgb"
+target_color_space = "Srgb"
 
 [[pipeline_modules]]
 name = "Rotation"

@@ -1,4 +1,5 @@
 use color::{ColorSpaceTag};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::{
@@ -26,6 +27,46 @@ pub struct Image {
     /// Bayer / mosaic samples. Arc so pipeline runs can share without cloning.
     pub raw_data: Arc<[SubPixel]>,
     pub metadata: ImageMetadata,
+}
+
+impl Hash for Image {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.rgb_data.len().hash(hasher);
+        for pixel in &self.rgb_data {
+            for channel in pixel {
+                channel.to_bits().hash(hasher);
+            }
+        }
+
+        self.raw_data.len().hash(hasher);
+        for sample in self.raw_data.iter() {
+            sample.to_bits().hash(hasher);
+        }
+
+        Hash::hash(&self.metadata, hasher);
+    }
+}
+
+impl Image {
+    pub fn bitwise_eq(&self, other: &Self) -> bool {
+        self.rgb_data.len() == other.rgb_data.len()
+            && self
+                .rgb_data
+                .iter()
+                .zip(&other.rgb_data)
+                .all(|(left, right)| {
+                    left.iter()
+                        .zip(right)
+                        .all(|(left, right)| left.to_bits() == right.to_bits())
+                })
+            && self.raw_data.len() == other.raw_data.len()
+            && self
+                .raw_data
+                .iter()
+                .zip(other.raw_data.iter())
+                .all(|(left, right)| left.to_bits() == right.to_bits())
+            && self.metadata.bitwise_eq(&other.metadata)
+    }
 }
 
 impl Default for Image {

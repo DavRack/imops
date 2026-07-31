@@ -1,5 +1,6 @@
 // taken from rawler
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -78,6 +79,15 @@ pub struct CFA {
   // the stack usage and we don't need that much bits.
  #[serde_as(as = "[[_; 48]; 48]")]
   pattern: [[u8; 48]; 48],
+}
+
+impl Hash for CFA {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.name.hash(state);
+    self.width.hash(state);
+    self.height.hash(state);
+    self.pattern.hash(state);
+  }
 }
 
 impl Default for CFA {

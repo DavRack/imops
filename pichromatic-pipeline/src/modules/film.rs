@@ -283,8 +283,7 @@ mod tests {
         film_module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_img);
         let gpu_out = gpu_img.to_cpu(Some(&ctx));
 
-        use crate::modules::common::assert_images_equal_tol;
-        assert_images_equal_tol(&cpu_out, &gpu_out, 0.31);
+        assert_images_equal(&cpu_out, &gpu_out);
     }
 
     #[test]

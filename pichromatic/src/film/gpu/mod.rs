@@ -2402,7 +2402,6 @@ mod tests {
                 raw_data: std::sync::Arc::from([]),
             };
             crate::film::process(&mut cpu_image, &params).unwrap();
-            let cpu_mean = crate::film::scan::mean_rgb(&cpu_image.rgb_data);
 
             // GPU run
             let gpu_buf = ctx.create_output_buffer(width, height);
@@ -2411,28 +2410,33 @@ mod tests {
             pollster::block_on(process_gpu_full_frame(&ctx, &gpu_buf, &meta, &params)).unwrap();
             let gpu_floats = ctx.download_f32(&gpu_buf.buffer, width * height * 4);
 
-            let mut gpu_sum = [0.0f64; 3];
-            for px in 0..n {
-                gpu_sum[0] += gpu_floats[px * 4] as f64;
-                gpu_sum[1] += gpu_floats[px * 4 + 1] as f64;
-                gpu_sum[2] += gpu_floats[px * 4 + 2] as f64;
-            }
-            let gpu_mean = [
-                (gpu_sum[0] / n as f64) as f32,
-                (gpu_sum[1] / n as f64) as f32,
-                (gpu_sum[2] / n as f64) as f32,
-            ];
+            assert_eq!(
+                cpu_image.rgb_data.len(),
+                n,
+                "CPU output length mismatch stock={stock:?} output={output:?}"
+            );
+            assert_eq!(
+                gpu_floats.len(),
+                n * 4,
+                "GPU output length mismatch stock={stock:?} output={output:?}"
+            );
 
-            for ch in 0..3 {
-                let diff = (cpu_mean[ch] - gpu_mean[ch]).abs();
-                assert!(
-                    diff < 0.05,
-                    "CPU vs GPU mean mismatch stock={stock:?} output={output:?} ch={ch}: cpu={:.5}, gpu={:.5}, diff={diff}",
-                    cpu_mean[ch],
-                    gpu_mean[ch]
-                );
+            for (px, cpu_pixel) in cpu_image.rgb_data.iter().enumerate() {
+                let x = px % width;
+                let y = px / width;
+                for ch in 0..3 {
+                    let gpu_value = gpu_floats[px * 4 + ch];
+                    assert_eq!(
+                        cpu_pixel[ch].to_bits(),
+                        gpu_value.to_bits(),
+                        "CPU/GPU RGB mismatch stock={stock:?} format={film_format:?} output={output:?} at ({x}, {y}) ch={ch}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x})",
+                        cpu_pixel[ch],
+                        cpu_pixel[ch].to_bits(),
+                        gpu_value,
+                        gpu_value.to_bits()
+                    );
+                }
             }
         }
     }
 }
-
