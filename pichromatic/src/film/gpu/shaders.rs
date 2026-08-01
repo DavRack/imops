@@ -559,6 +559,46 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Multi-bounce halation accumulation: `acc = init ? w·b : acc + w·b`.
+/// Mirrors the CPU decay-weighted bounce sum in `apply_spatial_exposure_effects`.
+pub const HALATION_ACCUM: &str = r#"
+struct U { n:u32, w:f32, init:u32, p0:u32 };
+@group(0) @binding(0) var<storage, read_write> acc: array<f32>;
+@group(0) @binding(1) var<storage, read_write> blurred: array<f32>;
+@group(0) @binding(2) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    let b = blurred[i];
+    if (u.init != 0u) {
+        acc[i] = u.w * b;
+    } else {
+        acc[i] = acc[i] + u.w * b;
+    }
+}
+"#;
+
+/// ROI Multi-bounce halation accumulation on a single arena binding.
+pub const HALATION_ACCUM_ROI: &str = r#"
+struct U { n:u32, out_off:u32, blur_off:u32, w:f32, init:u32, p0:u32, p1:u32, p2:u32 };
+@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
+@group(0) @binding(1) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    let b = arena[u.blur_off + i];
+    if (u.init != 0u) {
+        arena[u.out_off + i] = u.w * b;
+    } else {
+        arena[u.out_off + i] = arena[u.out_off + i] + u.w * b;
+    }
+}
+"#;
+
 /// ROI Additive wide halation: single arena binding + gains.
 pub const HALATION_ADD_ROI: &str = r#"
 struct U { n:u32, num_emul:u32, plane_base:u32, bounce_base:u32 };
@@ -952,30 +992,106 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// Grain apply on image dye only. Mirrors `development::grain::apply_grain` body.
-pub const GRAIN_APPLY: &str = r#"
-struct U { n:u32, off:u32, kappa:f32, dmax:f32, norm:f32, noise_off:u32, p1:u32, p2:u32 };
+/// Two-sublayer grain apply (CPU `apply_grain` sublayer structure): one pass
+/// applies both dye-cloud sublayers (κ·√2 each) and writes their average.
+/// `kappa` uniform carries the already-scaled sublayer κ (κ·√2); `noise0` and
+/// `noise1` hold the two independent blurred sublayer noise planes.
+pub const GRAIN_APPLY_SUB: &str = r#"
+struct U { n:u32, off:u32, kappa:f32, dmax:f32, norm:f32, noise0_off:u32, noise1_off:u32, p0:u32 };
 @group(0) @binding(0) var<storage, read_write> dye: array<f32>;
-@group(0) @binding(1) var<storage, read_write> noise: array<f32>;
-@group(0) @binding(2) var<uniform> u: U;
+@group(0) @binding(1) var<storage, read_write> noise0: array<f32>;
+@group(0) @binding(2) var<storage, read_write> noise1: array<f32>;
+@group(0) @binding(3) var<uniform> u: U;
 
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let d0 = dye[u.off + i];
-    let dens = clamp(d0, 0.0, u.dmax);
+fn sublayer_d(dens: f32, n: f32) -> f32 {
     let eps_toe = 0.05 * u.dmax;
     let taper = min(dens / (dens + eps_toe), 1.0);
     let sd = taper * sqrt(max(dens * (u.dmax - dens), 0.0));
-    let noisy = dens + u.kappa * sd * noise[u.noise_off + i] * u.norm;
+    let noisy = dens + u.kappa * sd * n * u.norm;
     let knee = 0.005 * u.dmax;
     var dd = noisy;
     if (noisy < knee) {
         dd = (knee * knee) / (2.0 * knee - noisy);
     }
-    dd = min(dd, u.dmax * 1.05);
-    dye[u.off + i] = dd;
+    return min(dd, u.dmax * 1.05);
+}
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    let dens = clamp(dye[u.off + i], 0.0, u.dmax);
+    let s0 = sublayer_d(dens, noise0[u.noise0_off + i]);
+    let s1 = sublayer_d(dens, noise1[u.noise1_off + i]);
+    dye[u.off + i] = (s0 + s1) * 0.5;
+}
+"#;
+
+/// ROI two-sublayer grain apply on a single arena binding. `noise0` and
+/// `noise1` hold the *raw* (unblurred) sublayer noise planes; each is blurred
+/// inline with its own sublayer kernel (separable, root-edge reflection, same
+/// accumulation order as the standalone blur passes), then averaged.
+pub const GRAIN_APPLY_SUB_RAW_ROI: &str = r#"
+struct U {
+    n:u32, dye_off:u32, noise0_off:u32, noise1_off:u32,
+    kappa:f32, dmax:f32, norm:f32, root_w:u32,
+    root_h:u32, radius0:u32, radius1:u32, p0:u32,
+};
+@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
+@group(0) @binding(1) var<storage, read> ker0: array<f32>;
+@group(0) @binding(2) var<storage, read> ker1: array<f32>;
+@group(0) @binding(3) var<uniform> u: U;
+
+fn reflect_index(i: i32, len: i32) -> i32 {
+    if (len == 1) { return 0; }
+    var x = i;
+    while (x < 0 || x >= len) {
+        if (x < 0) { x = -x; }
+        else { x = 2 * len - 2 - x; }
+    }
+    return x;
+}
+
+fn blurred_noise(noise_off: u32, lx: i32, ly: i32, radius: u32, sl: u32) -> f32 {
+    let len = 2u * radius + 1u;
+    var acc = 0.0;
+    for (var j = 0u; j < len; j = j + 1u) {
+        let rly = reflect_index(ly + i32(j) - i32(radius), i32(u.root_h));
+        var h = 0.0;
+        for (var i = 0u; i < len; i = i + 1u) {
+            let rlx = reflect_index(lx + i32(i) - i32(radius), i32(u.root_w));
+            let k = select(ker1[i], ker0[i], sl == 0u);
+            h = h + k * arena[noise_off + u32(rly) * u.root_w + u32(rlx)];
+        }
+        let kj = select(ker1[j], ker0[j], sl == 0u);
+        acc = acc + kj * h;
+    }
+    return acc;
+}
+
+fn sublayer_d(dens: f32, noise_off: u32, lx: i32, ly: i32, radius: u32, sl: u32) -> f32 {
+    let eps_toe = 0.05 * u.dmax;
+    let taper = min(dens / (dens + eps_toe), 1.0);
+    let sd = taper * sqrt(max(dens * (u.dmax - dens), 0.0));
+    let noisy = dens + u.kappa * sd * blurred_noise(noise_off, lx, ly, radius, sl) * u.norm;
+    let knee = 0.005 * u.dmax;
+    var dd = noisy;
+    if (noisy < knee) {
+        dd = (knee * knee) / (2.0 * knee - noisy);
+    }
+    return min(dd, u.dmax * 1.05);
+}
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    let lx = i % u.root_w;
+    let ly = i / u.root_w;
+    let dens = clamp(arena[u.dye_off + i], 0.0, u.dmax);
+    let s0 = sublayer_d(dens, u.noise0_off, i32(lx), i32(ly), u.radius0, 0u);
+    let s1 = sublayer_d(dens, u.noise1_off, i32(lx), i32(ly), u.radius1, 1u);
+    arena[u.dye_off + i] = (s0 + s1) * 0.5;
 }
 "#;
 

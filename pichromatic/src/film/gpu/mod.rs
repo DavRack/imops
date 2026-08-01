@@ -120,15 +120,32 @@ struct NoiseU {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct GrainApplyU {
+struct GrainApplySubU {
     n: u32,
     off: u32,
     kappa: f32,
     dmax: f32,
     norm: f32,
-    noise_off: u32,
-    _p1: u32,
-    _p2: u32,
+    noise0_off: u32,
+    noise1_off: u32,
+    _p0: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct GrainApplySubRoiU {
+    n: u32,
+    dye_off: u32,
+    noise0_off: u32,
+    noise1_off: u32,
+    kappa: f32,
+    dmax: f32,
+    norm: f32,
+    root_w: u32,
+    root_h: u32,
+    radius0: u32,
+    radius1: u32,
+    _p0: u32,
 }
 
 #[repr(C)]
@@ -190,6 +207,28 @@ struct HalationAddRoiU {
     num_emul: u32,
     plane_base: u32,
     bounce_base: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct HalationAccumU {
+    n: u32,
+    w: f32,
+    init: u32,
+    _p0: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct HalationAccumRoiU {
+    n: u32,
+    out_off: u32,
+    blur_off: u32,
+    w: f32,
+    init: u32,
+    _p0: u32,
+    _p1: u32,
+    _p2: u32,
 }
 
 #[repr(C)]
@@ -376,6 +415,7 @@ pub(crate) struct StockConsts {
     scan_scale: f32,
     do_invert: bool,
     // Per-emulsion runtime scalars.
+    // `kappa` is the CPU sublayer κ = scale_kappa(...)·√2 (two dye-cloud sublayers).
     kappa: Vec<f32>,
     dmax: Vec<f32>,
     // Blur sigmas (px) for spatial stages.
@@ -385,16 +425,24 @@ pub(crate) struct StockConsts {
     sigma_adj: f32,
     // Pre-baked Gaussian kernel buffers (None if stage skipped).
     local_kernel: Option<(std::sync::Arc<Buffer>, u32)>,
-    wide_kernel: Option<(std::sync::Arc<Buffer>, u32)>,
+    // CPU multi-bounce halation: decay-weighted bounces at σ√(k+1), k = 0..HALATION_BOUNCES.
+    halation_kernels: Vec<(std::sync::Arc<Buffer>, u32)>,
+    halation_weights: Vec<f32>,
     dir_kernel: Option<(std::sync::Arc<Buffer>, u32)>,
     adj_kernel: Option<(std::sync::Arc<Buffer>, u32)>,
-    grain_kernels: Vec<(std::sync::Arc<Buffer>, u32)>,
+    // Two dye-cloud sublayer kernels per emulsion (σ × 1.3 and × 0.7, matching
+    // CPU `apply_grain` sublayer_scales), plus per-sublayer SplitMix64 row seeds.
+    grain_kernels: Vec<[(std::sync::Arc<Buffer>, u32); 2]>,
     adjacency_beta: f32,
-    grain_seed_base: Vec<(u32, u32)>, // per emulsion (lo, hi) of seed*C1 + layer*GOLDEN
+    grain_seed_base: Vec<[(u32, u32); 2]>, // per emulsion (lo, hi) per sublayer
 }
 
 const GOLDEN: u64 = 0x9E3779B97F4A7C15;
 const SM_STATE_MIX: u64 = 0xD1B54A32D192ED03;
+
+/// Multi-bounce backing-reflection count and decay (mirrors `halation.rs`).
+const HALATION_BOUNCES: usize = 3;
+const HALATION_RHO: f32 = 0.5;
 
 pub(crate) fn bake_consts(
     ctx: &GpuContext,
@@ -633,14 +681,30 @@ pub(crate) fn bake_consts(
         None
     };
 
-    let wide_kernel = if sigma_wide >= 1e-3 {
-        let k = make_gaussian_kernel(sigma_wide);
-        let rad = crate::film::blur::gaussian_radius(sigma_wide) as u32;
-        let buf = std::sync::Arc::new(ctx.create_f32_buffer_init(&k, "stock_k_wide"));
-        Some((buf, rad))
-    } else {
-        None
-    };
+    // CPU multi-bounce halation: decay-weighted bounces at σ√(k+1), k = 0..2.
+    let (mut halation_kernels, mut halation_weights) = (Vec::new(), Vec::new());
+    if sigma_wide >= 1e-3 {
+        let mut decay = [0.0f32; HALATION_BOUNCES];
+        let mut sum = 0.0f32;
+        for k in 0..HALATION_BOUNCES {
+            decay[k] = HALATION_RHO.powi(k as i32);
+            sum += decay[k];
+        }
+        for k in 0..HALATION_BOUNCES {
+            decay[k] /= sum;
+        }
+        for k in 0..HALATION_BOUNCES {
+            let bounce_sigma = sigma_wide * ((k + 1) as f32).sqrt();
+            let bk = make_gaussian_kernel(bounce_sigma);
+            let rad = crate::film::blur::gaussian_radius(bounce_sigma) as u32;
+            let buf = std::sync::Arc::new(ctx.create_f32_buffer_init(
+                &bk,
+                &format!("stock_k_halation_{k}"),
+            ));
+            halation_kernels.push((buf, rad));
+            halation_weights.push(decay[k]);
+        }
+    }
 
     let dir_kernel = if sigma_dir >= 1e-3 && !stock.dir_inhibition_matrix.is_empty() {
         let k = make_gaussian_kernel(sigma_dir);
@@ -660,37 +724,53 @@ pub(crate) fn bake_consts(
         None
     };
 
-    // Grain scalars and per-layer crystal-aware grain blur kernels.
+    // Grain scalars and per-layer crystal-aware dye-cloud sublayer kernels.
+    // Mirrors CPU `apply_grain`: two sublayers (scales 1.3 / 0.7) with independent
+    // SplitMix64 streams; sublayer κ = scale_kappa·√2.
     let mut kappa = Vec::with_capacity(num_emul);
     let mut dmax_grain = Vec::with_capacity(num_emul);
     let mut grain_seed_base = Vec::with_capacity(num_emul);
     let mut grain_kernels = Vec::with_capacity(num_emul);
 
+    const SUBLAYER_SCALES: [f32; 2] = [1.3, 0.7];
+    const SUBLAYER_STREAM_MIX: u64 = 0x123456789;
+
     for (e, &(li, layer)) in emuls.iter().enumerate() {
         let coupler = layer.coupler.as_ref().unwrap();
         let kappa_ref = stock.grain_kappa[li].unwrap_or(0.0);
-        let k = scale_kappa(kappa_ref, pitch);
+        let k = scale_kappa(kappa_ref, pitch) * (SUBLAYER_SCALES.len() as f32).sqrt();
         kappa.push(k);
         dmax_grain.push(coupler.d_max);
         let base = params
             .seed
             .wrapping_mul(SM_STATE_MIX)
             .wrapping_add((e as u64).wrapping_mul(GOLDEN));
-        grain_seed_base.push((base as u32, (base >> 32) as u32));
+        let mut bases = [(0u32, 0u32); 2];
+        for sl in 0..2 {
+            let b = base.wrapping_add((sl as u64).wrapping_mul(SUBLAYER_STREAM_MIX));
+            bases[sl] = (b as u32, (b >> 32) as u32);
+        }
+        grain_seed_base.push(bases);
 
-        let correlation_um = if let Some(dist) = &layer.crystal_size {
+        let base_correlation_um = if let Some(dist) = &layer.crystal_size {
             let mean_s = (dist.mu_ln + 0.5 * dist.sigma_ln * dist.sigma_ln).exp();
             (mean_s / 0.7) as f32 * DYE_CLOUD_CORRELATION_UM
         } else {
             DYE_CLOUD_CORRELATION_UM
         };
-        let grain_sigma = (correlation_um / pitch.max(1e-6)).max(1.0);
-        let k_grain = make_gaussian_kernel(grain_sigma);
-        let rad_grain = crate::film::blur::gaussian_radius(grain_sigma) as u32;
-        let buf_grain = std::sync::Arc::new(
-            ctx.create_f32_buffer_init(&k_grain, &format!("stock_k_grain_{e}")),
-        );
-        grain_kernels.push((buf_grain, rad_grain));
+        let mut kernels: Vec<(std::sync::Arc<Buffer>, u32)> = Vec::with_capacity(2);
+        for &sl_scale in SUBLAYER_SCALES.iter() {
+            let correlation_um = base_correlation_um * sl_scale;
+            let grain_sigma = (correlation_um / pitch.max(1e-6)).max(1.0);
+            let k_grain = make_gaussian_kernel(grain_sigma);
+            let rad_grain = crate::film::blur::gaussian_radius(grain_sigma) as u32;
+            let buf_grain = std::sync::Arc::new(ctx.create_f32_buffer_init(
+                &k_grain,
+                &format!("stock_k_grain_{e}_{}", kernels.len()),
+            ));
+            kernels.push((buf_grain, rad_grain));
+        }
+        grain_kernels.push(kernels.try_into().unwrap());
     }
 
     StockConsts {
@@ -711,7 +791,8 @@ pub(crate) fn bake_consts(
         sigma_dir,
         sigma_adj,
         local_kernel,
-        wide_kernel,
+        halation_kernels,
+        halation_weights,
         dir_kernel,
         adj_kernel,
         grain_kernels,
@@ -1295,22 +1376,38 @@ async fn process_gpu_full_frame(
         }
     }
 
-    // Wide support-bounce halation (colored bleed from deepest emulsion).
-    if let Some((ref kbuf, radius)) = consts.wide_kernel {
-        let radius = radius;
-        // Bounce source = deepest emulsion plane, blurred.
-        blur_plane(
-            ctx,
-            width,
-            height,
-            &planes,
-            ((e - 1) * n) as u32,
-            &bout,
-            0,
-            &btmp,
-            kbuf.as_ref(),
-            radius,
-        );
+    // Wide support-bounce halation: CPU multi-bounce model — decay-weighted bounces
+    // at σ√(k+1) of the deepest emulsion plane, accumulated into `work` plane 0,
+    // then added to every plane with per-emulsion bleed gain.
+    if !consts.halation_kernels.is_empty() {
+        let bounce_src = ((e - 1) * n) as u32;
+        for (k, (ref kbuf, radius)) in consts.halation_kernels.iter().enumerate() {
+            blur_plane(
+                ctx,
+                width,
+                height,
+                &planes,
+                bounce_src,
+                &bout,
+                0,
+                &btmp,
+                kbuf.as_ref(),
+                *radius,
+            );
+            let u = HalationAccumU {
+                n: n as u32,
+                w: consts.halation_weights[k],
+                init: if k == 0 { 1 } else { 0 },
+                _p0: 0,
+            };
+            ctx.dispatch_compute_shader_multi(
+                "film_halation_accum",
+                shaders::HALATION_ACCUM,
+                &[&work, &bout],
+                bytemuck::bytes_of(&u),
+                workgroups(n),
+            );
+        }
         let u = CountU {
             n: n as u32,
             num_emul: consts.num_emul,
@@ -1320,7 +1417,7 @@ async fn process_gpu_full_frame(
         ctx.dispatch_compute_shader_multi(
             "film_halation_add",
             shaders::HALATION_ADD,
-            &[&planes, &bout, &consts.gains],
+            &[&planes, &work, &consts.gains],
             bytemuck::bytes_of(&u),
             workgroups(n),
         );
@@ -1470,7 +1567,8 @@ async fn process_gpu_full_frame(
     }
 
     // ── Stage 7: grain (image dye only) ──
-    // Blurred noise stored in `work` (free after DIR). One variance sync for all E.
+    // CPU `apply_grain` two-sublayer model: sublayer 0 blurred into `work` plane e,
+    // sublayer 1 blurred into `noise` (in place); one apply pass averages both.
     {
         let mut active: Vec<(usize, u32)> = Vec::with_capacity(e);
         for plane_e in 0..e {
@@ -1479,95 +1577,106 @@ async fn process_gpu_full_frame(
             if kappa <= 0.0 || dmax <= 0.0 {
                 continue;
             }
-            let (ref kbuf, radius) = consts.grain_kernels[plane_e];
+            let (ref k0, r0) = consts.grain_kernels[plane_e][0];
+            let (ref k1, r1) = consts.grain_kernels[plane_e][1];
             let dst_off = (plane_e * n) as u32;
-            let (base_lo, base_hi) = consts.grain_seed_base[plane_e];
-            let nu = NoiseU {
-                width: width as u32,
-                height: height as u32,
-                n: n as u32,
-                base_lo,
-                base_hi,
-                _p0: 0,
-                _p1: 0,
-                _p2: 0,
-            };
-            let blur_u_h = BlurU {
-                width: width as u32,
-                height: height as u32,
-                n: n as u32,
-                radius,
-                src_off: 0,
-                dst_off: 0,
-                _p0: 0,
-                _p1: 0,
-            };
-            let blur_u_v = BlurU {
-                width: width as u32,
-                height: height as u32,
-                n: n as u32,
-                radius,
-                src_off: 0,
-                dst_off,
-                _p0: 0,
-                _p1: 0,
-            };
-            let noise_ub = bytemuck::bytes_of(&nu);
-            let blur_ub_h = bytemuck::bytes_of(&blur_u_h);
-            let blur_ub_v = bytemuck::bytes_of(&blur_u_v);
-            let noise_bufs = [noise];
-            let h_bufs = [noise, btmp, kbuf.as_ref()];
-            let v_bufs = [btmp, work, kbuf.as_ref()];
-            let noise_wg = workgroups(n);
-            let d = blur_dispatch(width, height, radius);
-            ctx.dispatch_compute_passes(
-                "film_grain_noise_blur",
-                &[
-                    ComputePassDesc {
-                        label: "film_grain_noise",
-                        wgsl_source: shaders::GRAIN_NOISE,
-                        storage_buffers: &noise_bufs,
-                        uniform_bytes: noise_ub,
-                        workgroups_x: noise_wg,
-                        workgroups_y: 0,
-                    },
-                    ComputePassDesc {
-                        label: d.h_label,
-                        wgsl_source: d.h_wgsl,
-                        storage_buffers: &h_bufs,
-                        uniform_bytes: blur_ub_h,
-                        workgroups_x: d.h_gx,
-                        workgroups_y: d.h_gy,
-                    },
-                    ComputePassDesc {
-                        label: d.v_label,
-                        wgsl_source: d.v_wgsl,
-                        storage_buffers: &v_bufs,
-                        uniform_bytes: blur_ub_v,
-                        workgroups_x: d.v_gx,
-                        workgroups_y: d.v_gy,
-                    },
-                ],
-            );
+
+            for sl in 0..2 {
+                let (ref kbuf, radius) = if sl == 0 {
+                    (k0, r0)
+                } else {
+                    (k1, r1)
+                };
+                let (base_lo, base_hi) = consts.grain_seed_base[plane_e][sl];
+                let nu = NoiseU {
+                    width: width as u32,
+                    height: height as u32,
+                    n: n as u32,
+                    base_lo,
+                    base_hi,
+                    _p0: 0,
+                    _p1: 0,
+                    _p2: 0,
+                };
+                // sl0: noise -> btmp -> work@dst_off; sl1: noise -> btmp -> noise (in place).
+                let dst_buf = if sl == 0 { work } else { noise };
+                let blur_u_h = BlurU {
+                    width: width as u32,
+                    height: height as u32,
+                    n: n as u32,
+                    radius,
+                    src_off: 0,
+                    dst_off: 0,
+                    _p0: 0,
+                    _p1: 0,
+                };
+                let blur_u_v = BlurU {
+                    width: width as u32,
+                    height: height as u32,
+                    n: n as u32,
+                    radius,
+                    src_off: 0,
+                    dst_off: if sl == 0 { dst_off } else { 0 },
+                    _p0: 0,
+                    _p1: 0,
+                };
+                let noise_ub = bytemuck::bytes_of(&nu);
+                let blur_ub_h = bytemuck::bytes_of(&blur_u_h);
+                let blur_ub_v = bytemuck::bytes_of(&blur_u_v);
+                let noise_bufs = [noise];
+                let h_bufs = [noise, btmp, kbuf.as_ref()];
+                let v_bufs = [btmp, dst_buf, kbuf.as_ref()];
+                let noise_wg = workgroups(n);
+                let d = blur_dispatch(width, height, radius);
+                ctx.dispatch_compute_passes(
+                    "film_grain_noise_blur",
+                    &[
+                        ComputePassDesc {
+                            label: "film_grain_noise",
+                            wgsl_source: shaders::GRAIN_NOISE,
+                            storage_buffers: &noise_bufs,
+                            uniform_bytes: noise_ub,
+                            workgroups_x: noise_wg,
+                            workgroups_y: 0,
+                        },
+                        ComputePassDesc {
+                            label: d.h_label,
+                            wgsl_source: d.h_wgsl,
+                            storage_buffers: &h_bufs,
+                            uniform_bytes: blur_ub_h,
+                            workgroups_x: d.h_gx,
+                            workgroups_y: d.h_gy,
+                        },
+                        ComputePassDesc {
+                            label: d.v_label,
+                            wgsl_source: d.v_wgsl,
+                            storage_buffers: &v_bufs,
+                            uniform_bytes: blur_ub_v,
+                            workgroups_x: d.v_gx,
+                            workgroups_y: d.v_gy,
+                        },
+                    ],
+                );
+            }
             active.push((plane_e, dst_off));
         }
 
         let norms = grain_variance_norms(ctx, &work, &var_partial, n, &active).await;
         for &(plane_e, norm) in &norms {
-            let gu = GrainApplyU {
+            let gu = GrainApplySubU {
                 n: n as u32,
                 off: (plane_e * n) as u32,
                 kappa: consts.kappa[plane_e],
                 dmax: consts.dmax[plane_e],
                 norm,
-                noise_off: (plane_e * n) as u32,
-                _p1: 0,
-                _p2: 0,
+                noise0_off: (plane_e * n) as u32,
+                noise1_off: 0,
+                _p0: 0,
             };
             ctx.dispatch_compute_shader_multi(
-                "film_grain_apply",
-                shaders::GRAIN_APPLY,
-                &[&dye, &work],
+                "film_grain_apply_sub",
+                shaders::GRAIN_APPLY_SUB,
+                &[&dye, &work, &noise],
                 bytemuck::bytes_of(&gu),
                 workgroups(n),
             );
@@ -1669,7 +1778,6 @@ async fn process_gpu_roi(
 
     // Read pre-baked GPU kernel buffers directly from StockConsts (zero mutex locking / dynamic lookups)
     let local_kernel_buf = consts.local_kernel.as_ref();
-    let wide_kernel_buf = consts.wide_kernel.as_ref();
     let dir_kernel_buf = consts.dir_kernel.as_ref();
     let adj_kernel_buf = consts.adj_kernel.as_ref();
     let blur_tmp_off = scratch.blur_tmp_offset()?;
@@ -1689,8 +1797,8 @@ async fn process_gpu_roi(
 
     if !active_grain_emuls.is_empty() {
         for (slot, &e) in active_grain_emuls.iter().enumerate() {
-            let (ref kbuf_grain, grain_radius) = consts.grain_kernels[e];
-            let (base_lo, base_hi) = consts.grain_seed_base[e];
+            let (ref kbuf_grain, grain_radius) = consts.grain_kernels[e][0];
+            let (base_lo, base_hi) = consts.grain_seed_base[e][0];
             let mut dst_off = 0u32;
 
             for plan in &plans {
@@ -1903,28 +2011,54 @@ async fn process_gpu_roi(
             }
         }
 
-        if let Some((ref kbuf, radius)) = wide_kernel_buf {
+        // Wide support-bounce halation (CPU multi-bounce model). Decay-weighted
+        // bounces at σ√(k+1) of the deepest latent plane are accumulated into mask
+        // plane 0 (unused until REDUCE writes it), then added with per-emulsion gain.
+        if !consts.halation_kernels.is_empty() {
             let deepest_e = num_emul - 1;
             let src_off = emul_off(work_base, deepest_e)?;
+            let acc_off = scratch.mask_offset(0)?;
 
-            keep.extend(blur_plane_in_arena(
-                ctx,
-                &mut encoder,
-                plan.root.width as usize,
-                plan.root.height as usize,
-                &scratch.arena,
-                src_off,
-                blur_out_off,
-                blur_tmp_off,
-                kbuf,
-                *radius,
-            ));
+            for (k, (ref kbuf, radius)) in consts.halation_kernels.iter().enumerate() {
+                keep.extend(blur_plane_in_arena(
+                    ctx,
+                    &mut encoder,
+                    plan.root.width as usize,
+                    plan.root.height as usize,
+                    &scratch.arena,
+                    src_off,
+                    blur_out_off,
+                    blur_tmp_off,
+                    kbuf,
+                    *radius,
+                ));
+
+                let acc_u = HalationAccumRoiU {
+                    n: root_n,
+                    out_off: acc_off,
+                    blur_off: blur_out_off,
+                    w: consts.halation_weights[k],
+                    init: if k == 0 { 1 } else { 0 },
+                    _p0: 0,
+                    _p1: 0,
+                    _p2: 0,
+                };
+
+                keep.push(ctx.encode_compute_shader_multi(
+                    &mut encoder,
+                    "film_halation_accum_roi",
+                    shaders::HALATION_ACCUM_ROI,
+                    &[&scratch.arena],
+                    bytemuck::bytes_of(&acc_u),
+                    workgroups(root_n as usize),
+                ));
+            }
 
             let hal_u = HalationAddRoiU {
                 n: root_n,
                 num_emul: consts.num_emul,
                 plane_base: work_base,
-                bounce_base: blur_out_off,
+                bounce_base: acc_off,
             };
 
             keep.push(ctx.encode_compute_shader_multi(
@@ -2031,51 +2165,71 @@ async fn process_gpu_roi(
             }
         }
 
-        // Stage 7: Regenerate normalized grain
+        // Stage 7: two-sublayer grain (image dye only). Raw sublayer noises are
+        // generated at blur_tmp / blur_out, blurred inline inside the apply pass
+        // (separable, root-edge reflection — same order as standalone blurs), and
+        // the two sublayer results averaged. Grain is no longer fused into scan.
         if !active_grain_emuls.is_empty() {
             for &e in &active_grain_emuls {
-                let (ref kbuf_grain, grain_radius) = consts.grain_kernels[e];
-                let (base_lo, base_hi) = consts.grain_seed_base[e];
+                let (ref k0, r0) = consts.grain_kernels[e][0];
+                let (ref k1, r1) = consts.grain_kernels[e][1];
+                let (b0_lo, b0_hi) = consts.grain_seed_base[e][0];
+                let (b1_lo, b1_hi) = consts.grain_seed_base[e][1];
+                let dye_off = emul_off(dye_base, e)?;
 
-                let noise_off = emul_off(work_base, e)?;
+                for sl in 0..2 {
+                    let (base_lo, base_hi) = if sl == 0 {
+                        (b0_lo, b0_hi)
+                    } else {
+                        (b1_lo, b1_hi)
+                    };
+                    let nu = NoiseRoiU {
+                        root_x: plan.root.x,
+                        root_y: plan.root.y,
+                        root_w: plan.root.width,
+                        root_h: plan.root.height,
+                        root_n,
+                        img_w,
+                        img_h,
+                        base_lo,
+                        base_hi,
+                        dst_off: if sl == 0 { blur_tmp_off } else { blur_out_off },
+                        _p0: 0,
+                        _p1: 0,
+                    };
 
-                let nu = NoiseRoiU {
-                    root_x: plan.root.x,
-                    root_y: plan.root.y,
+                    keep.push(ctx.encode_compute_shader_multi(
+                        &mut encoder,
+                        "film_grain_noise_roi",
+                        shaders::GRAIN_NOISE_ROI,
+                        &[&scratch.arena],
+                        bytemuck::bytes_of(&nu),
+                        workgroups(root_n as usize),
+                    ));
+                }
+
+                let gu = GrainApplySubRoiU {
+                    n: root_n,
+                    dye_off,
+                    noise0_off: blur_tmp_off,
+                    noise1_off: blur_out_off,
+                    kappa: consts.kappa[e],
+                    dmax: consts.dmax[e],
+                    norm: grain_norms[e],
                     root_w: plan.root.width,
                     root_h: plan.root.height,
-                    root_n,
-                    img_w,
-                    img_h,
-                    base_lo,
-                    base_hi,
-                    dst_off: blur_tmp_off,
+                    radius0: r0,
+                    radius1: r1,
                     _p0: 0,
-                    _p1: 0,
                 };
-
-                let noise_ub = bytemuck::bytes_of(&nu);
 
                 keep.push(ctx.encode_compute_shader_multi(
                     &mut encoder,
-                    "film_grain_noise_roi",
-                    shaders::GRAIN_NOISE_ROI,
-                    &[&scratch.arena],
-                    noise_ub,
+                    "film_grain_apply_sub_roi",
+                    shaders::GRAIN_APPLY_SUB_RAW_ROI,
+                    &[&scratch.arena, k0.as_ref(), k1.as_ref()],
+                    bytemuck::bytes_of(&gu),
                     workgroups(root_n as usize),
-                ));
-
-                keep.extend(blur_plane_in_arena(
-                    ctx,
-                    &mut encoder,
-                    plan.root.width as usize,
-                    plan.root.height as usize,
-                    &scratch.arena,
-                    blur_tmp_off,
-                    noise_off,
-                    blur_out_off,
-                    &kbuf_grain,
-                    grain_radius,
                 ));
             }
         }
@@ -2083,7 +2237,8 @@ async fn process_gpu_roi(
         let mut emul = [[0.0f32; 4]; 16];
         for e in 0..consts.num_emul as usize {
             if e < 16 {
-                emul[e] = [consts.kappa[e], consts.dmax[e], grain_norms[e], 0.0];
+                // Grain already applied in Stage 7; disable fused scan grain.
+                emul[e] = [0.0, consts.dmax[e], grain_norms[e], 0.0];
             }
         }
 

@@ -85,6 +85,12 @@ impl RoiPlan {
 
         let sigma_local = sigma_px_from_um(stock.antihalation.psf_local_um, pitch);
         let sigma_wide = sigma_px_from_um(stock.antihalation.psf_halation_um, pitch);
+        // CPU multi-bounce halation blurs at σ√(k+1); the widest bounce (k=2) is σ√3.
+        let sigma_wide = if sigma_wide >= 1e-3 {
+            sigma_wide * 3.0f32.sqrt()
+        } else {
+            sigma_wide
+        };
         let sigma_dir = stock.dir_diffusion_length.0 / pitch.max(1e-6);
         let sigma_adj = stock.developer_diffusion_length.0 / pitch.max(1e-6);
 
