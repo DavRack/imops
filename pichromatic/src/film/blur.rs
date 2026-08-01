@@ -29,8 +29,7 @@ pub fn gaussian_blur_separable(buf: &mut [f32], width: usize, height: usize, sig
                 let mut acc = 0.0f32;
                 for (k, &w) in kernel.iter().enumerate() {
                     let yy = reflect_index(y as isize + k as isize - radius as isize, height);
-                    // FMA-contracted like the GPU tiled blur (see convolve_1d_reflect).
-                    acc = tmp[yy * width + x].mul_add(w, acc);
+                    acc += tmp[yy * width + x] * w;
                 }
                 out_row[x] = acc;
             }
@@ -73,9 +72,7 @@ fn convolve_1d_reflect(input: &[f32], output: &mut [f32], kernel: &[f32]) {
         let mut acc = 0.0f32;
         for (k, &w) in kernel.iter().enumerate() {
             let xx = reflect_index(x as isize + k as isize - radius as isize, n);
-            // Metal always contracts `acc + w*x` into an FMA; emulate with
-            // mul_add so CPU and GPU agree bit-exact.
-            acc = input[xx].mul_add(w, acc);
+            acc += input[xx] * w;
         }
         output[x] = acc;
     }

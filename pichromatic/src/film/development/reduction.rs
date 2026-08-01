@@ -40,9 +40,8 @@ pub fn reduce(stock: &FilmStock, latent: &LatentPlanes) -> DyePlanes {
                 } else {
                     f.clamp(0.0, 1.0)
                 };
-                // Deterministic pow (film::math), mirroring `REDUCE`.
                 *d = if eff_f > 0.0 {
-                    d_max * crate::film::math::pow_det(eff_f, inv_gamma)
+                    d_max * eff_f.powf(inv_gamma)
                 } else {
                     0.0
                 };

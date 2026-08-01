@@ -113,18 +113,16 @@ pub fn apply_grain(
 
             let kappa_sub = kappa * (n_sub as f32).sqrt();
             sub_dyes[sl_idx].par_iter_mut().zip(noise.par_iter()).zip(plane.par_iter()).for_each(|((sub_d, &n), &d)| {
-                use crate::film::math::div_det;
                 let dens = d.clamp(0.0, d_max);
                 let eps_toe = 0.05 * d_max;
-                let taper = div_det(dens, dens + eps_toe).min(1.0);
+                let taper = (dens / (dens + eps_toe)).min(1.0);
                 let sigma_d = taper * (dens * (d_max - dens)).max(0.0).sqrt();
-                // FMA-contracted like `GRAIN_APPLY_SUB` (`dens + κ·sd·n·norm`).
-                let noisy = (kappa_sub * sigma_d * n).mul_add(norm, dens);
+                let noisy = dens + kappa_sub * sigma_d * n * norm;
                 let knee = 0.005 * d_max;
                 let d_val = if noisy >= knee {
                     noisy
                 } else {
-                    div_det(knee * knee, 2.0 * knee - noisy)
+                    (knee * knee) / (2.0 * knee - noisy)
                 };
                 *sub_d = d_val.min(d_max * 1.05);
             });

@@ -19,13 +19,10 @@
 //! (film-implementation.md §5.5 requires ≥32 nodes).
 //!
 //! The grid and fractions are stored as f32 (rounded from the f64 quadrature) and
-//! sampled in f32 with the exact `log(Φ)·log10(e)` + linear-interpolation sequence
-//! of the GPU `LUT` shader (`shaders::lut_sample`), so CPU and GPU agree bit-near.
+//! sampled in f32 with the same log10 + linear-interpolation sequence as the GPU
+//! `LUT` shader (`shaders::lut_sample`).
 
 use crate::film::stock::LogNormalDist;
-
-/// Inverse of ln(10) as uploaded to the GPU `LUT` shader constant `INV_LN10`.
-const INV_LN10: f32 = 0.4342944819032518;
 
 /// Precomputed 1D LUT: log-spaced fluence → developable fraction.
 #[derive(Clone, Debug, PartialEq)]
@@ -67,14 +64,13 @@ impl DevelopableFractionLut {
 
     /// Linear interpolate fraction for fluence `phi` (photons/µm²). Clamped.
     ///
-    /// Mirrors the GPU `LUT` shader `lut_sample` bit-near: the natural log comes
-    /// from the deterministic table-based `log2_det` (film::math), f32 grid
-    /// binning, and an FMA-contracted lerp.
+    /// Mirrors the GPU `LUT` shader `lut_sample` (log10 via `ln(Φ)·log10(e)`,
+    /// step binning over the uniform log10 grid, linear lerp).
     pub fn sample(&self, phi: f32) -> f32 {
         if !(phi > 0.0) {
             return self.fraction[0];
         }
-        let lp = crate::film::math::log2_det(phi) * crate::film::math::LOG10_2;
+        let lp = phi.ln() * INV_LN10;
         let logs = &self.log10_fluence;
         let fracs = &self.fraction;
         let lo0 = logs[0];
@@ -86,16 +82,15 @@ impl DevelopableFractionLut {
             return fracs[63];
         }
         let step = logs[1] - logs[0];
-        let mut lo = (crate::film::math::div_det(lp - lo0, step).floor() as usize).min(62);
-        if lo > 62 {
-            lo = 62;
-        }
+        let lo = ((lp - lo0) / step).floor() as usize;
         let hi = lo + 1;
-        let t = crate::film::math::div_det(lp - logs[lo], logs[hi] - logs[lo]);
-        // FMA-contracted lerp, like the GPU `LUT` shader (`lc[fbase+lo]*(1-t) + lc[fbase+hi]*t`).
-        fracs[hi].mul_add(t, fracs[lo] * (1.0 - t))
+        let t = (lp - logs[lo]) / (logs[hi] - logs[lo]);
+        fracs[lo] * (1.0 - t) + fracs[hi] * t
     }
 }
+
+/// log10(e), shared with the GPU `LUT` shader constant `INV_LN10`.
+const INV_LN10: f32 = 0.4342944819032518;
 
 /// E_s[ P(X < 4; λ = k s² Φ) ] for ln(s) ~ N(μ, σ²).
 fn expected_survival(dist: &LogNormalDist, k: f64, phi: f64) -> f64 {

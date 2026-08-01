@@ -396,18 +396,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let r = px.x; let g = px.y; let b = px.z;
 
     // Upsample: w = M * rgb, clamp negatives (Meng-style).
-    // Explicit fma() chains pin the FMA contraction order (right-to-left), which
-    // the CPU mirrors with mul_add — Metal may otherwise re-associate the
-    // straight-line products and differ by an ULP.
-    var w0 = fma(ec[50], b, fma(ec[49], g, ec[48] * r));
-    var w1 = fma(ec[53], b, fma(ec[52], g, ec[51] * r));
-    var w2 = fma(ec[56], b, fma(ec[55], g, ec[54] * r));
+    var w0 = ec[48] * r + ec[49] * g + ec[50] * b;
+    var w1 = ec[51] * r + ec[52] * g + ec[53] * b;
+    var w2 = ec[54] * r + ec[55] * g + ec[56] * b;
     w0 = max(w0, 0.0); w1 = max(w1, 0.0); w2 = max(w2, 0.0);
 
     // Fluence spectrum: Φ(λ) = spectrum(λ) * (λ / 550).
     var phi: array<f32, 16>;
     for (var k = 0u; k < 16u; k = k + 1u) {
-        let s = fma(w2, ec[32u + k], fma(w1, ec[16u + k], w0 * ec[k]));
+        let s = w0 * ec[k] + w1 * ec[16u + k] + w2 * ec[32u + k];
         phi[k] = s * ec[57u + k] * ec[73u];
     }
 
@@ -418,8 +415,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         var absorbed: array<f32, 16>;
         let ob = off_od + l * 16u;
         for (var k = 0u; k < 16u; k = k + 1u) {
-            // Baked transmittance (deterministic f64 exp on the host), so the
-            // GPU never calls `exp` here — CPU/GPU share the value bit-exactly.
+            // Transmittance baked on the host (f64 exp rounded to f32), so the
+            // GPU never calls `exp` here — CPU and GPU share the value.
             let trans = ec[ob + k];
             let pt = phi[k] * trans;
             absorbed[k] = phi[k] - pt;
@@ -480,17 +477,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let r = pix.x; let g = pix.y; let b = pix.z;
 
     // Upsample: w = M * rgb, clamp negatives (Meng-style).
-    // Explicit fma() chains pin the FMA contraction order (right-to-left), which
-    // the CPU mirrors with mul_add — Metal may otherwise re-associate the
-    // straight-line products and differ by an ULP.
-    var w0 = fma(ec[50], b, fma(ec[49], g, ec[48] * r));
-    var w1 = fma(ec[53], b, fma(ec[52], g, ec[51] * r));
-    var w2 = fma(ec[56], b, fma(ec[55], g, ec[54] * r));
+    var w0 = ec[48] * r + ec[49] * g + ec[50] * b;
+    var w1 = ec[51] * r + ec[52] * g + ec[53] * b;
+    var w2 = ec[54] * r + ec[55] * g + ec[56] * b;
     w0 = max(w0, 0.0); w1 = max(w1, 0.0); w2 = max(w2, 0.0);
 
     var phi: array<f32, 16>;
     for (var k = 0u; k < 16u; k = k + 1u) {
-        let s = fma(w2, ec[32u + k], fma(w1, ec[16u + k], w0 * ec[k]));
+        let s = w0 * ec[k] + w1 * ec[16u + k] + w2 * ec[32u + k];
         phi[k] = s * ec[57u + k] * ec[73u];
     }
 
@@ -501,8 +495,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         var absorbed: array<f32, 16>;
         let ob = off_od + l * 16u;
         for (var k = 0u; k < 16u; k = k + 1u) {
-            // Baked transmittance (deterministic f64 exp on the host), so the
-            // GPU never calls `exp` here — CPU/GPU share the value bit-exactly.
+            // Transmittance baked on the host (f64 exp rounded to f32), so the
+            // GPU never calls `exp` here — CPU and GPU share the value.
             let trans = ec[ob + k];
             let pt = phi[k] * trans;
             absorbed[k] = phi[k] - pt;
@@ -531,8 +525,7 @@ struct U { n:u32, off:u32, keep:f32, f:f32, p0:u32, p1:u32, p2:u32, p3:u32 };
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
-    // fma() pins the lerp contraction order (CPU: mul_add mirror).
-    planes[u.off + i] = fma(u.f, blurred[i], u.keep * planes[u.off + i]);
+    planes[u.off + i] = u.keep * planes[u.off + i] + u.f * blurred[i];
 }
 "#;
 
@@ -546,7 +539,7 @@ struct U { n:u32, plane_off:u32, blur_off:u32, keep:f32, f:f32, p0:u32, p1:u32, 
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
-    arena[u.plane_off + i] = fma(u.f, arena[u.blur_off + i], u.keep * arena[u.plane_off + i]);
+    arena[u.plane_off + i] = u.keep * arena[u.plane_off + i] + u.f * arena[u.blur_off + i];
 }
 "#;
 
@@ -629,68 +622,36 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 /// Capture LUT sample (developable fraction). Mirrors `DevelopableFractionLut::sample`.
-/// `log` is computed via the deterministic table-based `log2_det` (see film::math),
-/// so CPU and GPU agree bit-exactly.
 pub const LUT: &str = r#"
 struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> planes: array<f32>;
 @group(0) @binding(1) var<storage, read_write> lc: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
 
-const LOG10_2: f32 = 0.3010299956639812;
+const INV_LN10: f32 = 0.4342944819032518;
 
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, lc[tbase + i + 1u] - lc[tbase + i], lc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, lc[tbase + i + 1u] - lc[tbase + i], lc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn div_det(a: f32, b: f32, l2base: u32, e2base: u32) -> f32 {
-    return a * exp2_det(-log2_det(b, l2base), e2base);
-}
-
-fn lut_sample(phi: f32, fbase: u32, l2base: u32, e2base: u32) -> f32 {
+fn lut_sample(phi: f32, fbase: u32) -> f32 {
     if (!(phi > 0.0)) { return lc[fbase]; }
-    let lp = log2_det(phi, l2base) * LOG10_2;
+    let lp = log(phi) * INV_LN10;
     let lo0 = lc[0];
     let lo63 = lc[63];
     if (lp <= lo0) { return lc[fbase]; }
     if (lp >= lo63) { return lc[fbase + 63u]; }
     let step = lc[1] - lc[0];
-    var lo = u32(floor(div_det(lp - lo0, step, l2base, e2base)));
+    var lo = u32(floor((lp - lo0) / step));
     if (lo > 62u) { lo = 62u; }
     let hi = lo + 1u;
-    let t = div_det(lp - lc[lo], lc[hi] - lc[lo], l2base, e2base);
-    // fma() pins the lerp contraction order (CPU: mul_add mirror).
-    return fma(lc[fbase + hi], t, lc[fbase + lo] * (1.0 - t));
+    let t = (lp - lc[lo]) / (lc[hi] - lc[lo]);
+    return lc[fbase + lo] * (1.0 - t) + lc[fbase + hi] * t;
 }
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
-    let l2base = 64u + u.num_emul * 64u;
     for (var e = 0u; e < u.num_emul; e = e + 1u) {
         let idx = e * u.n + i;
-        planes[idx] = lut_sample(planes[idx], 64u + e * 64u, l2base, l2base + 257u);
+        planes[idx] = lut_sample(planes[idx], 64u + e * 64u);
     }
 }
 "#;
@@ -702,66 +663,35 @@ struct U { n:u32, num_emul:u32, plane_base:u32, p0:u32 };
 @group(0) @binding(1) var<storage, read> lc: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
 
-const LOG10_2: f32 = 0.3010299956639812;
+const INV_LN10: f32 = 0.4342944819032518;
 
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, lc[tbase + i + 1u] - lc[tbase + i], lc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, lc[tbase + i + 1u] - lc[tbase + i], lc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn div_det(a: f32, b: f32, l2base: u32, e2base: u32) -> f32 {
-    return a * exp2_det(-log2_det(b, l2base), e2base);
-}
-
-fn lut_sample(phi: f32, fbase: u32, l2base: u32, e2base: u32) -> f32 {
+fn lut_sample(phi: f32, fbase: u32) -> f32 {
     if (!(phi > 0.0)) { return lc[fbase]; }
-    let lp = log2_det(phi, l2base) * LOG10_2;
+    let lp = log(phi) * INV_LN10;
     let lo0 = lc[0];
     let lo63 = lc[63];
     if (lp <= lo0) { return lc[fbase]; }
     if (lp >= lo63) { return lc[fbase + 63u]; }
     let step = lc[1] - lc[0];
-    var lo = u32(floor(div_det(lp - lo0, step, l2base, e2base)));
+    var lo = u32(floor((lp - lo0) / step));
     if (lo > 62u) { lo = 62u; }
     let hi = lo + 1u;
-    let t = div_det(lp - lc[lo], lc[hi] - lc[lo], l2base, e2base);
-    // fma() pins the lerp contraction order (CPU: mul_add mirror).
-    return fma(lc[fbase + hi], t, lc[fbase + lo] * (1.0 - t));
+    let t = (lp - lc[lo]) / (lc[hi] - lc[lo]);
+    return lc[fbase + lo] * (1.0 - t) + lc[fbase + hi] * t;
 }
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
-    let l2base = 64u + u.num_emul * 64u;
     for (var e = 0u; e < u.num_emul; e = e + 1u) {
         let idx = u.plane_base + e * u.n + i;
-        planes[idx] = lut_sample(planes[idx], 64u + e * 64u, l2base, l2base + 257u);
+        planes[idx] = lut_sample(planes[idx], 64u + e * 64u);
     }
 }
 "#;
 
 /// Reduce fraction → image/mask dye density. Mirrors `development::reduction::reduce`.
-/// `pow` is the deterministic table-based `pow_det` (see film::math).
 pub const REDUCE: &str = r#"
 struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> planes: array<f32>;
@@ -770,41 +700,11 @@ struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 @group(0) @binding(3) var<storage, read_write> rc: array<f32>;
 @group(0) @binding(4) var<uniform> u: U;
 
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn pow_det(x: f32, y: f32, l2base: u32, e2base: u32) -> f32 {
-    return exp2_det(y * log2_det(x, l2base), e2base);
-}
-
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
-    let l2base = 5u * e_count;
-    let e2base = l2base + 257u;
     for (var e = 0u; e < e_count; e = e + 1u) {
         let f = clamp(planes[e * u.n + i], 0.0, 1.0);
         let rev = rc[3u * e_count + e];
@@ -813,7 +713,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let dmax = rc[e];
         let ig = rc[e_count + e];
         var d = 0.0;
-        if (eff > 0.0) { d = dmax * pow_det(eff, ig, l2base, e2base); }
+        if (eff > 0.0) { d = dmax * pow(eff, ig); }
         dye[e * u.n + i] = d;
         var m = 0.0;
         if (rc[4u * e_count + e] != 0.0) {
@@ -833,41 +733,11 @@ struct U { n:u32, num_emul:u32, plane_base:u32, dye_base:u32, mask_base:u32, p0:
 @group(0) @binding(3) var<storage, read> rc: array<f32>;
 @group(0) @binding(4) var<uniform> u: U;
 
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn pow_det(x: f32, y: f32, l2base: u32, e2base: u32) -> f32 {
-    return exp2_det(y * log2_det(x, l2base), e2base);
-}
-
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
-    let l2base = 5u * e_count;
-    let e2base = l2base + 257u;
     for (var e = 0u; e < e_count; e = e + 1u) {
         let f = clamp(planes[u.plane_base + e * u.n + i], 0.0, 1.0);
         let rev = rc[3u * e_count + e];
@@ -876,7 +746,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let dmax = rc[e];
         let ig = rc[e_count + e];
         var d = 0.0;
-        if (eff > 0.0) { d = dmax * pow_det(eff, ig, l2base, e2base); }
+        if (eff > 0.0) { d = dmax * pow(eff, ig); }
         dye[u.dye_base + e * u.n + i] = d;
         var m = 0.0;
         if (rc[4u * e_count + e] != 0.0) {
@@ -895,78 +765,21 @@ struct U { n:u32, num_emul:u32, plane_base:u32, dye_base:u32, mask_base:u32, p0:
 @group(0) @binding(2) var<storage, read> rc: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
-const LOG10_2: f32 = 0.3010299956639812;
+const INV_LN10: f32 = 0.4342944819032518;
 
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, lc[tbase + i + 1u] - lc[tbase + i], lc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, lc[tbase + i + 1u] - lc[tbase + i], lc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn div_det(a: f32, b: f32, l2base: u32, e2base: u32) -> f32 {
-    return a * exp2_det(-log2_det(b, l2base), e2base);
-}
-
-fn lut_sample(phi: f32, fbase: u32, l2base: u32, e2base: u32) -> f32 {
+fn lut_sample(phi: f32, fbase: u32) -> f32 {
     if (!(phi > 0.0)) { return lc[fbase]; }
-    let lp = log2_det(phi, l2base) * LOG10_2;
+    let lp = log(phi) * INV_LN10;
     let lo0 = lc[0];
     let lo63 = lc[63];
     if (lp <= lo0) { return lc[fbase]; }
     if (lp >= lo63) { return lc[fbase + 63u]; }
     let step = lc[1] - lc[0];
-    var lo = u32(floor(div_det(lp - lo0, step, l2base, e2base)));
+    var lo = u32(floor((lp - lo0) / step));
     if (lo > 62u) { lo = 62u; }
     let hi = lo + 1u;
-    let t = div_det(lp - lc[lo], lc[hi] - lc[lo], l2base, e2base);
-    // fma() pins the lerp contraction order (CPU: mul_add mirror).
-    return fma(lc[fbase + hi], t, lc[fbase + lo] * (1.0 - t));
-}
-
-fn exp2_det_rc(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn log2_det_rc(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn pow_det(x: f32, y: f32, l2base: u32, e2base: u32) -> f32 {
-    return exp2_det_rc(y * log2_det_rc(x, l2base), e2base);
+    let t = (lp - lc[lo]) / (lc[hi] - lc[lo]);
+    return lc[fbase + lo] * (1.0 - t) + lc[fbase + hi] * t;
 }
 
 @compute @workgroup_size(256)
@@ -974,13 +787,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
-    let l2base = 64u + e_count * 64u;
-    let rl2base = 5u * e_count;
-    let re2base = rl2base + 257u;
     for (var e = 0u; e < e_count; e = e + 1u) {
         let idx = u.plane_base + e * u.n + i;
         let phi = arena[idx];
-        let lut_val = lut_sample(phi, 64u + e * 64u, l2base, l2base + 257u);
+        let lut_val = lut_sample(phi, 64u + e * 64u);
 
         let f = clamp(lut_val, 0.0, 1.0);
         let rev = rc[3u * e_count + e];
@@ -989,7 +799,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let dmax = rc[e];
         let ig = rc[e_count + e];
         var d = 0.0;
-        if (eff > 0.0) { d = dmax * pow_det(eff, ig, rl2base, re2base); }
+        if (eff > 0.0) { d = dmax * pow(eff, ig); }
         arena[u.dye_base + e * u.n + i] = d;
         var m = 0.0;
         if (rc[4u * e_count + e] != 0.0) {
@@ -1003,7 +813,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 /// DIR interlayer inhibition apply. Mirrors `development::diffusion::apply_dir_inhibition`.
-/// `exp` is the deterministic table-based `exp2_det` (see film::math).
 pub const DIR_APPLY: &str = r#"
 struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> dye: array<f32>;
@@ -1011,26 +820,11 @@ struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 @group(0) @binding(2) var<storage, read> mat: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
-const LOG2E: f32 = 1.4426950408889634;
-
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, mat[tbase + i + 1u] - mat[tbase + i], mat[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
-    let tbase = e_count * e_count;
     for (var j = 0u; j < e_count; j = j + 1u) {
         var total_delta = 0.0;
         for (var s = 0u; s < e_count; s = s + 1u) {
@@ -1038,7 +832,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let diff = diffused[s * u.n + i] - dye[s * u.n + i];
             total_delta = total_delta + weight * diff;
         }
-        dye[j * u.n + i] = dye[j * u.n + i] * exp2_det(-total_delta * LOG2E, tbase);
+        dye[j * u.n + i] = dye[j * u.n + i] * exp(-total_delta);
     }
 }
 "#;
@@ -1050,26 +844,11 @@ struct U { n:u32, num_emul:u32, dye_base:u32, work_base:u32 };
 @group(0) @binding(1) var<storage, read> mat: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
 
-const LOG2E: f32 = 1.4426950408889634;
-
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, mat[tbase + i + 1u] - mat[tbase + i], mat[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
-    let tbase = e_count * e_count;
     for (var j = 0u; j < e_count; j = j + 1u) {
         var total_delta = 0.0;
         for (var s = 0u; s < e_count; s = s + 1u) {
@@ -1078,7 +857,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             total_delta = total_delta + weight * diff;
         }
         let idx = u.dye_base + j * u.n + i;
-        arena[idx] = arena[idx] * exp2_det(-total_delta * LOG2E, tbase);
+        arena[idx] = arena[idx] * exp(-total_delta);
     }
 }
 "#;
@@ -1219,53 +998,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// Two-sublayer grain apply (CPU `apply_grain` sublayer structure): one pass
 /// applies both dye-cloud sublayers (κ·√2 each) and writes their average.
 /// `kappa` uniform carries the already-scaled sublayer κ (κ·√2); `noise0` and
-/// `noise1` hold the two independent blurred sublayer noise planes. Divisions
-/// use the deterministic `div_det` (film::math), like the CPU mirror.
+/// `noise1` hold the two independent blurred sublayer noise planes.
 pub const GRAIN_APPLY_SUB: &str = r#"
-struct U { n:u32, off:u32, kappa:f32, dmax:f32, norm:f32, noise0_off:u32, noise1_off:u32, l2base:u32 };
+struct U { n:u32, off:u32, kappa:f32, dmax:f32, norm:f32, noise0_off:u32, noise1_off:u32, p0:u32 };
 @group(0) @binding(0) var<storage, read_write> dye: array<f32>;
 @group(0) @binding(1) var<storage, read_write> noise0: array<f32>;
 @group(0) @binding(2) var<storage, read_write> noise1: array<f32>;
-@group(0) @binding(3) var<storage, read> rc: array<f32>;
-@group(0) @binding(4) var<uniform> u: U;
-
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn div_det(a: f32, b: f32, l2base: u32) -> f32 {
-    return a * exp2_det(-log2_det(b, l2base), l2base + 257u);
-}
+@group(0) @binding(3) var<uniform> u: U;
 
 fn sublayer_d(dens: f32, n: f32) -> f32 {
     let eps_toe = 0.05 * u.dmax;
-    let taper = min(div_det(dens, dens + eps_toe, u.l2base), 1.0);
+    let taper = min(dens / (dens + eps_toe), 1.0);
     let sd = taper * sqrt(max(dens * (u.dmax - dens), 0.0));
     let noisy = dens + u.kappa * sd * n * u.norm;
     let knee = 0.005 * u.dmax;
     var dd = noisy;
     if (noisy < knee) {
-        dd = div_det(knee * knee, 2.0 * knee - noisy, u.l2base);
+        dd = (knee * knee) / (2.0 * knee - noisy);
     }
     return min(dd, u.dmax * 1.05);
 }
@@ -1284,19 +1033,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// ROI two-sublayer grain apply on a single arena binding. `noise0` and
 /// `noise1` hold the *raw* (unblurred) sublayer noise planes; each is blurred
 /// inline with its own sublayer kernel (separable, root-edge reflection, same
-/// accumulation order as the standalone blur passes), then averaged. Divisions
-/// use the deterministic `div_det` (film::math), like the CPU mirror.
+/// accumulation order as the standalone blur passes), then averaged.
 pub const GRAIN_APPLY_SUB_RAW_ROI: &str = r#"
 struct U {
     n:u32, dye_off:u32, noise0_off:u32, noise1_off:u32,
     kappa:f32, dmax:f32, norm:f32, root_w:u32,
-    root_h:u32, radius0:u32, radius1:u32, l2base:u32,
+    root_h:u32, radius0:u32, radius1:u32, p0:u32,
 };
 @group(0) @binding(0) var<storage, read_write> arena: array<f32>;
 @group(0) @binding(1) var<storage, read> ker0: array<f32>;
 @group(0) @binding(2) var<storage, read> ker1: array<f32>;
-@group(0) @binding(3) var<storage, read> rc: array<f32>;
-@group(0) @binding(4) var<uniform> u: U;
+@group(0) @binding(3) var<uniform> u: U;
 
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
@@ -1306,34 +1053,6 @@ fn reflect_index(i: i32, len: i32) -> i32 {
         else { x = 2 * len - 2 - x; }
     }
     return x;
-}
-
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, rc[tbase + i + 1u] - rc[tbase + i], rc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn div_det(a: f32, b: f32, l2base: u32) -> f32 {
-    return a * exp2_det(-log2_det(b, l2base), l2base + 257u);
 }
 
 fn blurred_noise(noise_off: u32, lx: i32, ly: i32, radius: u32, sl: u32) -> f32 {
@@ -1355,13 +1074,13 @@ fn blurred_noise(noise_off: u32, lx: i32, ly: i32, radius: u32, sl: u32) -> f32 
 
 fn sublayer_d(dens: f32, noise_off: u32, lx: i32, ly: i32, radius: u32, sl: u32) -> f32 {
     let eps_toe = 0.05 * u.dmax;
-    let taper = min(div_det(dens, dens + eps_toe, u.l2base), 1.0);
+    let taper = min(dens / (dens + eps_toe), 1.0);
     let sd = taper * sqrt(max(dens * (u.dmax - dens), 0.0));
     let noisy = dens + u.kappa * sd * blurred_noise(noise_off, lx, ly, radius, sl) * u.norm;
     let knee = 0.005 * u.dmax;
     var dd = noisy;
     if (noisy < knee) {
-        dd = div_det(knee * knee, 2.0 * knee - noisy, u.l2base);
+        dd = (knee * knee) / (2.0 * knee - noisy);
     }
     return min(dd, u.dmax * 1.05);
 }
@@ -1391,32 +1110,6 @@ struct U { n:u32, num_emul:u32, scale:f32, flags:u32 };
 const LOG10_2: f32 = 0.3010299956639812;
 const LOG2_10: f32 = 3.3219280948873623;
 
-// Deterministic table-based exp2/log2 (see film::math): identical mul_add
-// arithmetic to the CPU mirror, so CPU/GPU scan values agree bit-exactly.
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, sc[tbase + i + 1u] - sc[tbase + i], sc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, sc[tbase + i + 1u] - sc[tbase + i], sc[tbase + i]);
-    return f32(e) + l;
-}
-
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
@@ -1429,8 +1122,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ybar_base = xbar_base + 16u;
     let zbar_base = ybar_base + 16u;
     let mat_base = zbar_base + 16u;
-    let l2base = mat_base + 9u + (u.flags & 1u) * 16u;
-    let e2base = l2base + 257u;
 
     var dens: array<f32, 16>;
     for (var k = 0u; k < 16u; k = k + 1u) { dens[k] = 0.0; }
@@ -1440,24 +1131,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let eb = eps_base + e * 16u;
         let mb = maskeps_base + e * 16u;
         for (var k = 0u; k < 16u; k = k + 1u) {
-            dens[k] = fma(dm, sc[mb + k], fma(di, sc[eb + k], dens[k]));
+            dens[k] = dens[k] + di * sc[eb + k] + dm * sc[mb + k];
         }
     }
     var t: array<f32, 16>;
     for (var k = 0u; k < 16u; k = k + 1u) {
-        t[k] = exp2_det(-dens[k] * LOG2_10, e2base) * sc[illum_base + k];
+        t[k] = exp2(-dens[k] * LOG2_10) * sc[illum_base + k];
     }
     var X = 0.0; var Y = 0.0; var Z = 0.0;
     for (var k = 0u; k < 15u; k = k + 1u) {
-        // fma() pins the inner two-product contraction (CPU: mul_add mirror).
-        X = fma(0.5 * fma(t[k + 1u], sc[xbar_base + k + 1u], t[k] * sc[xbar_base + k]), 20.0, X);
-        Y = fma(0.5 * fma(t[k + 1u], sc[ybar_base + k + 1u], t[k] * sc[ybar_base + k]), 20.0, Y);
-        Z = fma(0.5 * fma(t[k + 1u], sc[zbar_base + k + 1u], t[k] * sc[zbar_base + k]), 20.0, Z);
+        X = X + 0.5 * (t[k] * sc[xbar_base + k] + t[k + 1u] * sc[xbar_base + k + 1u]) * 20.0;
+        Y = Y + 0.5 * (t[k] * sc[ybar_base + k] + t[k + 1u] * sc[ybar_base + k + 1u]) * 20.0;
+        Z = Z + 0.5 * (t[k] * sc[zbar_base + k] + t[k + 1u] * sc[zbar_base + k + 1u]) * 20.0;
     }
     var rgb = vec3<f32>(
-        fma(sc[mat_base + 2u], Z, fma(sc[mat_base + 1u], Y, sc[mat_base + 0u] * X)) * u.scale,
-        fma(sc[mat_base + 5u], Z, fma(sc[mat_base + 4u], Y, sc[mat_base + 3u] * X)) * u.scale,
-        fma(sc[mat_base + 8u], Z, fma(sc[mat_base + 7u], Y, sc[mat_base + 6u] * X)) * u.scale
+        (sc[mat_base + 0u] * X + sc[mat_base + 1u] * Y + sc[mat_base + 2u] * Z) * u.scale,
+        (sc[mat_base + 3u] * X + sc[mat_base + 4u] * Y + sc[mat_base + 5u] * Z) * u.scale,
+        (sc[mat_base + 6u] * X + sc[mat_base + 7u] * Y + sc[mat_base + 8u] * Z) * u.scale
     );
 
     if ((u.flags & 1u) != 0u) {
@@ -1475,16 +1165,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             max(rgb.z * inv_dmin.z, eps),
         );
         let d_img = vec3<f32>(
-            -(log2_det(tc.x, l2base) * LOG10_2),
-            -(log2_det(tc.y, l2base) * LOG10_2),
-            -(log2_det(tc.z, l2base) * LOG10_2),
+            -(log2(tc.x) * LOG10_2),
+            -(log2(tc.y) * LOG10_2),
+            -(log2(tc.z) * LOG10_2),
         );
         let d_clamped = max(d_img - vec3<f32>(fog_offset), vec3<f32>(0.0));
 
         var e_scene = vec3<f32>(0.0);
-        if (d_clamped.x > 0.0) { e_scene.x = exp2_det(d_clamped.x * inv_gamma_log2_10, e2base) - 1.0; } else { e_scene.x = slope * d_clamped.x; }
-        if (d_clamped.y > 0.0) { e_scene.y = exp2_det(d_clamped.y * inv_gamma_log2_10, e2base) - 1.0; } else { e_scene.y = slope * d_clamped.y; }
-        if (d_clamped.z > 0.0) { e_scene.z = exp2_det(d_clamped.z * inv_gamma_log2_10, e2base) - 1.0; } else { e_scene.z = slope * d_clamped.z; }
+        if (d_clamped.x > 0.0) { e_scene.x = exp2(d_clamped.x * inv_gamma_log2_10) - 1.0; } else { e_scene.x = slope * d_clamped.x; }
+        if (d_clamped.y > 0.0) { e_scene.y = exp2(d_clamped.y * inv_gamma_log2_10) - 1.0; } else { e_scene.y = slope * d_clamped.y; }
+        if (d_clamped.z > 0.0) { e_scene.z = exp2(d_clamped.z * inv_gamma_log2_10) - 1.0; } else { e_scene.z = slope * d_clamped.z; }
 
         rgb = vec3<f32>(
             g_val.x * e_scene.x,
@@ -1518,36 +1208,6 @@ fn get_norm(e: u32) -> f32 { return u.emul[e].z; }
 const LOG10_2: f32 = 0.3010299956639812;
 const LOG2_10: f32 = 3.3219280948873623;
 
-// Deterministic table-based exp2/log2 (see film::math): identical mul_add
-// arithmetic to the CPU mirror, so CPU/GPU scan values agree bit-exactly.
-fn exp2_det(x: f32, tbase: u32) -> f32 {
-    let k = floor(x);
-    let f = x - k;
-    let t = f * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let base = fma(r, sc[tbase + i + 1u] - sc[tbase + i], sc[tbase + i]);
-    let scale = bitcast<f32>(u32((i32(k) + 127) << 23));
-    return base * scale;
-}
-
-fn log2_det(x: f32, tbase: u32) -> f32 {
-    let bits = bitcast<u32>(x);
-    let e = i32(bits >> 23u) - 127;
-    let m = bitcast<f32>((bits & 0x7FFFFFu) | 0x3F800000u);
-    let t = (m - 1.0) * 256.0;
-    var i = u32(t);
-    if (i > 255u) { i = 255u; }
-    let r = t - f32(i);
-    let l = fma(r, sc[tbase + i + 1u] - sc[tbase + i], sc[tbase + i]);
-    return f32(e) + l;
-}
-
-fn div_det(a: f32, b: f32, l2base: u32) -> f32 {
-    return a * exp2_det(-log2_det(b, l2base), l2base + 257u);
-}
-
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
@@ -1572,8 +1232,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ybar_base = xbar_base + 16u;
     let zbar_base = ybar_base + 16u;
     let mat_base = zbar_base + 16u;
-    let l2base = mat_base + 9u + (u.flags & 1u) * 16u;
-    let e2base = l2base + 257u;
 
     var dens: array<f32, 16>;
     for (var k = 0u; k < 16u; k = k + 1u) { dens[k] = 0.0; }
@@ -1586,13 +1244,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (kappa > 0.0 && d_max > 0.0) {
             let dens_clamped = clamp(d0, 0.0, d_max);
             let eps_toe = 0.05 * d_max;
-            let taper = min(div_det(dens_clamped, dens_clamped + eps_toe, l2base), 1.0);
+            let taper = min(dens_clamped / (dens_clamped + eps_toe), 1.0);
             let sd = taper * sqrt(max(dens_clamped * (d_max - dens_clamped), 0.0));
             let n_val = arena[u.noise_base + e * u.root_n + root_idx];
             let noisy = dens_clamped + kappa * sd * n_val * get_norm(e);
             let knee = 0.005 * d_max;
             if (noisy < knee) {
-                di = div_det(knee * knee, 2.0 * knee - noisy, l2base);
+                di = (knee * knee) / (2.0 * knee - noisy);
             } else {
                 di = noisy;
             }
@@ -1603,24 +1261,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let eb = eps_base + e * 16u;
         let mb = maskeps_base + e * 16u;
         for (var k = 0u; k < 16u; k = k + 1u) {
-            dens[k] = fma(dm, sc[mb + k], fma(di, sc[eb + k], dens[k]));
+            dens[k] = dens[k] + di * sc[eb + k] + dm * sc[mb + k];
         }
     }
     var t: array<f32, 16>;
     for (var k = 0u; k < 16u; k = k + 1u) {
-        t[k] = exp2_det(-dens[k] * LOG2_10, e2base) * sc[illum_base + k];
+        t[k] = exp2(-dens[k] * LOG2_10) * sc[illum_base + k];
     }
     var X = 0.0; var Y = 0.0; var Z = 0.0;
     for (var k = 0u; k < 15u; k = k + 1u) {
-        // fma() pins the inner two-product contraction (CPU: mul_add mirror).
-        X = fma(0.5 * fma(t[k + 1u], sc[xbar_base + k + 1u], t[k] * sc[xbar_base + k]), 20.0, X);
-        Y = fma(0.5 * fma(t[k + 1u], sc[ybar_base + k + 1u], t[k] * sc[ybar_base + k]), 20.0, Y);
-        Z = fma(0.5 * fma(t[k + 1u], sc[zbar_base + k + 1u], t[k] * sc[zbar_base + k]), 20.0, Z);
+        X = X + 0.5 * (t[k] * sc[xbar_base + k] + t[k + 1u] * sc[xbar_base + k + 1u]) * 20.0;
+        Y = Y + 0.5 * (t[k] * sc[ybar_base + k] + t[k + 1u] * sc[ybar_base + k + 1u]) * 20.0;
+        Z = Z + 0.5 * (t[k] * sc[zbar_base + k] + t[k + 1u] * sc[zbar_base + k + 1u]) * 20.0;
     }
     var rgb = vec3<f32>(
-        fma(sc[mat_base + 2u], Z, fma(sc[mat_base + 1u], Y, sc[mat_base + 0u] * X)) * u.scale,
-        fma(sc[mat_base + 5u], Z, fma(sc[mat_base + 4u], Y, sc[mat_base + 3u] * X)) * u.scale,
-        fma(sc[mat_base + 8u], Z, fma(sc[mat_base + 7u], Y, sc[mat_base + 6u] * X)) * u.scale
+        (sc[mat_base + 0u] * X + sc[mat_base + 1u] * Y + sc[mat_base + 2u] * Z) * u.scale,
+        (sc[mat_base + 3u] * X + sc[mat_base + 4u] * Y + sc[mat_base + 5u] * Z) * u.scale,
+        (sc[mat_base + 6u] * X + sc[mat_base + 7u] * Y + sc[mat_base + 8u] * Z) * u.scale
     );
 
     if ((u.flags & 1u) != 0u) {
@@ -1638,16 +1295,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             max(rgb.z * inv_dmin.z, eps),
         );
         let d_img = vec3<f32>(
-            -(log2_det(tc.x, l2base) * LOG10_2),
-            -(log2_det(tc.y, l2base) * LOG10_2),
-            -(log2_det(tc.z, l2base) * LOG10_2),
+            -(log2(tc.x) * LOG10_2),
+            -(log2(tc.y) * LOG10_2),
+            -(log2(tc.z) * LOG10_2),
         );
         let d_clamped = max(d_img - vec3<f32>(fog_offset), vec3<f32>(0.0));
 
         var e_scene = vec3<f32>(0.0);
-        if (d_clamped.x > 0.0) { e_scene.x = exp2_det(d_clamped.x * inv_gamma_log2_10, e2base) - 1.0; } else { e_scene.x = slope * d_clamped.x; }
-        if (d_clamped.y > 0.0) { e_scene.y = exp2_det(d_clamped.y * inv_gamma_log2_10, e2base) - 1.0; } else { e_scene.y = slope * d_clamped.y; }
-        if (d_clamped.z > 0.0) { e_scene.z = exp2_det(d_clamped.z * inv_gamma_log2_10, e2base) - 1.0; } else { e_scene.z = slope * d_clamped.z; }
+        if (d_clamped.x > 0.0) { e_scene.x = exp2(d_clamped.x * inv_gamma_log2_10) - 1.0; } else { e_scene.x = slope * d_clamped.x; }
+        if (d_clamped.y > 0.0) { e_scene.y = exp2(d_clamped.y * inv_gamma_log2_10) - 1.0; } else { e_scene.y = slope * d_clamped.y; }
+        if (d_clamped.z > 0.0) { e_scene.z = exp2(d_clamped.z * inv_gamma_log2_10) - 1.0; } else { e_scene.z = slope * d_clamped.z; }
 
         rgb = vec3<f32>(
             g_val.x * e_scene.x,

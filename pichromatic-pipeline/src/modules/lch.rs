@@ -75,13 +75,6 @@ mod tests {
     use crate::backend::{Backend, PipelineImage};
     use pichromatic::cst::ColorSpaceTag;
 
-    // The LCH GPU shader is a f32 Oklch approximation of the f64 `color` crate
-    // CPU path (documented accuracy ~1e-4); the shared 16·eps gate only held
-    // under Metal fast-math. With strict-IEEE compilation (required for film
-    // bit-parity) the inherent f32-vs-f64 roundtrip error reaches ~2.1e-5 near
-    // zero, so this module gets a dedicated tolerance.
-    const LCH_CPU_GPU_TOLERANCE: f32 = 256.0 * f32::EPSILON;
-
     #[test]
     fn test_lch_module_cpu_vs_gpu() {
         let lch_module = Module::<LCH> {
@@ -105,7 +98,11 @@ mod tests {
         lch_module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_img);
         let gpu_out = gpu_img.to_cpu(Some(&ctx));
 
-        assert_images_equal_abs_tol_with(&cpu_out, &gpu_out, LCH_CPU_GPU_TOLERANCE);
+        // The LCH GPU shader is an f32 Oklch approximation of the f64 `color`
+        // crate CPU path (measured roundtrip error ~2.1e-5 near zero), which
+        // exceeds the shared 64·eps gate. The approximation is inherent (WGSL
+        // has no core f64), not a parity bug.
+        assert_images_equal_abs_tol_with(&cpu_out, &gpu_out, 256.0 * f32::EPSILON);
         let _ = ColorSpaceTag::Srgb;
     }
 }

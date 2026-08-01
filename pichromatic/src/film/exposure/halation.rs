@@ -80,8 +80,7 @@ pub fn apply_spatial_exposure_effects(
         let mut b_k = absorbed_planes[deep].clone();
         gaussian_blur_separable(&mut b_k, width, height, bounce_k_sigma);
         for p in 0..n {
-            // FMA-contracted like `HALATION_ACCUM` (`acc + w·b`).
-            multi_bounce[p] = wk.mul_add(b_k[p], multi_bounce[p]);
+            multi_bounce[p] += wk * b_k[p];
         }
     }
 
@@ -107,8 +106,7 @@ pub fn apply_spatial_exposure_effects(
             continue;
         }
         for (p, &b) in plane.iter_mut().zip(multi_bounce.iter()) {
-            // FMA-contracted like `HALATION_ADD` (`plane + gain·bounce`).
-            *p = gain.mul_add(b, *p);
+            *p += gain * b;
         }
     }
 }
@@ -197,8 +195,7 @@ pub fn apply_local_scatter(
     gaussian_blur_separable(&mut scattered, width, height, sigma_px);
     let keep = 1.0 - f;
     for (p, s) in plane.iter_mut().zip(scattered.iter()) {
-        // FMA-contracted like `LOCAL_SCATTER_MIX` (`keep·p + f·s`).
-        *p = f.mul_add(*s, keep * *p);
+        *p = keep * *p + f * s;
     }
 }
 
@@ -216,8 +213,7 @@ pub fn apply_halation_plane(
     let mut scattered = plane.to_vec();
     gaussian_blur_separable(&mut scattered, width, height, sigma_px);
     for (p, s) in plane.iter_mut().zip(scattered.iter()) {
-        // FMA-contracted like `HALATION_ACCUM` (`acc + w·b`).
-        *p = weight.mul_add(*s, *p);
+        *p += weight * s;
     }
 }
 

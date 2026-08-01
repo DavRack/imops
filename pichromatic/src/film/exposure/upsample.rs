@@ -183,12 +183,11 @@ pub fn spectrum_to_acescg_rgb(spectrum: &[f64]) -> [f64; 3] {
     spectrum_to_acescg(&s)
 }
 
-// ─── f32 GPU-mirroring variants ──────────────────────────────────────────────
+// ─── f32 variants ───────────────────────────────────────────────────────────
 //
 // WGSL has no core f64, so the GPU shaders (EXPOSE / SCAN) compute in f32 with
-// constants baked from these f64 sources via `as f32`. These f32 helpers mirror
-// the exact shader operation order and constant rounding so the CPU path stays
-// bit-near the GPU path.
+// constants rounded from the f64 sources via `as f32`. These f32 helpers are
+// the CPU-side equivalents of the shader math.
 
 /// f32 basis spectra + ACEScg→weights matrix, rounded exactly as `gpu::bake_consts`
 /// uploads them (`ec[0..48]` basis, `ec[48..57]` matrix inverse).
@@ -210,15 +209,12 @@ impl UpsampleBasisF32 {
     }
 
     /// Mirrors `shaders::EXPOSE`: `w = clamp(M·rgb, 0)`, `s = w0·b0 + w1·b1 + w2·b2`.
-    /// Metal always contracts `a·b + c` into an FMA; the mul_add chains below
-    /// reproduce that bit-exactly (right-to-left contraction of the
-    /// left-associative sum).
     fn upsample(&self, rgb: [f32; 3]) -> [f32; 16] {
         let m = &self.acescg_to_weights;
         let mut w = [
-            m[0][2].mul_add(rgb[2], m[0][1].mul_add(rgb[1], m[0][0] * rgb[0])),
-            m[1][2].mul_add(rgb[2], m[1][1].mul_add(rgb[1], m[1][0] * rgb[0])),
-            m[2][2].mul_add(rgb[2], m[2][1].mul_add(rgb[1], m[2][0] * rgb[0])),
+            m[0][0] * rgb[0] + m[0][1] * rgb[1] + m[0][2] * rgb[2],
+            m[1][0] * rgb[0] + m[1][1] * rgb[1] + m[1][2] * rgb[2],
+            m[2][0] * rgb[0] + m[2][1] * rgb[1] + m[2][2] * rgb[2],
         ];
         for wi in &mut w {
             if *wi < 0.0 {
@@ -227,7 +223,7 @@ impl UpsampleBasisF32 {
         }
         let mut s = [0.0f32; 16];
         for i in 0..16 {
-            s[i] = w[2].mul_add(self.b2[i], w[1].mul_add(self.b1[i], w[0] * self.b0[i]));
+            s[i] = w[0] * self.b0[i] + w[1] * self.b1[i] + w[2] * self.b2[i];
         }
         s
     }
@@ -239,7 +235,7 @@ fn basis_f32() -> &'static UpsampleBasisF32 {
     BASIS_F32.get_or_init(|| UpsampleBasisF32::from_f64(basis()))
 }
 
-/// f32 upsample of one ACEScg pixel — mirrors `shaders::EXPOSE` bit-near.
+/// f32 upsample of one ACEScg pixel — CPU equivalent of `shaders::EXPOSE`.
 pub fn upsample_acescg_f32(rgb: [f32; 3]) -> [f32; 16] {
     basis_f32().upsample(rgb)
 }
@@ -263,22 +259,15 @@ fn scan_basis_f32() -> &'static ScanBasisF32 {
     })
 }
 
-/// Diagnostic access to the f32 scan constants (GPU-baked layout).
-#[doc(hidden)]
-pub fn scan_basis_f32_pub() -> &'static ScanBasisF32 {
-    scan_basis_f32()
-}
-
-/// Integrate a 16-sample spectrum → ACEScg in f32 — mirrors `shaders::SCAN`
-/// (trapezoidal CMF integrals and `rgb = M·XYZ` in f32) bit-near, including the
-/// FMA contraction of the `a·b + c` patterns (Metal always contracts).
+/// Integrate a 16-sample spectrum → ACEScg in f32 — CPU equivalent of
+/// `shaders::SCAN` (trapezoidal CMF integrals and `rgb = M·XYZ` in f32).
 pub fn spectrum_to_acescg_rgb_f32(spectrum: &[f32; 16]) -> [f32; 3] {
     fn integrate_cmf32(spectrum: &[f32; 16], cmf: &[f32; 16]) -> f32 {
         let dlambda = 20.0f32;
         let mut acc = 0.0f32;
         for i in 0..15 {
-            let inner = spectrum[i + 1].mul_add(cmf[i + 1], spectrum[i] * cmf[i]);
-            acc = (0.5 * inner).mul_add(dlambda, acc);
+            let inner = spectrum[i] * cmf[i] + spectrum[i + 1] * cmf[i + 1];
+            acc += 0.5 * inner * dlambda;
         }
         acc
     }
@@ -290,9 +279,9 @@ pub fn spectrum_to_acescg_rgb_f32(spectrum: &[f32; 16]) -> [f32; 3] {
     ];
     let m = &c.to_acescg;
     [
-        m[0][2].mul_add(xyz[2], m[0][1].mul_add(xyz[1], m[0][0] * xyz[0])),
-        m[1][2].mul_add(xyz[2], m[1][1].mul_add(xyz[1], m[1][0] * xyz[0])),
-        m[2][2].mul_add(xyz[2], m[2][1].mul_add(xyz[1], m[2][0] * xyz[0])),
+        m[0][0] * xyz[0] + m[0][1] * xyz[1] + m[0][2] * xyz[2],
+        m[1][0] * xyz[0] + m[1][1] * xyz[1] + m[1][2] * xyz[2],
+        m[2][0] * xyz[0] + m[2][1] * xyz[1] + m[2][2] * xyz[2],
     ]
 }
 

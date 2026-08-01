@@ -21,7 +21,6 @@ pub mod error;
 pub mod exposure;
 pub mod fixtures;
 pub mod gpu;
-pub mod math;
 pub mod scan;
 pub mod spectrum;
 pub mod stock;

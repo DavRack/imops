@@ -5,9 +5,9 @@
 //!   Φ_abs   = Φ_in − Φ_trans
 //! Energy conservation: Φ_abs + Φ_trans == Φ_in (within float tolerance).
 //!
-//! The walk runs in f32 to mirror the GPU `EXPOSE` shader: optical densities are
-//! precomputed in f64 (matching `gpu::bake_consts`) and rounded to f32 before the
-//! exponential, so CPU and GPU stay bit-near (WGSL has no core f64).
+//! The walk runs in f32 (WGSL has no core f64), matching the GPU `EXPOSE`
+//! shader. Transmittance is precomputed in f64 and rounded to f32 exactly as
+//! `gpu::bake_consts` uploads it, so CPU and GPU share the value.
 
 use crate::film::stock::{EmulsionLayer, LayerKind};
 
@@ -45,9 +45,6 @@ pub fn absorb_stack(
                 let rho = layer.silver_halide_fraction as f64;
                 let thickness = layer.thickness.0 as f64;
                 for i in 0..16 {
-                    // Deterministic f64 exp, rounded to f32 exactly as the GPU
-                    // expose consts bake it (`trans` table — the GPU never calls
-                    // `exp` for this), so CPU and GPU share the value bit-exactly.
                     let od = sens.samples[i] * sigma_scale * rho * thickness;
                     let trans = (-od).exp() as f32;
                     let phi_t = phi[i] * trans;
@@ -87,8 +84,7 @@ pub fn absorb_stack(
 /// Computes the trapezoidal integral `∫ Φ_abs(λ) dλ` over the MVP grid
 /// (400–700 nm, Δλ = 20 nm), then **divides by the 300 nm span**. The result is
 /// therefore a mean spectral fluence density over wavelength — **not** a raw
-/// total photon count sum over all wavelengths. f32 mirrors the GPU `EXPOSE`
-/// shader integration order (`acc += 0.5·(a+b)·20` then `acc / 300`).
+/// total photon count sum over all wavelengths.
 ///
 /// [`crate::film::constants::ABSORPTION_SIGMA_SCALE_PER_UM`] was tuned against
 /// this averaged quantity; do not drop the `/300` without re-deriving that scale.
@@ -103,12 +99,11 @@ pub fn mean_absorbed_fluence(absorbed: &[f32; 16]) -> f32 {
 }
 
 /// True trapezoidal integral `∫ Φ_abs(λ) dλ` over 400–700 nm (photons · nm / µm²).
-/// FMA-contracted like the GPU `EXPOSE` shader (`acc = fma(0.5·(a+b), 20, acc)`).
 pub fn total_absorbed_fluence(absorbed: &[f32; 16]) -> f32 {
     let dlambda = 20.0f32;
     let mut acc = 0.0f32;
     for i in 0..15 {
-        acc = (0.5 * (absorbed[i] + absorbed[i + 1])).mul_add(dlambda, acc);
+        acc += 0.5 * (absorbed[i] + absorbed[i + 1]) * dlambda;
     }
     acc
 }

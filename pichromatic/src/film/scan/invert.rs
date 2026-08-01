@@ -8,6 +8,11 @@
 use crate::pixel::{ImageBuffer, MIDDLE_GRAY};
 use rayon::prelude::*;
 
+/// log2(10), shared with the GPU `SCAN` shader.
+const LOG2_10: f32 = 3.3219280948873623;
+/// log10(2), shared with the GPU `SCAN` shader.
+const LOG10_2: f32 = 0.3010299956639812;
+
 /// Target effective contrast gamma of developed color negative film (~0.6).
 pub const GAMMA_EFF: f32 = 0.6;
 
@@ -18,24 +23,20 @@ pub const FOG_OFFSET: f32 = 0.005;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InvertConstants {
     pub dmin: [f32; 3],
-    /// Precomputed `1/dmin` — baked so CPU and GPU divide by the same f32
-    /// reciprocal (GPU native division is a hardware approximation).
+    /// Precomputed `1/dmin`, baked so CPU and GPU divide by the same f32 value.
     pub inv_dmin: [f32; 3],
     pub gain: [f32; 3],
     pub slope: f32,
     pub gamma_eff: f32,
-    /// Precomputed `1/gamma_eff` (see [`Self::inv_dmin`]).
+    /// Precomputed `1/gamma_eff`.
     pub inv_gamma: f32,
-    /// `1/gamma_eff · log2(10)` precombined — the GPU compiler may reassociate
-    /// `(d·inv_gamma)·LOG2_10` (CSE across channels), so both sides use this
-    /// single pre-rounded constant.
+    /// `1/gamma_eff · log2(10)` precombined so both sides use one rounded constant.
     pub inv_gamma_log2_10: f32,
     pub eps: f32,
     pub fog_offset: f32,
 }
 
 pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> InvertConstants {
-    use crate::film::math::LOG2_10;
     let eps = 1e-6f32;
     let dmin = dmin_negative.map(|v| v.max(eps));
     let inv_dmin = dmin.map(|v| 1.0 / v);
@@ -62,11 +63,9 @@ pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> Inve
 
 /// Linear scanner invert for PositiveLinear.
 ///
-/// Mirrors the GPU `SCAN` shader invert block operation-for-operation, including
-/// the deterministic table-based `log2_det` / `exp2_det` (film::math), so CPU
-/// and GPU agree bit-exact even where the invert amplifies differences.
+/// Mirrors the GPU `SCAN` shader invert block (log10 via `log2·LOG10_2`,
+/// `10^(d/γ)` via `exp2(d·inv_gamma_log2_10)`).
 pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_negative: [f32; 3]) {
-    use crate::film::math::{exp2_det, log2_det, LOG10_2};
     let constants = invert_constants(mid_negative, dmin_negative);
 
     buffer.par_iter_mut().for_each(|px| {
@@ -77,9 +76,9 @@ pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_ne
         ];
 
         let d_img = [
-            -(log2_det(t[0]) * LOG10_2),
-            -(log2_det(t[1]) * LOG10_2),
-            -(log2_det(t[2]) * LOG10_2),
+            -(t[0].log2() * LOG10_2),
+            -(t[1].log2() * LOG10_2),
+            -(t[2].log2() * LOG10_2),
         ];
 
         let d_clamped = [
@@ -91,17 +90,17 @@ pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_ne
         // C1 continuous exposure transfer function matching slope (ln 10)/gamma at D = 0
         let e_scene = [
             if d_clamped[0] > 0.0 {
-                exp2_det(d_clamped[0] * constants.inv_gamma_log2_10) - 1.0
+                (d_clamped[0] * constants.inv_gamma_log2_10).exp2() - 1.0
             } else {
                 constants.slope * d_clamped[0]
             },
             if d_clamped[1] > 0.0 {
-                exp2_det(d_clamped[1] * constants.inv_gamma_log2_10) - 1.0
+                (d_clamped[1] * constants.inv_gamma_log2_10).exp2() - 1.0
             } else {
                 constants.slope * d_clamped[1]
             },
             if d_clamped[2] > 0.0 {
-                exp2_det(d_clamped[2] * constants.inv_gamma_log2_10) - 1.0
+                (d_clamped[2] * constants.inv_gamma_log2_10).exp2() - 1.0
             } else {
                 constants.slope * d_clamped[2]
             },

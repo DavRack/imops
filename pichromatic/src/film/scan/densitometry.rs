@@ -3,9 +3,8 @@
 //! T(λ) = 10^(−Σ D_layer_eff(λ)) with base-10 optical density.
 //! Channel via CIE CMFs → XYZ → ACEScg. Normalize so unexposed (Dmin) peaks near 1.0.
 //!
-//! All per-pixel math runs in f32, mirroring the GPU `SCAN` / `GRAIN_SCAN_ROI`
-//! shaders operation-for-operation (WGSL has no core f64), so CPU and GPU stay
-//! bit-near.
+//! All per-pixel math runs in f32 (WGSL has no core f64), mirroring the GPU
+//! `SCAN` / `GRAIN_SCAN_ROI` shaders.
 
 use crate::film::exposure::upsample::spectrum_to_acescg_rgb_f32;
 use crate::film::stock::{FilmStock, LayerKind};
@@ -13,8 +12,10 @@ use crate::film::types::DyePlanes;
 use crate::pixel::{ImageBuffer, Pixel};
 use rayon::prelude::*;
 
+/// log2(10), shared with the GPU `SCAN` shader (`exp2(-d·LOG2_10)`).
+const LOG2_10: f32 = 3.3219280948873623;
+
 /// Effective spectral density at one pixel: Σ_layers (D_image * ε_image + D_mask * ε_mask).
-/// FMA-contracted like `shaders::SCAN` (`dens + di·eps + dm·maskeps`).
 fn density_spectrum(
     stock: &FilmStock,
     dyes: &DyePlanes,
@@ -30,9 +31,9 @@ fn density_spectrum(
         let di = dyes.image_dye[emulsion_i][pixel];
         let dm = dyes.mask_dye[emulsion_i][pixel];
         for lambda in 0..16 {
-            d[lambda] = di.mul_add(coupler.epsilon.samples[lambda] as f32, d[lambda]);
+            d[lambda] += di * coupler.epsilon.samples[lambda] as f32;
             if let Some(ref mask_eps) = coupler.mask_epsilon {
-                d[lambda] = dm.mul_add(mask_eps.samples[lambda] as f32, d[lambda]);
+                d[lambda] += dm * mask_eps.samples[lambda] as f32;
             }
         }
         emulsion_i += 1;
@@ -43,8 +44,8 @@ fn density_spectrum(
 fn transmittance_from_density(d: &[f32; 16]) -> [f32; 16] {
     let mut t = [0.0f32; 16];
     for i in 0..16 {
-        // Deterministic 10^-d (`exp2_det`), mirroring the `SCAN` shader.
-        t[i] = crate::film::math::pow10_det(-d[i]);
+        // 10^-d via exp2, mirroring the `SCAN` shader.
+        t[i] = (-d[i] * LOG2_10).exp2();
     }
     t
 }
