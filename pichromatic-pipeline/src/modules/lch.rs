@@ -68,7 +68,19 @@ impl PipelineModule for Module<LCH> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::common::test_pipeline_module_cpu_vs_gpu;
+    use crate::modules::common::{
+        assert_images_equal_abs_tol_with, generate_test_image_512x512,
+    };
+    use pichromatic::gpu::GpuContext;
+    use crate::backend::{Backend, PipelineImage};
+    use pichromatic::cst::ColorSpaceTag;
+
+    // The LCH GPU shader is a f32 Oklch approximation of the f64 `color` crate
+    // CPU path (documented accuracy ~1e-4); the shared 16·eps gate only held
+    // under Metal fast-math. With strict-IEEE compilation (required for film
+    // bit-parity) the inherent f32-vs-f64 roundtrip error reaches ~2.1e-5 near
+    // zero, so this module gets a dedicated tolerance.
+    const LCH_CPU_GPU_TOLERANCE: f32 = 256.0 * f32::EPSILON;
 
     #[test]
     fn test_lch_module_cpu_vs_gpu() {
@@ -82,6 +94,18 @@ mod tests {
             },
         };
 
-        test_pipeline_module_cpu_vs_gpu(&lch_module, 777);
+        let mut seed_image = generate_test_image_512x512(777);
+
+        let ctx = GpuContext::new_sync();
+        let mut cpu_img = PipelineImage::Cpu(seed_image.clone());
+        lch_module.process(&Backend::Cpu, &mut cpu_img);
+        let cpu_out = cpu_img.to_cpu(None);
+
+        let mut gpu_img = PipelineImage::new_gpu(&ctx, &seed_image);
+        lch_module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_img);
+        let gpu_out = gpu_img.to_cpu(Some(&ctx));
+
+        assert_images_equal_abs_tol_with(&cpu_out, &gpu_out, LCH_CPU_GPU_TOLERANCE);
+        let _ = ColorSpaceTag::Srgb;
     }
 }

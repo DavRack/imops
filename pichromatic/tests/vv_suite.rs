@@ -38,10 +38,10 @@ fn vv_four_photon_poisson_emulsion_monotonicity() {
     };
     let lut = pichromatic::film::exposure::capture::DevelopableFractionLut::build(&dist, 1.0, 64);
     let fluence_levels = [1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1000.0];
-    let mut prev_f = 0.0f64;
+    let mut prev_f = 0.0f32;
 
     for &phi in &fluence_levels {
-        let f = lut.sample(phi);
+        let f = lut.sample(phi as f32);
         assert!(
             f >= prev_f,
             "Emulsion fraction non-monotonic at phi={phi}: {f} < {prev_f}"

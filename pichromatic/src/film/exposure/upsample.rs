@@ -183,6 +183,119 @@ pub fn spectrum_to_acescg_rgb(spectrum: &[f64]) -> [f64; 3] {
     spectrum_to_acescg(&s)
 }
 
+// ─── f32 GPU-mirroring variants ──────────────────────────────────────────────
+//
+// WGSL has no core f64, so the GPU shaders (EXPOSE / SCAN) compute in f32 with
+// constants baked from these f64 sources via `as f32`. These f32 helpers mirror
+// the exact shader operation order and constant rounding so the CPU path stays
+// bit-near the GPU path.
+
+/// f32 basis spectra + ACEScg→weights matrix, rounded exactly as `gpu::bake_consts`
+/// uploads them (`ec[0..48]` basis, `ec[48..57]` matrix inverse).
+struct UpsampleBasisF32 {
+    b0: [f32; 16],
+    b1: [f32; 16],
+    b2: [f32; 16],
+    acescg_to_weights: [[f32; 3]; 3],
+}
+
+impl UpsampleBasisF32 {
+    fn from_f64(b: &UpsampleBasis) -> Self {
+        Self {
+            b0: b.b0.map(|v| v as f32),
+            b1: b.b1.map(|v| v as f32),
+            b2: b.b2.map(|v| v as f32),
+            acescg_to_weights: b.acescg_to_weights.map(|row| row.map(|v| v as f32)),
+        }
+    }
+
+    /// Mirrors `shaders::EXPOSE`: `w = clamp(M·rgb, 0)`, `s = w0·b0 + w1·b1 + w2·b2`.
+    /// Metal always contracts `a·b + c` into an FMA; the mul_add chains below
+    /// reproduce that bit-exactly (right-to-left contraction of the
+    /// left-associative sum).
+    fn upsample(&self, rgb: [f32; 3]) -> [f32; 16] {
+        let m = &self.acescg_to_weights;
+        let mut w = [
+            m[0][2].mul_add(rgb[2], m[0][1].mul_add(rgb[1], m[0][0] * rgb[0])),
+            m[1][2].mul_add(rgb[2], m[1][1].mul_add(rgb[1], m[1][0] * rgb[0])),
+            m[2][2].mul_add(rgb[2], m[2][1].mul_add(rgb[1], m[2][0] * rgb[0])),
+        ];
+        for wi in &mut w {
+            if *wi < 0.0 {
+                *wi = 0.0;
+            }
+        }
+        let mut s = [0.0f32; 16];
+        for i in 0..16 {
+            s[i] = w[2].mul_add(self.b2[i], w[1].mul_add(self.b1[i], w[0] * self.b0[i]));
+        }
+        s
+    }
+}
+
+fn basis_f32() -> &'static UpsampleBasisF32 {
+    use std::sync::OnceLock;
+    static BASIS_F32: OnceLock<UpsampleBasisF32> = OnceLock::new();
+    BASIS_F32.get_or_init(|| UpsampleBasisF32::from_f64(basis()))
+}
+
+/// f32 upsample of one ACEScg pixel — mirrors `shaders::EXPOSE` bit-near.
+pub fn upsample_acescg_f32(rgb: [f32; 3]) -> [f32; 16] {
+    basis_f32().upsample(rgb)
+}
+
+/// f32-rounded scan constants (CMFs + ACEScg matrix), as uploaded to the GPU.
+pub struct ScanBasisF32 {
+    pub xbar: [f32; 16],
+    pub ybar: [f32; 16],
+    pub zbar: [f32; 16],
+    pub to_acescg: [[f32; 3]; 3],
+}
+
+fn scan_basis_f32() -> &'static ScanBasisF32 {
+    use std::sync::OnceLock;
+    static SCAN_F32: OnceLock<ScanBasisF32> = OnceLock::new();
+    SCAN_F32.get_or_init(|| ScanBasisF32 {
+        xbar: CIE1931_XBAR.map(|v| v as f32),
+        ybar: CIE1931_YBAR.map(|v| v as f32),
+        zbar: CIE1931_ZBAR.map(|v| v as f32),
+        to_acescg: XYZ_D65_TO_ACESCG.map(|row| row.map(|v| v as f32)),
+    })
+}
+
+/// Diagnostic access to the f32 scan constants (GPU-baked layout).
+#[doc(hidden)]
+pub fn scan_basis_f32_pub() -> &'static ScanBasisF32 {
+    scan_basis_f32()
+}
+
+/// Integrate a 16-sample spectrum → ACEScg in f32 — mirrors `shaders::SCAN`
+/// (trapezoidal CMF integrals and `rgb = M·XYZ` in f32) bit-near, including the
+/// FMA contraction of the `a·b + c` patterns (Metal always contracts).
+pub fn spectrum_to_acescg_rgb_f32(spectrum: &[f32; 16]) -> [f32; 3] {
+    fn integrate_cmf32(spectrum: &[f32; 16], cmf: &[f32; 16]) -> f32 {
+        let dlambda = 20.0f32;
+        let mut acc = 0.0f32;
+        for i in 0..15 {
+            let inner = spectrum[i + 1].mul_add(cmf[i + 1], spectrum[i] * cmf[i]);
+            acc = (0.5 * inner).mul_add(dlambda, acc);
+        }
+        acc
+    }
+    let c = scan_basis_f32();
+    let xyz = [
+        integrate_cmf32(spectrum, &c.xbar),
+        integrate_cmf32(spectrum, &c.ybar),
+        integrate_cmf32(spectrum, &c.zbar),
+    ];
+    let m = &c.to_acescg;
+    [
+        m[0][2].mul_add(xyz[2], m[0][1].mul_add(xyz[1], m[0][0] * xyz[0])),
+        m[1][2].mul_add(xyz[2], m[1][1].mul_add(xyz[1], m[1][0] * xyz[0])),
+        m[2][2].mul_add(xyz[2], m[2][1].mul_add(xyz[1], m[2][0] * xyz[0])),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

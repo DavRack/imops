@@ -22,7 +22,8 @@ pub fn apply_adjacency(
         let mut blurred = plane.clone();
         gaussian_blur_separable(&mut blurred, width, height, sigma_px);
         for (d, b) in plane.iter_mut().zip(blurred.iter()) {
-            *d += beta * (*d - b);
+            // FMA-contracted like `ADJACENCY` (`d + β·(d − b)`).
+            *d = beta.mul_add(*d - *b, *d);
         }
     }
 }
@@ -68,7 +69,11 @@ pub fn apply_dir_inhibition(
                     let inh_diffused = &diffused_inhibitors[i];
                     let inh_local = &dyes.image_dye[i];
                     for p in 0..n {
-                        delta_inhibition[p] += weight * (inh_diffused[p] - inh_local[p]);
+                        // FMA-contracted like `DIR_APPLY` (`total + weight·diff`).
+                        delta_inhibition[p] = weight.mul_add(
+                            inh_diffused[p] - inh_local[p],
+                            delta_inhibition[p],
+                        );
                     }
                 }
             }
@@ -77,7 +82,8 @@ pub fn apply_dir_inhibition(
         if active {
             let target_plane = &mut dyes.image_dye[j];
             for p in 0..n {
-                let factor = (-delta_inhibition[p]).exp();
+                // Deterministic exp (`exp2_det`), mirroring `DIR_APPLY`.
+                let factor = crate::film::math::exp_det(-delta_inhibition[p]);
                 target_plane[p] *= factor;
             }
         }

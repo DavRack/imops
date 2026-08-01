@@ -35,10 +35,18 @@ impl SplitMix64 {
     }
 
     /// Approximate N(0,1) via Irwin–Hall (sum of 12 uniforms).
+    ///
+    /// Mirrors the GPU `GRAIN_NOISE` shader bit-near: WGSL has no u64, so the
+    /// 64-bit state is converted to f32 as `f32(hi)·2^32 + f32(lo)` (not a
+    /// correctly-rounded u64→f32 cast), then divided by 2^64.
     pub fn next_gaussian(&mut self) -> f32 {
         let mut acc = 0.0f32;
         for _ in 0..12 {
-            acc += (self.next_u64() as f32) / (u64::MAX as f32);
+            let z = self.next_u64();
+            let hi = (z >> 32) as u32;
+            let lo = z as u32;
+            let zf = (hi as f32) * 4294967296.0 + (lo as f32);
+            acc += zf / 18446744073709551616.0;
         }
         acc - 6.0
     }
@@ -105,16 +113,18 @@ pub fn apply_grain(
 
             let kappa_sub = kappa * (n_sub as f32).sqrt();
             sub_dyes[sl_idx].par_iter_mut().zip(noise.par_iter()).zip(plane.par_iter()).for_each(|((sub_d, &n), &d)| {
+                use crate::film::math::div_det;
                 let dens = d.clamp(0.0, d_max);
                 let eps_toe = 0.05 * d_max;
-                let taper = (dens / (dens + eps_toe)).min(1.0);
+                let taper = div_det(dens, dens + eps_toe).min(1.0);
                 let sigma_d = taper * (dens * (d_max - dens)).max(0.0).sqrt();
-                let noisy = dens + kappa_sub * sigma_d * n * norm;
+                // FMA-contracted like `GRAIN_APPLY_SUB` (`dens + κ·sd·n·norm`).
+                let noisy = (kappa_sub * sigma_d * n).mul_add(norm, dens);
                 let knee = 0.005 * d_max;
                 let d_val = if noisy >= knee {
                     noisy
                 } else {
-                    (knee * knee) / (2.0 * knee - noisy)
+                    div_det(knee * knee, 2.0 * knee - noisy)
                 };
                 *sub_d = d_val.min(d_max * 1.05);
             });

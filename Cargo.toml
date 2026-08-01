@@ -1,6 +1,14 @@
 [workspace]
 members = [".", "pichromatic", "pichromatic-pipeline"]
 
+# Vendored wgpu-hal compiling Metal shaders with strict IEEE math
+# (fastMathEnabled=false): Metal's fast-math reassociates/contracts f32
+# expressions differently per workgroup size, which the CPU cannot mirror
+# bit-exactly. The film pipeline therefore pins every fused op with explicit
+# fma() and requires the backend to not re-associate.
+[patch.crates-io]
+wgpu-hal = { path = "vendor/wgpu-hal" }
+
 [package]
 name = "filsimrs"
 version = "0.1.0"

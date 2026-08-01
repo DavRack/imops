@@ -10,8 +10,7 @@ pub use capture::DevelopableFractionLut;
 
 use crate::film::constants::ABSORPTION_SIGMA_SCALE_PER_UM;
 use crate::film::exposure::absorption::{absorb_stack, integrated_absorbed};
-use crate::film::exposure::upsample::upsample_acescg;
-use crate::film::spectrum::WavelengthGrid;
+use crate::film::exposure::upsample::upsample_acescg_f32;
 use crate::film::stock::{FilmStock, LayerKind};
 use crate::film::types::LatentPlanes;
 use crate::pixel::{ImageBuffer, Pixel};
@@ -72,7 +71,6 @@ pub fn expose_with_pitch_shutter_and_scale(
     let n = width * height;
     assert_eq!(rgb.len(), n);
 
-    let grid = WavelengthGrid::mvp();
     let emulsion_count = stock
         .layers
         .iter()
@@ -85,12 +83,12 @@ pub fn expose_with_pitch_shutter_and_scale(
     let per_pixel: Vec<Vec<f32>> = rgb
         .par_iter()
         .map(|px| {
-            let spectrum = pixel_fluence_spectrum(px, &grid, capture_scale);
+            let spectrum = pixel_fluence_spectrum(px, capture_scale);
             let (layers, _) = absorb_stack(&stock.layers, &spectrum, sigma_scale);
             let mut emulsion_abs = Vec::with_capacity(emulsion_count);
             for la in &layers {
                 if la.produces_latent {
-                    emulsion_abs.push(integrated_absorbed(&la.absorbed) as f32);
+                    emulsion_abs.push(integrated_absorbed(&la.absorbed));
                 }
             }
             emulsion_abs
@@ -125,7 +123,7 @@ pub fn expose_with_pitch_shutter_and_scale(
         frac.par_iter_mut()
             .zip(absorbed_planes[emulsion_i].par_iter())
             .for_each(|(f, &phi)| {
-                *f = lut.sample((phi * eta) as f64) as f32;
+                *f = lut.sample(phi * eta);
             });
         fraction_planes.push(frac);
         emulsion_i += 1;
@@ -138,19 +136,22 @@ pub fn expose_with_pitch_shutter_and_scale(
     }
 }
 
-fn pixel_fluence_spectrum(px: &Pixel, grid: &WavelengthGrid, capture_scale: f32) -> [f64; 16] {
+pub(crate) fn pixel_fluence_spectrum(px: &Pixel, capture_scale: f32) -> [f32; 16] {
     // Upsample already CIE-matches ACEScg including magnitude. Convert to relative
     // photon fluence only — do **not** re-scale by mean(R,G,B) or by luminance.
     // Luminance scaling under-exposes saturated blues (low Y, high shortwave energy
     // the blue emulsion must see). Absolute mid-gray calibration is restored via
     // `ABSORPTION_SIGMA_SCALE_PER_UM` (tuned for this path).
-    let spectrum = upsample_acescg(*px);
-    let mut out = [0.0f64; 16];
-    for (i, &lambda) in grid.wavelengths_nm.iter().enumerate() {
-        let e_rel = 550.0 / lambda;
-        out[i] = (spectrum[i] / e_rel)
-            * crate::film::constants::RADIOMETRIC_SCALE
-            * capture_scale as f64;
+    //
+    // f32 mirrors `shaders::EXPOSE`: phi[k] = s[k] * ((λ/550)·RADIOMETRIC_SCALE) * capture_scale,
+    // with the per-λ factor computed in f64 and rounded to f32 exactly as the GPU
+    // expose constants bake it.
+    let spectrum = upsample_acescg_f32(*px);
+    let mut out = [0.0f32; 16];
+    for i in 0..16 {
+        let lambda = 400.0 + 20.0 * i as f64;
+        let lambda_factor = ((lambda / 550.0) * crate::film::constants::RADIOMETRIC_SCALE) as f32;
+        out[i] = spectrum[i] * lambda_factor * capture_scale;
     }
     out
 }
@@ -162,22 +163,21 @@ mod fluence_scale_tests {
 
     #[test]
     fn saturated_blue_keeps_shortwave_energy() {
-        let grid = WavelengthGrid::mvp();
         let blue = [0.0f32, 0.0, 1.0];
         let gray = [1.0f32, 1.0, 1.0];
-        let s_b = pixel_fluence_spectrum(&blue, &grid, 1.0);
-        let s_g = pixel_fluence_spectrum(&gray, &grid, 1.0);
+        let s_b = pixel_fluence_spectrum(&blue, 1.0);
+        let s_g = pixel_fluence_spectrum(&gray, 1.0);
         // Shortwave bins (≤450 nm): blue stimulus must deposit far more than gray.
-        let short_b: f64 = s_b.iter().take(3).sum();
-        let short_g: f64 = s_g.iter().take(3).sum();
+        let short_b: f32 = s_b.iter().take(3).sum();
+        let short_g: f32 = s_g.iter().take(3).sum();
         assert!(
             short_b > short_g,
             "blue shortwave={short_b} should exceed gray={short_g}"
         );
         // Must not collapse to near-zero just because CIE Y is small.
-        let e_b: f64 = s_b.iter().sum();
+        let e_b: f32 = s_b.iter().sum();
         assert!(
-            e_b > 0.05 * s_g.iter().sum::<f64>(),
+            e_b > 0.05 * s_g.iter().sum::<f32>(),
             "blue total energy too small: {e_b}"
         );
         let _ = blue.luminance();
@@ -185,11 +185,10 @@ mod fluence_scale_tests {
 
     #[test]
     fn neutral_spectrum_scales_with_rgb() {
-        let grid = WavelengthGrid::mvp();
-        let a = pixel_fluence_spectrum(&[0.1, 0.1, 0.1], &grid, 1.0);
-        let b = pixel_fluence_spectrum(&[0.2, 0.2, 0.2], &grid, 1.0);
-        let ea: f64 = a.iter().sum();
-        let eb: f64 = b.iter().sum();
+        let a = pixel_fluence_spectrum(&[0.1, 0.1, 0.1], 1.0);
+        let b = pixel_fluence_spectrum(&[0.2, 0.2, 0.2], 1.0);
+        let ea: f32 = a.iter().sum();
+        let eb: f32 = b.iter().sum();
         assert!((eb / ea.max(1e-30) - 2.0).abs() < 0.05, "ratio={}", eb / ea);
     }
 }

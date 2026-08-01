@@ -18,45 +18,69 @@ pub const FOG_OFFSET: f32 = 0.005;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InvertConstants {
     pub dmin: [f32; 3],
+    /// Precomputed `1/dmin` — baked so CPU and GPU divide by the same f32
+    /// reciprocal (GPU native division is a hardware approximation).
+    pub inv_dmin: [f32; 3],
     pub gain: [f32; 3],
     pub slope: f32,
     pub gamma_eff: f32,
+    /// Precomputed `1/gamma_eff` (see [`Self::inv_dmin`]).
+    pub inv_gamma: f32,
+    /// `1/gamma_eff · log2(10)` precombined — the GPU compiler may reassociate
+    /// `(d·inv_gamma)·LOG2_10` (CSE across channels), so both sides use this
+    /// single pre-rounded constant.
+    pub inv_gamma_log2_10: f32,
     pub eps: f32,
     pub fog_offset: f32,
 }
 
 pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> InvertConstants {
+    use crate::film::math::LOG2_10;
     let eps = 1e-6f32;
     let dmin = dmin_negative.map(|v| v.max(eps));
+    let inv_dmin = dmin.map(|v| 1.0 / v);
     let mid_t = [
-        (mid_negative[0] / dmin[0]).clamp(eps, 1.0),
-        (mid_negative[1] / dmin[1]).clamp(eps, 1.0),
-        (mid_negative[2] / dmin[2]).clamp(eps, 1.0),
+        (mid_negative[0] * inv_dmin[0]).clamp(eps, 1.0),
+        (mid_negative[1] * inv_dmin[1]).clamp(eps, 1.0),
+        (mid_negative[2] * inv_dmin[2]).clamp(eps, 1.0),
     ];
     let d_mid = mid_t.map(|v| (-v.log10() - FOG_OFFSET).max(eps));
     let e_mid = d_mid.map(|v| (10.0f32.powf(v / GAMMA_EFF) - 1.0).max(0.005));
+    let inv_gamma = 1.0 / GAMMA_EFF;
     InvertConstants {
         dmin,
+        inv_dmin,
         gain: e_mid.map(|v| (MIDDLE_GRAY / v).min(25.0)),
         slope: 10.0f32.ln() / GAMMA_EFF,
         gamma_eff: GAMMA_EFF,
+        inv_gamma,
+        inv_gamma_log2_10: inv_gamma * LOG2_10,
         eps,
         fog_offset: FOG_OFFSET,
     }
 }
 
 /// Linear scanner invert for PositiveLinear.
+///
+/// Mirrors the GPU `SCAN` shader invert block operation-for-operation, including
+/// the deterministic table-based `log2_det` / `exp2_det` (film::math), so CPU
+/// and GPU agree bit-exact even where the invert amplifies differences.
 pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_negative: [f32; 3]) {
+    use crate::film::math::{exp2_det, log2_det, LOG10_2};
     let constants = invert_constants(mid_negative, dmin_negative);
 
     buffer.par_iter_mut().for_each(|px| {
         let t = [
-            (px[0] / constants.dmin[0]).max(constants.eps),
-            (px[1] / constants.dmin[1]).max(constants.eps),
-            (px[2] / constants.dmin[2]).max(constants.eps),
+            (px[0] * constants.inv_dmin[0]).max(constants.eps),
+            (px[1] * constants.inv_dmin[1]).max(constants.eps),
+            (px[2] * constants.inv_dmin[2]).max(constants.eps),
         ];
 
-        let d_img = [-t[0].log10(), -t[1].log10(), -t[2].log10()];
+        let d_img = [
+            -(log2_det(t[0]) * LOG10_2),
+            -(log2_det(t[1]) * LOG10_2),
+            -(log2_det(t[2]) * LOG10_2),
+        ];
 
         let d_clamped = [
             (d_img[0] - constants.fog_offset).max(0.0),
@@ -67,17 +91,17 @@ pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_ne
         // C1 continuous exposure transfer function matching slope (ln 10)/gamma at D = 0
         let e_scene = [
             if d_clamped[0] > 0.0 {
-                10.0f32.powf(d_clamped[0] / constants.gamma_eff) - 1.0
+                exp2_det(d_clamped[0] * constants.inv_gamma_log2_10) - 1.0
             } else {
                 constants.slope * d_clamped[0]
             },
             if d_clamped[1] > 0.0 {
-                10.0f32.powf(d_clamped[1] / constants.gamma_eff) - 1.0
+                exp2_det(d_clamped[1] * constants.inv_gamma_log2_10) - 1.0
             } else {
                 constants.slope * d_clamped[1]
             },
             if d_clamped[2] > 0.0 {
-                10.0f32.powf(d_clamped[2] / constants.gamma_eff) - 1.0
+                exp2_det(d_clamped[2] * constants.inv_gamma_log2_10) - 1.0
             } else {
                 constants.slope * d_clamped[2]
             },

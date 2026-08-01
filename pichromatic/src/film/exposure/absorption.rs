@@ -4,15 +4,18 @@
 //!   Φ_trans = Φ_in * exp(−σ(λ) * ρ_AgX * thickness)
 //!   Φ_abs   = Φ_in − Φ_trans
 //! Energy conservation: Φ_abs + Φ_trans == Φ_in (within float tolerance).
+//!
+//! The walk runs in f32 to mirror the GPU `EXPOSE` shader: optical densities are
+//! precomputed in f64 (matching `gpu::bake_consts`) and rounded to f32 before the
+//! exponential, so CPU and GPU stay bit-near (WGSL has no core f64).
 
-use crate::film::spectrum::WavelengthGrid;
 use crate::film::stock::{EmulsionLayer, LayerKind};
 
 /// Per-layer absorbed fluence spectrum (16 λ) at one spatial sample, plus whether
 /// the layer produces latent image (emulsion only).
 #[derive(Clone, Debug)]
 pub struct LayerAbsorption {
-    pub absorbed: [f64; 16],
+    pub absorbed: [f32; 16],
     pub produces_latent: bool,
 }
 
@@ -23,15 +26,14 @@ pub struct LayerAbsorption {
 /// optical density per µm × thickness (relative units documented in stock files).
 pub fn absorb_stack(
     layers: &[EmulsionLayer],
-    incident: &[f64; 16],
+    incident: &[f32; 16],
     sigma_scale: f64,
-) -> (Vec<LayerAbsorption>, [f64; 16]) {
-    let grid = WavelengthGrid::mvp();
+) -> (Vec<LayerAbsorption>, [f32; 16]) {
     let mut phi = *incident;
     let mut out = Vec::with_capacity(layers.len());
 
     for layer in layers {
-        let mut absorbed = [0.0f64; 16];
+        let mut absorbed = [0.0f32; 16];
         let produces_latent = layer.kind == LayerKind::Emulsion;
 
         match layer.kind {
@@ -42,10 +44,12 @@ pub fn absorb_stack(
                     .expect("emulsion has sensitivity");
                 let rho = layer.silver_halide_fraction as f64;
                 let thickness = layer.thickness.0 as f64;
-                for (i, _) in grid.wavelengths_nm.iter().enumerate() {
-                    let sigma = sens.samples[i] * sigma_scale;
-                    let od = sigma * rho * thickness; // neper-style for exp
-                    let trans = (-od).exp();
+                for i in 0..16 {
+                    // Deterministic f64 exp, rounded to f32 exactly as the GPU
+                    // expose consts bake it (`trans` table — the GPU never calls
+                    // `exp` for this), so CPU and GPU share the value bit-exactly.
+                    let od = sens.samples[i] * sigma_scale * rho * thickness;
+                    let trans = (-od).exp() as f32;
                     let phi_t = phi[i] * trans;
                     absorbed[i] = phi[i] - phi_t;
                     phi[i] = phi_t;
@@ -55,9 +59,9 @@ pub fn absorb_stack(
                 // Absorption-only: spectral_sensitivity holds relative absorption coeff.
                 if let Some(curve) = layer.spectral_sensitivity.as_ref() {
                     let thickness = layer.thickness.0 as f64;
-                    for (i, _) in grid.wavelengths_nm.iter().enumerate() {
+                    for i in 0..16 {
                         let od = curve.samples[i] * thickness; // 1/µm * µm
-                        let trans = (-od).exp();
+                        let trans = (-od).exp() as f32;
                         let phi_t = phi[i] * trans;
                         absorbed[i] = phi[i] - phi_t;
                         phi[i] = phi_t;
@@ -83,26 +87,28 @@ pub fn absorb_stack(
 /// Computes the trapezoidal integral `∫ Φ_abs(λ) dλ` over the MVP grid
 /// (400–700 nm, Δλ = 20 nm), then **divides by the 300 nm span**. The result is
 /// therefore a mean spectral fluence density over wavelength — **not** a raw
-/// total photon count sum over all wavelengths.
+/// total photon count sum over all wavelengths. f32 mirrors the GPU `EXPOSE`
+/// shader integration order (`acc += 0.5·(a+b)·20` then `acc / 300`).
 ///
 /// [`crate::film::constants::ABSORPTION_SIGMA_SCALE_PER_UM`] was tuned against
 /// this averaged quantity; do not drop the `/300` without re-deriving that scale.
 /// For the un-divided integral `∫ Φ_abs(λ) dλ`, use [`total_absorbed_fluence`].
-pub fn integrated_absorbed(absorbed: &[f64; 16]) -> f64 {
+pub fn integrated_absorbed(absorbed: &[f32; 16]) -> f32 {
     mean_absorbed_fluence(absorbed)
 }
 
 /// Mean spectral absorbed fluence: `∫ Φ_abs(λ) dλ / 300.0`.
-pub fn mean_absorbed_fluence(absorbed: &[f64; 16]) -> f64 {
+pub fn mean_absorbed_fluence(absorbed: &[f32; 16]) -> f32 {
     total_absorbed_fluence(absorbed) / 300.0
 }
 
 /// True trapezoidal integral `∫ Φ_abs(λ) dλ` over 400–700 nm (photons · nm / µm²).
-pub fn total_absorbed_fluence(absorbed: &[f64; 16]) -> f64 {
-    let dlambda = 20.0;
-    let mut acc = 0.0;
+/// FMA-contracted like the GPU `EXPOSE` shader (`acc = fma(0.5·(a+b), 20, acc)`).
+pub fn total_absorbed_fluence(absorbed: &[f32; 16]) -> f32 {
+    let dlambda = 20.0f32;
+    let mut acc = 0.0f32;
     for i in 0..15 {
-        acc += 0.5 * (absorbed[i] + absorbed[i + 1]) * dlambda;
+        acc = (0.5 * (absorbed[i] + absorbed[i + 1])).mul_add(dlambda, acc);
     }
     acc
 }
@@ -114,7 +120,7 @@ mod tests {
     use crate::film::stock::{EmulsionLayer, LayerKind};
     use crate::film::units::Microns;
 
-    fn flat_incident(v: f64) -> [f64; 16] {
+    fn flat_incident(v: f32) -> [f32; 16] {
         [v; 16]
     }
 
@@ -139,7 +145,7 @@ mod tests {
         let (layers, _transmitted) = absorb_stack(&[layer], &incident, 1.0);
         for (i, &phi_in) in incident.iter().enumerate() {
             let abs = layers[0].absorbed[i];
-            assert!(abs >= -1e-12 && abs <= phi_in + 1e-12);
+            assert!(abs >= -1e-6 && abs <= phi_in + 1e-6);
             let residual = (phi_in - abs) + abs - phi_in;
             assert!(residual.abs() <= 1e-6 * phi_in.max(1.0));
         }
@@ -165,7 +171,7 @@ mod tests {
             let phi_in = incident[i];
             let sum = layers2[0].absorbed[i] + transmitted[i];
             assert!(
-                (sum - phi_in).abs() <= 1e-6 * phi_in.max(1.0),
+                (sum - phi_in).abs() <= 1e-5 * phi_in.max(1.0),
                 "λ[{i}]: in={phi_in} abs+trans={sum}"
             );
         }
@@ -173,6 +179,7 @@ mod tests {
 
     #[test]
     fn filter_blocks_blue() {
+        use crate::film::spectrum::WavelengthGrid;
         let grid = WavelengthGrid::mvp();
         let samples: Vec<f64> = grid
             .wavelengths_nm
@@ -247,10 +254,10 @@ mod tests {
     #[test]
     fn integrated_absorbed_is_band_average_not_sum() {
         // Flat Φ_abs(λ)=2 over [400,700] → ∫ = 2·300, band average = 2.
-        let absorbed = [2.0f64; 16];
+        let absorbed = [2.0f32; 16];
         let mean = integrated_absorbed(&absorbed);
         assert!(
-            (mean - 2.0).abs() < 1e-9,
+            (mean - 2.0).abs() < 1e-6,
             "expected band average 2.0, got {mean} (would be ~600 if left as raw integral)"
         );
     }
