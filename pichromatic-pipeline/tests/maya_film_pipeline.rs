@@ -96,12 +96,37 @@ fn image_hash(image: &Image) -> u64 {
     hasher.finish()
 }
 
-#[test]
-fn maya_film_pipeline_cpu_and_wgpu_have_stable_whole_image_hash() {
+fn load_source() -> Image {
     let dng_path = concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/maya.dng");
     let dng_bytes = std::fs::read(dng_path).expect("read maya.dng");
-    let source = get_raw_img_internal(&dng_bytes);
+    get_raw_img_internal(&dng_bytes)
+}
 
+/// Drift guard: the CPU pipeline is the source of truth. Its whole-image hash
+/// (quantized to 16-bit precision) is pinned to a constant in this file; any
+/// algorithmic drift that changes output beyond 16-bit precision fails here.
+#[test]
+fn maya_film_pipeline_cpu_whole_image_hash_is_stable() {
+    let mut cpu_image = load_source();
+    let mut cpu_pipeline = parse_config(FILM_PIPELINE_TOML.to_owned());
+
+    run_pixel_pipeline_with_backend(&mut cpu_image, &mut cpu_pipeline, &Backend::Cpu);
+
+    let cpu_hash = image_hash(&cpu_image);
+    println!("CPU whole-image hash: {cpu_hash:016x}");
+
+    assert_eq!(
+        cpu_hash, EXPECTED_IMAGE_HASH,
+        "stable whole-image hash changed"
+    );
+}
+
+/// CPU vs GPU parity: float jitter between the backends (~1e-5 abs) is
+/// tolerated; any channel that differs by more than `GPU_VS_CPU_TOLERANCE`
+/// (a single rogue pixel included) fails.
+#[test]
+fn maya_film_pipeline_cpu_and_wgpu_agree_within_tolerance() {
+    let source = load_source();
     let gpu_context =
         GpuContext::try_new_sync().expect("WGPU is required for the explicit CPU/WGPU parity test");
     let mut cpu_image = source.clone();
@@ -114,16 +139,6 @@ fn maya_film_pipeline_cpu_and_wgpu_have_stable_whole_image_hash() {
         &mut wgpu_image,
         &mut wgpu_pipeline,
         &Backend::Wgpu(gpu_context),
-    );
-
-    let cpu_hash = image_hash(&cpu_image);
-    let wgpu_hash = image_hash(&wgpu_image);
-    println!("CPU whole-image hash: {cpu_hash:016x}");
-    println!("WGPU whole-image hash: {wgpu_hash:016x}");
-
-    assert_eq!(
-        cpu_hash, EXPECTED_IMAGE_HASH,
-        "stable whole-image hash changed"
     );
 
     let n = cpu_image.rgb_data.len().min(wgpu_image.rgb_data.len());
