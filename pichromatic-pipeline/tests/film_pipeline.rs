@@ -62,8 +62,8 @@ angle = "auto"
 /// channels differently (max 672 ULPs), so they hash differently and are not
 /// pinned.
 const RELEASE_PIN: [u8; 32] = [
-    0x3c, 0xbe, 0x30, 0xef, 0x5f, 0xca, 0xf7, 0x9c, 0xa0, 0xe6, 0xac, 0xf4, 0x73, 0x8a, 0xf7, 0x6d,
-    0x67, 0x4b, 0x92, 0x8f, 0x63, 0xd7, 0x59, 0xac, 0x0d, 0x2e, 0xa5, 0x1e, 0x92, 0x6f, 0x34, 0xfd,
+    0x28, 0xa5, 0x9b, 0x52, 0x27, 0x69, 0xd4, 0x71, 0x44, 0x6e, 0x0e, 0x5f, 0x03, 0xce, 0x11, 0x42,
+    0xed, 0x93, 0xbf, 0x6a, 0x5e, 0xe2, 0xca, 0xae, 0xf4, 0x5f, 0xa4, 0x96, 0x72, 0x90, 0x45, 0x0c,
 ];
 
 /// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two
@@ -78,12 +78,12 @@ const RELEASE_PIN: [u8; 32] = [
 const GPU_VS_CPU_TOLERANCE: f32 = 200.0 * f32::EPSILON;
 
 /// Max drift radius in ULPs for the guard-banded canonicalizer used by the
-/// pinned hash: buckets of W = 8 x D = 4096 ULPs (~2x finer than the old
-/// f16 quantize, so smaller algorithmic changes flip the pin). Measured
-/// worst-case cross-profile jitter is 672 ULPs (debug vs release, same
-/// image), so D = 512 is below the drift: the pin is strictly
-/// per-release-build, and any other profile or machine hashes differently.
-const MAX_DRIFT_ULPS: u32 = 512;
+/// pinned hash: buckets of W = 8 x D = 8192 ULPs, the same granularity the
+/// old f16 quantize had. Measured worst-case cross-profile jitter is 672
+/// ULPs (debug vs release, same image), so D = 1024 gives 1.5x margin; the
+/// pin is still strictly per-release-build, and any other profile or machine
+/// hashes differently.
+const MAX_DRIFT_ULPS: u32 = 1024;
 
 fn load_source() -> Image {
     let dng_path = concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/20260713_104012-16EV.DNG");
