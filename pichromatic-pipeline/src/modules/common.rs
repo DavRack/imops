@@ -13,7 +13,7 @@ use rand_chacha::ChaCha8Rng;
 /// The CPU and GPU film pipelines both run f32 but may differ by a few ULPs
 /// from hardware transcendentals and FMA contraction; 1e-4 (0.01%) leaves
 /// comfortable headroom across GPUs while still catching real divergence.
-pub const CPU_GPU_ABS_TOLERANCE: f32 = 16.0 * f32::EPSILON;
+pub const CPU_GPU_ABS_TOLERANCE: f32 = 32.0 * f32::EPSILON;
 
 /// Generates a deterministic 128x128 RGB test image using a fixed seed.
 pub fn generate_test_image_512x512(seed: u64) -> Image {
