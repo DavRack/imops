@@ -39,3 +39,6 @@ getrandom = { version = "0.2.17", features = ["js"] }
 [[bin]]
 name = "dump_schema"
 path = "src/bin_schema.rs"
+
+[dev-dependencies]
+sha2 = "0.10"

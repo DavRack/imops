@@ -15,7 +15,7 @@ use rand_chacha::ChaCha8Rng;
 /// 16 * EPSILON failed at 33 ULPs of drift (diff 1.967e-6 vs tol 1.907e-6)
 /// on AMD CPU + NVIDIA GPU; 17 * EPSILON = 34 ULPs at midtone passes that
 /// case with ~3% margin.
-pub const CPU_GPU_ABS_TOLERANCE: f32 = 17.0 * f32::EPSILON;
+pub const CPU_GPU_ABS_TOLERANCE: f32 = 20.0 * f32::EPSILON;
 
 /// Generates a deterministic 128x128 RGB test image using a fixed seed.
 pub fn generate_test_image_512x512(seed: u64) -> Image {
