@@ -62,26 +62,28 @@ angle = "auto"
 /// channels differently (max 672 ULPs), so they hash differently and are not
 /// pinned.
 const RELEASE_PIN: [u8; 32] = [
-    0x28, 0xa5, 0x9b, 0x52, 0x27, 0x69, 0xd4, 0x71, 0x44, 0x6e, 0x0e, 0x5f, 0x03, 0xce, 0x11, 0x42,
-    0xed, 0x93, 0xbf, 0x6a, 0x5e, 0xe2, 0xca, 0xae, 0xf4, 0x5f, 0xa4, 0x96, 0x72, 0x90, 0x45, 0x0c,
+    0x2e, 0x3b, 0x25, 0x8f, 0x73, 0x14, 0x0d, 0xd4, 0x58, 0xa6, 0xcc, 0xab, 0xc7, 0xda, 0x91, 0xf7,
+    0x7b, 0xa6, 0xfd, 0xd2, 0x37, 0x1f, 0xf5, 0x9f, 0xbc, 0xf9, 0xdc, 0x2c, 0x80, 0xca, 0x9b, 0x0a,
 ];
 
 /// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two
 /// compared values (floored at 1.0 so near-zero values keep a tight absolute
 /// gate): `tol = K * EPSILON * max(|cpu|, |gpu|, 1.0)` = K ULPs at the
 /// value's own magnitude (same rule as `CPU_GPU_ABS_TOLERANCE`).
-/// Calibrated "barely": measured worst case on this machine is 2.264e-5
-/// (190 ULPs at value ~1.03, deterministic across runs); K = 200 passes it
-/// with ~9% margin at bright values while staying ~164x below one 8-bit
-/// step (1/255 ≈ 3.9e-3), so a single rogue pixel still fails the test.
-const GPU_VS_CPU_TOLERANCE: f32 = 128.0 * f32::EPSILON;
+/// Calibrated "barely" against the dark-pixel drift floor: the worst
+/// channels are shadows (values 0.02-0.1) where the film curve amplifies
+/// jitter to ~0.12% relative (~12000 ULPs, abs 2.264e-5, measured on this
+/// machine; 1.948e-5 on AMD/NVIDIA). K = 200 (2.38e-5) passes both with ~5%
+/// margin; K = 128 (1.53e-5) is below the floor and fails both.
+const GPU_VS_CPU_TOLERANCE: f32 = 200.0 * f32::EPSILON;
 
 /// Max drift radius in ULPs for the guard-banded canonicalizer used by the
-/// pinned hash. Measured worst-case jitter is 672 ULPs (debug vs release CPU
-/// builds of this pipeline, same image); 1024 gives 1.5x margin and a bucket
-/// width W = 8 x D = 8192 ULPs, the same granularity the old f16 quantize
-/// had.
-const MAX_DRIFT_ULPS: u32 = 256;
+/// pinned hash: buckets of W = 8 x D = 1024 ULPs (~8x finer than the old
+/// f16 quantize, so smaller algorithmic changes flip the pin). Measured
+/// worst-case cross-profile jitter is 672 ULPs (debug vs release, same
+/// image), so D = 128 is well below the drift: the pin is strictly
+/// per-release-build, and any other profile or machine hashes differently.
+const MAX_DRIFT_ULPS: u32 = 128;
 
 fn load_source() -> Image {
     let dng_path = concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/20260713_104012-16EV.DNG");
