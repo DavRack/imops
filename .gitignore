@@ -1,5 +1,6 @@
 target
 /data
+tmp
 venv
 .DS_Store
 *.RAF

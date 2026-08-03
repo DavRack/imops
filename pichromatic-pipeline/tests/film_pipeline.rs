@@ -2,6 +2,7 @@ use pichromatic::gpu::GpuContext;
 use pichromatic::pixel::Image;
 use pichromatic_pipeline::backend::Backend;
 use pichromatic_pipeline::config::parse_config;
+use pichromatic_pipeline::drift::{ordered_ulp, Canonicalizer};
 use pichromatic_pipeline::extern_pipeline::get_raw_img_internal;
 use pichromatic_pipeline::pipeline::run_pixel_pipeline_with_backend;
 use std::collections::hash_map::DefaultHasher;
@@ -57,7 +58,7 @@ name = "Rotation"
 angle = "auto"
 "#;
 
-const EXPECTED_IMAGE_HASH: u64 = 0x988a_79b9_09a9_537c;
+const EXPECTED_IMAGE_HASH: u64 = 0xa566_5641_631c_bc1c;
 
 /// Max absolute per-channel error allowed between CPU and WGPU results.
 /// Measured worst case is ~8.7e-6 (float jitter only); 1e-4 gives ~11x margin
@@ -65,25 +66,19 @@ const EXPECTED_IMAGE_HASH: u64 = 0x988a_79b9_09a9_537c;
 /// rogue pixel (diff > 1e-4) still fails the test.
 const GPU_VS_CPU_TOLERANCE: f32 = 1e-4;
 
-/// Round an f32's 23-bit mantissa to 10 bits (32-bit -> 16-bit precision),
-/// round-to-nearest-even. Float jitter between CPU and GPU (~1e-5 rel) lands
-/// in the same bucket, so the hash is stable across runs and machines while
-/// still changing if the algorithm's behavior drifts.
-fn f16_quantize(x: f32) -> f32 {
-    let bits = x.to_bits();
-    if bits >> 23 & 0xFF == 0xFF {
-        return x;
-    }
-    let round = 0x0FFF + ((bits >> 13) & 1);
-    f32::from_bits((bits + round) & 0xFFFF_0000)
-}
+/// Max drift radius in ULPs for the guard-banded canonicalizer. Measured
+/// worst-case jitter is 672 ULPs (debug vs release CPU builds of this
+/// pipeline, same image); 1024 gives 1.5x margin and a bucket width
+/// W = 8 x D = 8192 ULPs, the same granularity the old f16 quantize had.
+const MAX_DRIFT_ULPS: u32 = 1024;
 
 fn image_hash(image: &Image) -> u64 {
+    let canon = Canonicalizer::new(MAX_DRIFT_ULPS);
     let mut hasher = DefaultHasher::new();
     image.rgb_data.len().hash(&mut hasher);
     for pixel in &image.rgb_data {
         for channel in pixel {
-            f16_quantize(*channel).to_bits().hash(&mut hasher);
+            canon.digest(ordered_ulp(*channel)).hash(&mut hasher);
         }
     }
 
@@ -103,8 +98,15 @@ fn load_source() -> Image {
 }
 
 /// Drift guard: the CPU pipeline is the source of truth. Its whole-image hash
-/// (quantized to 16-bit precision) is pinned to a constant in this file; any
-/// algorithmic drift that changes output beyond 16-bit precision fails here.
+/// (guard-banded canonicalized per channel, buckets of W = 8 x D = 8192 ULPs)
+/// is pinned to a constant in this file; any algorithmic drift that changes
+/// output beyond bucket granularity fails here.
+///
+/// The pin is captured from a `--release` run (see the `run_tests` script);
+/// debug builds execute ~0.04% of channels differently (max 672 ULPs), so the
+/// same image hashes differently per profile. Cross-profile drift of at most
+/// `MAX_DRIFT_ULPS` is handled by the joint `Canonicalizer::agree` checks in
+/// the parity test below, not by this per-image pin.
 #[test]
 fn film_pipeline_cpu_whole_image_hash_is_stable() {
     let mut cpu_image = load_source();
