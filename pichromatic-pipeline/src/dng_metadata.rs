@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_dng_metadata_parser() {
-        let file_path = "../test_data/IMG_5851.DNG";
+        let file_path = "test_data/20260713_104012-16EV.DNG";
         let data = fs::read(file_path).expect("failed to read test DNG file");
         let parser = DngMetadataParser::new(&data).expect("failed to create DngMetadataParser");
         let metadata = parser.parse();
@@ -530,12 +530,12 @@ mod tests {
         assert!(metadata.unique_camera_model.is_some());
         assert_eq!(metadata.unique_camera_model.as_deref(), Some("iPhone18,2 back camera"));
         assert!(metadata.dng_version.is_some());
-        assert_eq!(metadata.dng_version, Some([1, 3, 0, 0]));
+        assert_eq!(metadata.dng_version, Some([1, 7, 1, 0]));
     }
 
     #[test]
     fn test_vignette_correction() {
-        let file_path = "../test_data/IMG_5851.DNG";
+        let file_path = "test_data/20260713_104012-16EV.DNG";
         let data = fs::read(file_path).expect("failed to read test DNG file");
         let image = crate::extern_pipeline::get_raw_img_internal(&data);
         
@@ -549,6 +549,9 @@ mod tests {
         
         let val_after = image.rgb_data[index_corner];
         println!("Corner pixel before: {:?}, after: {:?}", val_before, val_after);
+        // 20260713_104012-16EV.DNG carries a FixVignetteRadial opcode in its
+        // OpcodeList3, so the corner (furthest from the vignette center) must
+        // be brightened by the correction.
         assert!(val_after[0] > val_before[0]);
         assert!(val_after[1] > val_before[1]);
         assert!(val_after[2] > val_before[2]);

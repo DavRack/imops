@@ -649,9 +649,10 @@ fn lut_sample(phi: f32, fbase: u32) -> f32 {
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
+    let eta_base = 64u + u.num_emul * 64u;
     for (var e = 0u; e < u.num_emul; e = e + 1u) {
         let idx = e * u.n + i;
-        planes[idx] = lut_sample(planes[idx], 64u + e * 64u);
+        planes[idx] = lut_sample(planes[idx] * lc[eta_base + e], 64u + e * 64u);
     }
 }
 "#;
@@ -684,9 +685,10 @@ fn lut_sample(phi: f32, fbase: u32) -> f32 {
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
+    let eta_base = 64u + u.num_emul * 64u;
     for (var e = 0u; e < u.num_emul; e = e + 1u) {
         let idx = u.plane_base + e * u.n + i;
-        planes[idx] = lut_sample(planes[idx], 64u + e * 64u);
+        planes[idx] = lut_sample(planes[idx] * lc[eta_base + e], 64u + e * 64u);
     }
 }
 "#;
@@ -787,10 +789,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
+    let eta_base = 64u + e_count * 64u;
     for (var e = 0u; e < e_count; e = e + 1u) {
         let idx = u.plane_base + e * u.n + i;
         let phi = arena[idx];
-        let lut_val = lut_sample(phi, 64u + e * 64u);
+        let lut_val = lut_sample(phi * lc[eta_base + e], 64u + e * 64u);
 
         let f = clamp(lut_val, 0.0, 1.0);
         let rev = rc[3u * e_count + e];
