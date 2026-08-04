@@ -56,13 +56,11 @@ name = "Rotation"
 angle = "auto"
 "#;
 
-/// Image drift pins, captured from a `--release` run (identical in debug on
-/// this machine). `MEAN_PIN` is the global mean of all subpixels in 1e-5
-/// units, tolerated +/-2; `H_PIN` is the sum of rounded per-row squared
-/// deviations, tolerated within `H_TOL` (measured cross-profile drift: 0).
-const MEAN_PIN: i64 = 47031;
-const H_PIN: i64 = 3640005;
-const H_TOL: i64 = 512;
+/// Image drift pin, captured from a `--release` run (identical in debug on
+/// this machine, measured drift 0): the sum of per-row rounded squared
+/// subpixel values, tolerated within `H_TOL` units.
+const H_PIN: i64 = 11730793;
+const H_TOL: i64 = 0;
 
 /// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two
 /// compared values (floored at 1.0 so near-zero values keep a tight absolute
@@ -81,11 +79,11 @@ fn load_source() -> Image {
     get_raw_img_internal(&dng_bytes)
 }
 
-/// Image drift pin: global mean over all subpixels (in 1e-5 units) plus the
-/// sum of the per-row sums of squared deviations from that mean, each row
-/// rounded to the nearest integer. A flat-list aggregate: drift moves it by
-/// a few units at most, so it is compared with a tolerance and stays stable
-/// across profiles and machines.
+/// Image drift pin: the sum of the per-row sums of squared subpixel values,
+/// each row rounded to the nearest integer. A flat-list aggregate: drift
+/// moves it by a few units at most, so it is compared with a tolerance and
+/// stays stable across profiles and machines. The global mean is computed
+/// too, but only for diagnostics.
 fn image_drift_pin(image: &Image) -> (i64, i64) {
     let width = image.metadata.width;
     let rows = image.rgb_data.len() / width;
@@ -104,8 +102,7 @@ fn image_drift_pin(image: &Image) -> (i64, i64) {
         let mut s = 0.0f64;
         for pixel in &image.rgb_data[row * width..(row + 1) * width] {
             for v in pixel {
-                let d = *v as f64 - mean;
-                s += d * d;
+                s += (*v as f64) * (*v as f64);
             }
         }
         h += s.round() as i64;
@@ -113,11 +110,11 @@ fn image_drift_pin(image: &Image) -> (i64, i64) {
     ((mean * 100_000.0).round() as i64, h)
 }
 
-/// Image drift guard: the CPU pipeline is the source of truth. Its global
-/// mean and the sum of per-row squared deviations are pinned below; drift
-/// within `H_TOL` units and +/-2 in the mean is tolerated, so the pin holds
-/// across build profiles and machines while still failing on real
-/// algorithmic drift.
+/// Image drift guard: the CPU pipeline is the source of truth. The sum of
+/// squared subpixel values (per row, rounded, summed) is pinned below; drift
+/// within `H_TOL` units is tolerated, so the pin holds across build profiles
+/// and machines while still failing on real algorithmic drift. The global
+/// mean is shown for diagnostics.
 #[test]
 fn image_drift() {
     let mut cpu_image = load_source();
@@ -129,8 +126,8 @@ fn image_drift() {
     println!("image drift pin: mean {mean}, H {h}");
 
     assert!(
-        (mean - MEAN_PIN).abs() <= 2 && (h - H_PIN).abs() <= H_TOL,
-        "image drift: mean {mean} vs pinned {MEAN_PIN} (+/-2), H {h} vs pinned {H_PIN} (+/-{H_TOL})"
+        (h - H_PIN).abs() <= H_TOL,
+        "image drift: H {h} vs pinned {H_PIN} (+/-{H_TOL}), mean {mean}"
     );
 }
 
