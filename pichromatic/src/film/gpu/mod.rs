@@ -490,7 +490,11 @@ pub(crate) fn bake_consts(
         let lambda = 400.0 + 20.0 * i as f64;
         expose.push(((lambda / 550.0) * crate::film::constants::RADIOMETRIC_SCALE) as f32);
     }
-    expose.push(crate::film::camera_capture_scale(meta, stock.box_iso.0));
+    expose.push(crate::film::camera_capture_scale(
+        meta,
+        stock.box_iso.0,
+        params.compensate_box_speed,
+    ));
     let sigma_scale = ABSORPTION_SIGMA_SCALE_PER_UM;
     for layer in &stock.layers {
         let mut trans = [0.0f32; 16];
@@ -2415,6 +2419,7 @@ mod tests {
                 film_format,
                 seed: 42,
                 output,
+                compensate_box_speed: true,
             };
 
             let gpu_buf_ff = ctx.create_output_buffer(width, height);
@@ -2497,6 +2502,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output: FilmOutput::PositiveLinear,
+            compensate_box_speed: true,
         };
 
         for &v in &[0.18f32, 10.0, 100.0, 300.0, 500.0] {
@@ -2586,6 +2592,7 @@ mod tests {
                 film_format,
                 seed: 42,
                 output,
+                compensate_box_speed: true,
             };
 
             // CPU run

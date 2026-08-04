@@ -267,6 +267,7 @@ fn main() {
         film_format: FilmFormat::Film35mm,
         seed: 1,
         output: FilmOutput::PositiveLinear,
+        compensate_box_speed: true,
     };
     let meta = ImageMetadata {
         width,

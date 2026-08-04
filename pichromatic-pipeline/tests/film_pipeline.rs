@@ -59,7 +59,9 @@ angle = "auto"
 /// Image drift pin, captured from a `--release` run (identical in debug on
 /// this machine, measured drift 0): the sum of per-row rounded squared
 /// subpixel values, tolerated within `H_TOL` units.
-const H_PIN: i64 = 11730793;
+/// Re-pinned for `compensate_box_speed: true` (default; film input is
+/// scene-relative, so stock box ISO no longer scales the exposure).
+const H_PIN: i64 = 9526936;
 const H_TOL: i64 = 0;
 
 /// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two

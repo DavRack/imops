@@ -58,6 +58,12 @@ pub struct FilmParams {
     /// RNG seed for grain (deterministic shot noise).
     pub seed: u64,
     pub output: FilmOutput,
+    /// Normalize exposure across stocks to the capture ISO (scene-relative
+    /// fluence `∝ v`, independent of stock box speed). `false` keeps the raw
+    /// box-speed difference: a faster stock receives `box_iso/capture_iso`
+    /// more fluence for the same input — the "shot with the same camera
+    /// settings" look.
+    pub compensate_box_speed: bool,
 }
 
 impl Default for FilmParams {
@@ -67,6 +73,7 @@ impl Default for FilmParams {
             film_format: FilmFormat::Film35mm,
             seed: 0,
             output: FilmOutput::NegativeLinear,
+            compensate_box_speed: true,
         }
     }
 }
@@ -100,7 +107,7 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
         .shutter_seconds
         .unwrap_or(1.0 / stock.box_iso.0);
 
-    let capture_scale = camera_capture_scale(&image.metadata, stock.box_iso.0);
+    let capture_scale = camera_capture_scale(&image.metadata, stock.box_iso.0, params.compensate_box_speed);
     let latent = expose_with_pitch_shutter_and_scale(
         &image.rgb_data,
         width,
@@ -170,7 +177,20 @@ fn relative_to_absolute_y(y_rel: f32, box_iso: f32) -> f32 {
 /// Reapply the camera exposure after `BaselineExposureCompensation` made the
 /// input absolute. Normalized to Sunny-16 at the stock box ISO, preserving the
 /// existing stock calibration; invalid metadata keeps the legacy fallback path.
-pub(crate) fn camera_capture_scale(meta: &crate::image::ImageMetadata, box_iso: f32) -> f32 {
+///
+/// Two explicit steps:
+/// 1. **Print exposure** `64·iso·t/N²` — the capture ISO cancels the
+///    absolute-luminance decode (`L·scale = 64·K·v`), so the film input is the
+///    image's own scene-relative brightness.
+/// 2. **Box-speed compensation** — `1.0` when compensated (box speed
+///    neutralized; mid-gray stays mid-gray, swapping stocks shifts nothing) or
+///    `box_iso/iso` when not (the film is exposed at its box speed and the raw
+///    box-speed step between stocks shows).
+pub(crate) fn camera_capture_scale(
+    meta: &crate::image::ImageMetadata,
+    box_iso: f32,
+    compensate_box_speed: bool,
+) -> f32 {
     match (meta.shutter_seconds, meta.f_number, meta.iso) {
         (Some(t), Some(n), Some(iso))
             if t.is_finite()
@@ -180,7 +200,13 @@ pub(crate) fn camera_capture_scale(meta: &crate::image::ImageMetadata, box_iso: 
                 && n > 0.0
                 && iso > 0.0 =>
         {
-            64.0 * box_iso * t / (n * n)
+            let print_scale = 64.0 * iso * t / (n * n);
+            let box_speed_comp = if compensate_box_speed {
+                1.0
+            } else {
+                box_iso / iso
+            };
+            print_scale * box_speed_comp
         }
         _ => 1.0,
     }
@@ -217,15 +243,30 @@ mod tests {
             a.f_number.unwrap() as f64,
             a.iso.unwrap() as f64,
         ) as f32
-            * camera_capture_scale(&a, 400.0);
+            * camera_capture_scale(&a, 400.0, false);
         let input_b = crate::film::exposure::radiance::absolute_luminance_gain(
             b.shutter_seconds.unwrap() as f64,
             b.f_number.unwrap() as f64,
             b.iso.unwrap() as f64,
         ) as f32
-            * camera_capture_scale(&b, 400.0);
+            * camera_capture_scale(&b, 400.0, false);
         assert!((input_a - input_b).abs() < 1e-5, "{input_a} != {input_b}");
         assert!((input_a - 1600.0).abs() < 1e-4);
+        // Compensated mode must preserve the equivalence too.
+        let comp_a = crate::film::exposure::radiance::absolute_luminance_gain(
+            a.shutter_seconds.unwrap() as f64,
+            a.f_number.unwrap() as f64,
+            a.iso.unwrap() as f64,
+        ) as f32
+            * camera_capture_scale(&a, 400.0, true);
+        let comp_b = crate::film::exposure::radiance::absolute_luminance_gain(
+            b.shutter_seconds.unwrap() as f64,
+            b.f_number.unwrap() as f64,
+            b.iso.unwrap() as f64,
+        ) as f32
+            * camera_capture_scale(&b, 400.0, true);
+        assert!((comp_a - comp_b).abs() < 1e-5, "{comp_a} != {comp_b}");
+        assert!((comp_a - 800.0).abs() < 1e-4, "compensated input={comp_a}");
     }
 
     #[test]
@@ -239,8 +280,95 @@ mod tests {
         let input =
             crate::film::exposure::radiance::absolute_luminance_gain(1.0 / 100.0, 4.0, 200.0)
                 as f32
-                * camera_capture_scale(&meta, 400.0);
+                * camera_capture_scale(&meta, 400.0, false);
         assert!((input - 800.0 * 400.0 / 200.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn compensated_capture_scale_drops_box_speed() {
+        let meta = ImageMetadata {
+            shutter_seconds: Some(1.0 / 100.0),
+            f_number: Some(4.0),
+            iso: Some(200.0),
+            ..Default::default()
+        };
+        // Compensated: scale depends on the capture ISO only — box ISO is inert.
+        let s100 = camera_capture_scale(&meta, 100.0, true);
+        let s400 = camera_capture_scale(&meta, 400.0, true);
+        assert!((s100 - s400).abs() < 1e-6, "{s100} != {s400}");
+        assert!((s400 - 8.0).abs() < 1e-5, "scale={s400} (64·iso·t/N²)");
+        // Uncompensated: box ISO drives the full step (100 → 400 = 2 stops).
+        let u100 = camera_capture_scale(&meta, 100.0, false);
+        let u400 = camera_capture_scale(&meta, 400.0, false);
+        assert!((u400 / u100 - 4.0).abs() < 1e-6);
+        // Compensated total fluence factor is scene-relative: L·scale = 64·K·v.
+        let gain = crate::film::exposure::radiance::absolute_luminance_gain(
+            1.0 / 100.0,
+            4.0,
+            200.0,
+        ) as f32;
+        let expected = 64.0 * crate::film::constants::METER_CONSTANT_K as f32;
+        assert!(
+            (gain * s400 - expected).abs() < 1e-3,
+            "{} != {expected}",
+            gain * s400
+        );
+    }
+
+    #[test]
+    fn compensated_keeps_film_input_exif_independent() {
+        // Calibrated stock + mid-gray keeps the response on the steep LUT
+        // region, so exposure differences are actually visible in the output.
+        // Input is the pipeline-consistent absolute luminance for the same
+        // scene-relative mid-gray under each capture ISO.
+        let params = color_params(FilmOutput::PositiveLinear);
+        let mk = |iso: f32| {
+            let l = crate::film::exposure::radiance::relative_to_absolute_luminance(
+                0.185_f64,
+                1.0 / 100.0,
+                4.0,
+                iso as f64,
+            ) as f32;
+            Image {
+                rgb_data: vec![[l, l, l]; 16],
+                raw_data: std::sync::Arc::from([]),
+                metadata: ImageMetadata {
+                    width: 4,
+                    height: 4,
+                    color_space: Some(ColorSpaceTag::AcesCg),
+                    shutter_seconds: Some(1.0 / 100.0),
+                    f_number: Some(4.0),
+                    iso: Some(iso),
+                    ..Default::default()
+                },
+            }
+        };
+        let mut a = mk(100.0);
+        let mut b = mk(400.0);
+        process(&mut a, &params).unwrap();
+        process(&mut b, &params).unwrap();
+        let max_diff = a
+            .rgb_data
+            .iter()
+            .zip(b.rgb_data.iter())
+            .flat_map(|(pa, pb)| pa.iter().zip(pb.iter()).map(|(x, y)| (x - y).abs()))
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_diff < 1e-4,
+            "compensated film input must not depend on capture ISO (max diff {max_diff})"
+        );
+        // Uncompensated keeps the box-speed step: ColorNeg200 box 200 vs capture
+        // ISO 100 → 2× fluence, vs capture 400 → 0.5×, so outputs must differ.
+        let mut off = params.clone();
+        off.compensate_box_speed = false;
+        let mut c = mk(100.0);
+        let mut d = mk(400.0);
+        process(&mut c, &off).unwrap();
+        process(&mut d, &off).unwrap();
+        assert_ne!(
+            c.rgb_data, d.rgb_data,
+            "uncompensated must keep the box-speed step"
+        );
     }
 
     fn make_image(width: usize, height: usize, fill_rel: [f32; 3], box_iso: f32) -> Image {
@@ -269,6 +397,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output: FilmOutput::NegativeLinear,
+            compensate_box_speed: true,
         }
     }
 
@@ -278,6 +407,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output,
+            compensate_box_speed: true,
         }
     }
 
@@ -409,6 +539,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 99,
             output: FilmOutput::PositiveLinear,
+            compensate_box_speed: true,
         };
         let mut img = make_image(64, 64, [0.0, 0.0, 0.0], 200.0);
         process(&mut img, &params).unwrap();
@@ -431,6 +562,7 @@ mod tests {
                 film_format: FilmFormat::Film35mm,
                 seed: 1,
                 output,
+                compensate_box_speed: true,
             };
             let mut copy = img.clone();
             process(&mut copy, &params).unwrap();
@@ -449,6 +581,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 2,
             output: FilmOutput::NegativeLinear,
+            compensate_box_speed: true,
         };
         let mut img = make_image(32, 32, [0.185, 0.185, 0.185], 200.0);
         process(&mut img, &params).unwrap();
@@ -579,6 +712,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output: FilmOutput::PositiveLinear, // ignored for reversal
+            compensate_box_speed: true,
         };
         let mut img = make_image(16, 16, [MIDDLE_GRAY, MIDDLE_GRAY, MIDDLE_GRAY], 100.0);
         process(&mut img, &params).unwrap();

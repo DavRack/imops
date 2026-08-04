@@ -29,6 +29,7 @@ fn main() {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output: FilmOutput::PositiveLinear,
+            compensate_box_speed: true,
         })
         .unwrap();
         let out = mean_rgb(&img.rgb_data);
@@ -64,6 +65,7 @@ fn main() {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output: FilmOutput::PositiveLinear,
+            compensate_box_speed: true,
         })
         .unwrap();
         let out = mean_rgb(&img.rgb_data);

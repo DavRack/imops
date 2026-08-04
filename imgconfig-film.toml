@@ -44,6 +44,9 @@ stock = "Ektar100"
 film_format = "Film35mm"
 seed = 1
 output = "PositiveLinear"
+# compensate_box_speed = true  (default): exposure is scene-relative, stock
+#   box ISO does not shift brightness — swapping stocks only changes character.
+#   Set false for the raw box-speed step (faster stock = brighter at same input).
 
 # [[pipeline_modules]]
 # name = "Film"

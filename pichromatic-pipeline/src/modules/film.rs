@@ -10,6 +10,7 @@ pub struct Film {
     pub film_format: Parameter<String>,
     pub seed: Parameter<u64>,
     pub output: Parameter<String>,
+    pub compensate_box_speed: Parameter<bool>,
 }
 
 fn parse_stock(s: &str) -> Option<StockId> {
@@ -70,6 +71,7 @@ fn film_params_from_config(config: &Film) -> Option<FilmParams> {
         film_format,
         seed: config.seed.value,
         output,
+        compensate_box_speed: config.compensate_box_speed.value,
     })
 }
 
@@ -115,6 +117,10 @@ impl Default for Film {
                 "NegativeLinear".to_string(),
                 "NegativeLinear: densitometric scanned negative. PositiveLinear: mid/Dmin invert from stock film base + mid-gray gain.",
                 vec!["NegativeLinear".to_string(), "PositiveLinear".to_string()],
+            ),
+            compensate_box_speed: Parameter::new(
+                true,
+                "Normalize exposure across stocks to the capture ISO (scene-relative fluence, independent of stock box speed). Off keeps the raw box-speed difference: faster stocks look brighter for the same input.",
             ),
         }
     }

@@ -62,6 +62,7 @@ fn main() {
         film_format: FilmFormat::Film35mm,
         seed: 1,
         output: FilmOutput::PositiveLinear,
+        compensate_box_speed: true,
     })
     .unwrap();
     let means = sample_patch_means(&img, patch);
@@ -87,6 +88,7 @@ fn main() {
         film_format: FilmFormat::Film35mm,
         seed: 1,
         output: FilmOutput::NegativeLinear,
+        compensate_box_speed: true,
     })
     .unwrap();
     let means_n = sample_patch_means(&img_n, patch);
