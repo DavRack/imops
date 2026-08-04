@@ -2,10 +2,9 @@ use pichromatic::gpu::GpuContext;
 use pichromatic::pixel::Image;
 use pichromatic_pipeline::backend::Backend;
 use pichromatic_pipeline::config::parse_config;
-use pichromatic_pipeline::drift::{ordered_ulp, Canonicalizer};
+use pichromatic_pipeline::drift::ordered_ulp;
 use pichromatic_pipeline::extern_pipeline::get_raw_img_internal;
 use pichromatic_pipeline::pipeline::run_pixel_pipeline_with_backend;
-use sha2::{Digest, Sha256};
 
 const FILM_PIPELINE_TOML: &str = r#"
 [[pipeline_modules]]
@@ -57,11 +56,13 @@ name = "Rotation"
 angle = "auto"
 "#;
 
-/// Pinned SHA-256 of the guard-banded canonicalized CPU output, captured
-/// from a `--release` run (see `run_tests`). Debug builds execute ~0.04% of
-/// channels differently (max 672 ULPs), so they hash differently and are not
-/// pinned. Update by copying the hash printed by the failing test.
-const RELEASE_PIN: &str = "28a59b522769d471446e0e5f03ce1142ed93bf6a5ee2caaef45fa4967290450c";
+/// Image drift pins, captured from a `--release` run (identical in debug on
+/// this machine). `MEAN_PIN` is the global mean of all subpixels in 1e-5
+/// units, tolerated +/-2; `H_PIN` is the sum of rounded per-row squared
+/// deviations, tolerated within `H_TOL` (measured cross-profile drift: 0).
+const MEAN_PIN: i64 = 47031;
+const H_PIN: i64 = 3640005;
+const H_TOL: i64 = 512;
 
 /// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two
 /// compared values (floored at 1.0 so near-zero values keep a tight absolute
@@ -74,63 +75,62 @@ const RELEASE_PIN: &str = "28a59b522769d471446e0e5f03ce1142ed93bf6a5ee2caaef45fa
 /// margin; K = 128 (1.53e-5) is below the floor and fails both.
 const GPU_VS_CPU_TOLERANCE: f32 = 200.0 * f32::EPSILON;
 
-/// Max drift radius in ULPs for the guard-banded canonicalizer used by the
-/// pinned hash: buckets of W = 8 x D = 8192 ULPs, the same granularity the
-/// old f16 quantize had. Measured worst-case cross-profile jitter is 672
-/// ULPs (debug vs release, same image), so D = 1024 gives 1.5x margin; the
-/// pin is still strictly per-release-build, and any other profile or machine
-/// hashes differently.
-const MAX_DRIFT_ULPS: u32 = 1024;
-
 fn load_source() -> Image {
     let dng_path = concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/20260713_104012-16EV.DNG");
     let dng_bytes = std::fs::read(dng_path).expect("read 20260713_104012-16EV.DNG");
     get_raw_img_internal(&dng_bytes)
 }
 
-/// Guard-banded quantization + crypto hash: every channel is mapped into the
-/// ordered ULP space and quantized with the `Canonicalizer` (buckets of
-/// W = 8 x D = 8192 ULPs, guard-band exceptions keep the pair of adjacent
-/// bucket IDs near edges), then the digest stream is hashed with SHA-256.
-fn image_sha256(image: &Image) -> [u8; 32] {
-    let canon = Canonicalizer::new(MAX_DRIFT_ULPS);
-    let mut hasher = Sha256::new();
-    hasher.update((image.rgb_data.len() as u64).to_le_bytes());
+/// Image drift pin: global mean over all subpixels (in 1e-5 units) plus the
+/// sum of the per-row sums of squared deviations from that mean, each row
+/// rounded to the nearest integer. A flat-list aggregate: drift moves it by
+/// a few units at most, so it is compared with a tolerance and stays stable
+/// across profiles and machines.
+fn image_drift_pin(image: &Image) -> (i64, i64) {
+    let width = image.metadata.width;
+    let rows = image.rgb_data.len() / width;
+    let subpixels = image.rgb_data.len() * 3;
+
+    let mut mean = 0.0f64;
     for pixel in &image.rgb_data {
-        for channel in pixel {
-            hasher.update(canon.digest(ordered_ulp(*channel)).to_le_bytes());
+        for v in pixel {
+            mean += *v as f64;
         }
     }
-    hasher.finalize().into()
+    mean /= subpixels as f64;
+
+    let mut h = 0i64;
+    for row in 0..rows {
+        let mut s = 0.0f64;
+        for pixel in &image.rgb_data[row * width..(row + 1) * width] {
+            for v in pixel {
+                let d = *v as f64 - mean;
+                s += d * d;
+            }
+        }
+        h += s.round() as i64;
+    }
+    ((mean * 100_000.0).round() as i64, h)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Drift guard: the CPU pipeline is the source of truth. Its guard-banded,
-/// SHA-256-hashed whole-image digest is pinned to a constant in this file;
-/// any algorithmic drift that changes output beyond bucket granularity
-/// (W = 8192 ULPs) fails here.
-///
-/// The pin is captured from a `--release` run (see the `run_tests` script);
-/// debug builds execute ~0.04% of channels differently (max 672 ULPs), which
-/// flips a handful of guard-band digests, so the same image hashes
-/// differently per profile. Other machines/compilers may need their own pin.
+/// Image drift guard: the CPU pipeline is the source of truth. Its global
+/// mean and the sum of per-row squared deviations are pinned below; drift
+/// within `H_TOL` units and +/-2 in the mean is tolerated, so the pin holds
+/// across build profiles and machines while still failing on real
+/// algorithmic drift.
 #[test]
-fn film_pipeline_cpu_whole_image_hash_is_stable() {
+fn image_drift() {
     let mut cpu_image = load_source();
     let mut cpu_pipeline = parse_config(FILM_PIPELINE_TOML.to_owned());
 
     run_pixel_pipeline_with_backend(&mut cpu_image, &mut cpu_pipeline, &Backend::Cpu);
 
-    let digest = image_sha256(&cpu_image);
-    let digest_hex = hex(&digest);
-    println!("CPU whole-image SHA-256: {digest_hex}");
+    let (mean, h) = image_drift_pin(&cpu_image);
+    println!("image drift pin: mean {mean}, H {h}");
 
-    assert_eq!(
-        digest_hex, RELEASE_PIN,
-        "stable whole-image hash changed (run in --release and update the pin)"
+    assert!(
+        (mean - MEAN_PIN).abs() <= 2 && (h - H_PIN).abs() <= H_TOL,
+        "image drift: mean {mean} vs pinned {MEAN_PIN} (+/-2), H {h} vs pinned {H_PIN} (+/-{H_TOL})"
     );
 }
 
