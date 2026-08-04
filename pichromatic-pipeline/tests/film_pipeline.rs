@@ -60,11 +60,8 @@ angle = "auto"
 /// Pinned SHA-256 of the guard-banded canonicalized CPU output, captured
 /// from a `--release` run (see `run_tests`). Debug builds execute ~0.04% of
 /// channels differently (max 672 ULPs), so they hash differently and are not
-/// pinned.
-const RELEASE_PIN: [u8; 32] = [
-    0x28, 0xa5, 0x9b, 0x52, 0x27, 0x69, 0xd4, 0x71, 0x44, 0x6e, 0x0e, 0x5f, 0x03, 0xce, 0x11, 0x42,
-    0xed, 0x93, 0xbf, 0x6a, 0x5e, 0xe2, 0xca, 0xae, 0xf4, 0x5f, 0xa4, 0x96, 0x72, 0x90, 0x45, 0x0c,
-];
+/// pinned. Update by copying the hash printed by the failing test.
+const RELEASE_PIN: &str = "28a59b522769d471446e0e5f03ce1142ed93bf6a5ee2caaef45fa4967290450c";
 
 /// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two
 /// compared values (floored at 1.0 so near-zero values keep a tight absolute
@@ -128,10 +125,11 @@ fn film_pipeline_cpu_whole_image_hash_is_stable() {
     run_pixel_pipeline_with_backend(&mut cpu_image, &mut cpu_pipeline, &Backend::Cpu);
 
     let digest = image_sha256(&cpu_image);
-    println!("CPU whole-image SHA-256: {}", hex(&digest));
+    let digest_hex = hex(&digest);
+    println!("CPU whole-image SHA-256: {digest_hex}");
 
     assert_eq!(
-        digest, RELEASE_PIN,
+        digest_hex, RELEASE_PIN,
         "stable whole-image hash changed (run in --release and update the pin)"
     );
 }
