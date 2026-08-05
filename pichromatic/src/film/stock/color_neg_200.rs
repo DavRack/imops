@@ -203,6 +203,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         scanner_light: SpectralCurve::constant(1.0),
         capture_luts: vec![],
         grain_kappa: vec![],
+        tabular_grain_thickness_um: None,
     };
     stock.finalize()
 }

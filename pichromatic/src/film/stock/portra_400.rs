@@ -311,6 +311,9 @@ pub fn load() -> Result<FilmStock, FilmError> {
         scanner_light: SpectralCurve::d50(),
         capture_luts: vec![],
         grain_kappa: vec![],
+        // Kodak T-grain (tabular) morphology: plate thickness ~0.15 µm
+        // (published T-grain range 0.1-0.2 µm).
+        tabular_grain_thickness_um: Some(0.15),
     };
     stock.finalize()
 }

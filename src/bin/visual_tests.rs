@@ -28,8 +28,8 @@ fn main() {
 
     let file_bytes_clone = file_bytes.clone();
 
-    let pipeline1_label = "Pipeline 1";
-    let pipeline2_label = "Pipeline 2";
+    let pipeline1_label = "Ektar100";
+    let pipeline2_label = "Portra400";
 
     run_viewer("imgconfig-film comparison (CPU)", pipeline1_label, pipeline2_label, move || {
         // --- Pipeline 1: matches imgconfig-film.toml ---
@@ -103,7 +103,7 @@ fn main() {
             }),
         ];
 
-        // --- Pipeline 2: same imgconfig-film.toml ---
+        // --- Pipeline 2: identical, Portra400 instead of Ektar100 ---
         let pipeline2: Vec<Box<dyn PipelineModule>> = vec![
             Box::new(Module {
                 name: "Demosaic".to_string(),
@@ -149,10 +149,10 @@ fn main() {
                 name: "Film".to_string(),
                 cache: None,
                 config: Film {
-                    stock: Parameter::new("Ektar100".to_string(), ""),
+                    stock: Parameter::new("Portra400".to_string(), ""),
                     film_format: Parameter::new("Film35mm".to_string(), ""),
                     seed: Parameter::new(1u64, ""),
-                    enable_halation: Parameter::new(false, ""),
+                    enable_halation: Parameter::new(true, ""),
                     output: Parameter::new("PositiveLinear".to_string(), ""),
                     compensate_box_speed: Parameter::new(true, ""),
                 },

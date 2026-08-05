@@ -61,6 +61,9 @@ pub fn load() -> Result<FilmStock, FilmError> {
 
     // --- BLUE FAST & SLOW ---
     // Fast: larger crystals + milder γ → open toe. Slow: fine + hard γ → punch.
+    // Ektar 100 is a fine-grain 100-speed tabular-grain emulsion; fast-layer
+    // mean crystal ~0.7 µm (finer than the 400-speed Portra class by the
+    // ~2-stop speed gap), so crystal bases sit at 0.8× the Portra-class values.
     let blue_fast = EmulsionLayer {
         name: "blue_fast",
         depth_from_surface: Microns(1.0),
@@ -68,7 +71,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(450.0, 32.0, 1.0)),
         crystal_size: Some(LogNormalDist {
-            mu_ln: 0.82_f64.ln(),
+            mu_ln: 0.66_f64.ln(),
             sigma_ln: 0.32,
         }),
         silver_halide_fraction: 0.17,
@@ -90,7 +93,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(450.0, 32.0, 0.85)),
         crystal_size: Some(LogNormalDist {
-            mu_ln: 0.38_f64.ln(),
+            mu_ln: 0.30_f64.ln(),
             sigma_ln: 0.24,
         }),
         silver_halide_fraction: 0.21,
@@ -129,7 +132,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(545.0, 36.0, 1.0)),
         crystal_size: Some(LogNormalDist {
-            mu_ln: 0.88_f64.ln(),
+            mu_ln: 0.70_f64.ln(),
             sigma_ln: 0.32,
         }),
         silver_halide_fraction: 0.17,
@@ -151,7 +154,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(545.0, 36.0, 0.85)),
         crystal_size: Some(LogNormalDist {
-            mu_ln: 0.40_f64.ln(),
+            mu_ln: 0.32_f64.ln(),
             sigma_ln: 0.24,
         }),
         silver_halide_fraction: 0.21,
@@ -175,7 +178,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(650.0, 40.0, 1.0)),
         crystal_size: Some(LogNormalDist {
-            mu_ln: 0.92_f64.ln(),
+            mu_ln: 0.74_f64.ln(),
             sigma_ln: 0.32,
         }),
         silver_halide_fraction: 0.17,
@@ -197,7 +200,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(650.0, 40.0, 0.85)),
         crystal_size: Some(LogNormalDist {
-            mu_ln: 0.42_f64.ln(),
+            mu_ln: 0.34_f64.ln(),
             sigma_ln: 0.24,
         }),
         silver_halide_fraction: 0.21,
@@ -266,6 +269,9 @@ pub fn load() -> Result<FilmStock, FilmError> {
         scanner_light: SpectralCurve::constant(1.0),
         capture_luts: vec![],
         grain_kappa: vec![],
+        // Kodak T-grain (tabular) morphology: plate thickness ~0.15 µm
+        // (published T-grain range 0.1-0.2 µm).
+        tabular_grain_thickness_um: Some(0.15),
     };
     stock.finalize()
 }

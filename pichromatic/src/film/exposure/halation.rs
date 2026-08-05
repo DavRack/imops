@@ -396,6 +396,7 @@ mod tests {
             scanner_light: SpectralCurve::constant(1.0),
             capture_luts: vec![],
             grain_kappa: vec![],
+            tabular_grain_thickness_um: None,
         };
 
         apply_spatial_exposure_effects(&mut planes, width, height, &stock, 5.0);

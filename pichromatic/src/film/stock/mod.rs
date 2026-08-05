@@ -122,6 +122,10 @@ pub struct FilmStock {
     /// supplies the physical crystal areal density used by the particle grain
     /// realization; the render pitch is applied when deriving crystals/pixel.
     pub grain_kappa: Vec<Option<f32>>,
+    /// Some(t) = emulsion crystals are thin circular plates of thickness t µm
+    /// (tabular T-grain morphology); None = equivalent-sphere (equant)
+    /// morphology. Plate volume V = π·(d/2)²·t with d = crystal diameter.
+    pub tabular_grain_thickness_um: Option<f32>,
 }
 
 /// Public stock identifiers.
@@ -196,7 +200,9 @@ impl FilmStock {
 
         // Areal grain density ρ [µm⁻²] = (packing · thickness) / ⟨crystal volume⟩.
         // packing is volumetric AgX fraction; thickness is layer depth (µm);
-        // ⟨V⟩ ≈ (4/3)π r³ for equivalent-sphere diameter s=2r from the lognormal.
+        // ⟨V⟩ = π(d/2)²t for tabular (thin circular plate) grains, or
+        // (4/3)πr³ for equivalent-sphere diameter s=2r from the lognormal.
+        let tabular_t = self.tabular_grain_thickness_um.map(|t| t as f64);
         self.grain_kappa = self
             .layers
             .iter()
@@ -204,8 +210,16 @@ impl FilmStock {
                 if layer.kind == LayerKind::Emulsion {
                     let dist = layer.crystal_size.unwrap();
                     let mean_s = (dist.mu_ln + 0.5 * dist.sigma_ln * dist.sigma_ln).exp();
-                    let r = (mean_s * 0.5).max(1e-6);
-                    let volume = std::f64::consts::FRAC_PI_3 * 4.0 * r * r * r; // (4/3)π r³
+                    let volume = match tabular_t {
+                        Some(t) => {
+                            let r = (mean_s * 0.5).max(1e-6);
+                            std::f64::consts::PI * r * r * t
+                        }
+                        None => {
+                            let r = (mean_s * 0.5).max(1e-6);
+                            std::f64::consts::FRAC_PI_3 * 4.0 * r * r * r // (4/3)π r³
+                        }
+                    };
                     let packing = layer.silver_halide_fraction as f64;
                     let thickness = layer.thickness.0 as f64;
                     let rho_areal = packing * thickness / volume.max(1e-18);
@@ -276,6 +290,7 @@ mod tests {
             scanner_light: SpectralCurve::constant(1.0),
             capture_luts: vec![],
             grain_kappa: vec![],
+            tabular_grain_thickness_um: None,
         };
         let err = stock.finalize().unwrap_err();
         assert!(matches!(err, FilmError::InvalidStock(_)));
