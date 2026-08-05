@@ -202,9 +202,18 @@ pub fn chroma_denoise_gpu(
     let work1 = ctx.create_f32_buffer(n, "chroma_denoise_work1");
     let work2 = ctx.create_f32_buffer(n, "chroma_denoise_work2");
     let work3 = ctx.create_f32_buffer(n, "chroma_denoise_work3");
+    let rec_products = ctx.create_f32_buffer(4 * n, "chroma_denoise_rec_products");
 
     // Extract Y, Cr, Cb from RGB.
-    let extract_shader = r#"
+    //
+    // Two passes so the luma computation is bit-identical to the CPU
+    // (`wr*r + wg*g + wb*b` with plain f32 rounding at every step): pass 1
+    // stores the three weighted products in a storage buffer, pass 2 sums
+    // them with plain adds. A single-pass expression gets contracted to an
+    // FMA chain by the Metal compiler, which shifts the result by up to 2
+    // ULP; that tiny luma jitter is amplified enormously by the guided
+    // filter's box-filter cancellation, so it must be avoided.
+    let extract_products_shader = r#"
         struct Params {
             width: u32,
             height: u32,
@@ -216,10 +225,8 @@ pub fn chroma_denoise_gpu(
             _pad: f32,
         };
         @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
-        @group(0) @binding(1) var<storage, read_write> y: array<f32>;
-        @group(0) @binding(2) var<storage, read_write> cr: array<f32>;
-        @group(0) @binding(3) var<storage, read_write> cb: array<f32>;
-        @group(0) @binding(4) var<uniform> params: Params;
+        @group(0) @binding(1) var<storage, read_write> prod: array<vec4<f32>>;
+        @group(0) @binding(2) var<uniform> params: Params;
 
         @compute @workgroup_size(256)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -227,16 +234,53 @@ pub fn chroma_denoise_gpu(
             let n = params.width * params.height;
             if (i >= n) { return; }
             let p = pixels[i];
-            let yv = params.wr * p.r + params.wg * p.g + params.wb * p.b;
+            prod[i] = vec4<f32>(params.wr * p.r, params.wg * p.g, params.wb * p.b, 0.0);
+        }
+    "#;
+    let prod = ctx.create_f32_buffer(4 * n, "chroma_denoise_prod");
+    ctx.dispatch_compute_shader_multi(
+        "chroma_denoise_extract_products",
+        extract_products_shader,
+        &[&storage_buffer.buffer, &prod],
+        params_bytes,
+        workgroups,
+    );
+
+    let extract_luma_shader = r#"
+        struct Params {
+            width: u32,
+            height: u32,
+            radius: u32,
+            epsilon: f32,
+            wr: f32,
+            wg: f32,
+            wb: f32,
+            _pad: f32,
+        };
+        @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+        @group(0) @binding(1) var<storage, read> prod: array<vec4<f32>>;
+        @group(0) @binding(2) var<storage, read_write> y: array<f32>;
+        @group(0) @binding(3) var<storage, read_write> cr: array<f32>;
+        @group(0) @binding(4) var<storage, read_write> cb: array<f32>;
+        @group(0) @binding(5) var<uniform> params: Params;
+
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let i = global_id.x + global_id.y * 16776960u;
+            let n = params.width * params.height;
+            if (i >= n) { return; }
+            let p = pixels[i];
+            let pr = prod[i];
+            let yv = (pr.x + pr.y) + pr.z;
             y[i] = yv;
             cr[i] = p.r - yv;
             cb[i] = p.b - yv;
         }
     "#;
     ctx.dispatch_compute_shader_multi(
-        "chroma_denoise_extract",
-        extract_shader,
-        &[&storage_buffer.buffer, &y, &cr, &cb],
+        "chroma_denoise_extract_luma",
+        extract_luma_shader,
+        &[&storage_buffer.buffer, &prod, &y, &cr, &cb],
         params_bytes,
         workgroups,
     );
@@ -272,6 +316,55 @@ pub fn chroma_denoise_gpu(
     );
 
     // Reconstruct RGB from smoothed chroma (luma recomputed from original RGB).
+    //
+    // Two passes: `yv - k1*crs - k2*cbs` must round k1*crs and k2*cbs before
+    // the subtractions, like the CPU; the metal compiler otherwise contracts
+    // the products into the subtractions via fma and rounds `wr/wg` as a fast
+    // reciprocal multiply. All values pass through storage memory so every
+    // op is plain.
+    let reconstruct_products_shader = r#"
+        struct Params {
+            width: u32,
+            height: u32,
+            radius: u32,
+            epsilon: f32,
+            wr: f32,
+            wg: f32,
+            wb: f32,
+            _pad: f32,
+        };
+        @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+        @group(0) @binding(1) var<storage, read> cr: array<f32>;
+        @group(0) @binding(2) var<storage, read> cb: array<f32>;
+        @group(0) @binding(3) var<storage, read_write> out: array<vec4<f32>>;
+        @group(0) @binding(4) var<uniform> params: Params;
+
+        fn div_exact(a: f32, b: f32) -> f32 {
+            let inv = 1.0 / b;
+            let q0 = a * inv;
+            let e = fma(-b, q0, a);
+            return fma(e, inv, q0);
+        }
+
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let i = global_id.x + global_id.y * 16776960u;
+            let n = params.width * params.height;
+            if (i >= n) { return; }
+            let p = pixels[i];
+            let crs = cr[i];
+            let cbs = cb[i];
+            out[i] = vec4<f32>(div_exact(params.wr, params.wg) * crs, div_exact(params.wb, params.wg) * cbs, 0.0, p.a);
+        }
+    "#;
+    ctx.dispatch_compute_shader_multi(
+        "chroma_denoise_reconstruct_products",
+        reconstruct_products_shader,
+        &[&storage_buffer.buffer, &cr, &cb, &rec_products],
+        params_bytes,
+        workgroups,
+    );
+
     let reconstruct_shader = r#"
         struct Params {
             width: u32,
@@ -284,9 +377,11 @@ pub fn chroma_denoise_gpu(
             _pad: f32,
         };
         @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
-        @group(0) @binding(1) var<storage, read_write> cr: array<f32>;
-        @group(0) @binding(2) var<storage, read_write> cb: array<f32>;
-        @group(0) @binding(3) var<uniform> params: Params;
+        @group(0) @binding(1) var<storage, read> cr: array<f32>;
+        @group(0) @binding(2) var<storage, read> cb: array<f32>;
+        @group(0) @binding(3) var<storage, read> prod: array<vec4<f32>>;
+        @group(0) @binding(4) var<storage, read> out: array<vec4<f32>>;
+        @group(0) @binding(5) var<uniform> params: Params;
 
         @compute @workgroup_size(256)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -294,11 +389,13 @@ pub fn chroma_denoise_gpu(
             let n = params.width * params.height;
             if (i >= n) { return; }
             let p = pixels[i];
-            let yv = params.wr * p.r + params.wg * p.g + params.wb * p.b;
+            let pr = prod[i];
+            let yv = (pr.x + pr.y) + pr.z;
             let crs = cr[i];
             let cbs = cb[i];
+            let op = out[i];
             let r = yv + crs;
-            let g = yv - (params.wr / params.wg) * crs - (params.wb / params.wg) * cbs;
+            let g = (yv - op.x) - op.y;
             let b = yv + cbs;
             pixels[i] = vec4<f32>(r, g, b, p.a);
         }
@@ -306,7 +403,7 @@ pub fn chroma_denoise_gpu(
     ctx.dispatch_compute_shader_multi(
         "chroma_denoise_reconstruct",
         reconstruct_shader,
-        &[&storage_buffer.buffer, &cr, &cb],
+        &[&storage_buffer.buffer, &cr, &cb, &prod, &rec_products],
         params_bytes,
         workgroups,
     );
@@ -390,6 +487,13 @@ fn box_filter_gpu(
         @group(0) @binding(1) var<storage, read_write> output_data: array<f32>;
         @group(0) @binding(2) var<uniform> params: Params;
 
+        fn div_exact(a: f32, b: f32) -> f32 {
+            let inv = 1.0 / b;
+            let q0 = a * inv;
+            let e = fma(-b, q0, a);
+            return fma(e, inv, q0);
+        }
+
         @compute @workgroup_size(64)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let x = global_id.x;
@@ -408,7 +512,7 @@ fn box_filter_gpu(
             {
                 let cy = f32(min(r, 0u) + min(r, h - 1u) + 1u);
                 let cx = f32(min(r, x) + min(r, w - 1u - x) + 1u);
-                output_data[x] = sum / (cx * cy);
+                output_data[x] = div_exact(sum, cx * cy);
             }
 
             for (var y = 1u; y < h; y++) {
@@ -420,7 +524,7 @@ fn box_filter_gpu(
                 }
                 let cy = f32(min(r, y) + min(r, h - 1u - y) + 1u);
                 let cx = f32(min(r, x) + min(r, w - 1u - x) + 1u);
-                output_data[y * w + x] = sum / (cx * cy);
+                output_data[y * w + x] = div_exact(sum, cx * cy);
             }
         }
     "#;
@@ -483,7 +587,51 @@ fn var_from_means_gpu(
     params: &ChromaDenoiseParamsGpu,
     workgroups: u32,
 ) {
-    let shader = r#"
+    let params_bytes = bytemuck::bytes_of(params);
+    // Two passes so the subtraction is plain, like the CPU's `mean_gg - mg*mq`
+    // with f32 rounding at every step: pass 1 stores the squared mean, pass 2
+    // subtracts. A single-pass `mean_gg - mg * mg` gets contracted to
+    // `fma(-mg, mg, mean_gg)` by the Metal compiler; the exact product leaves
+    // a denormal residual where the CPU result cancels to exactly zero, and
+    // that residual is amplified catastrophically by the guided filter's
+    // small-denominator divisions.
+    let products_shader = r#"
+        struct Params {
+            width: u32,
+            height: u32,
+            radius: u32,
+            epsilon: f32,
+            wr: f32,
+            wg: f32,
+            wb: f32,
+            _pad: f32,
+        };
+        @group(0) @binding(0) var<storage, read> mean_g: array<f32>;
+        @group(0) @binding(1) var<storage, read_write> sq: array<f32>;
+        @group(0) @binding(2) var<uniform> params: Params;
+
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let i = global_id.x + global_id.y * 16776960u;
+            let n = params.width * params.height;
+            if (i >= n) { return; }
+            let mg = mean_g[i];
+            sq[i] = mg * mg;
+        }
+    "#;
+    let sq = ctx.create_f32_buffer(
+        (params.width * params.height) as usize,
+        "var_g_sq",
+    );
+    ctx.dispatch_compute_shader_multi(
+        "var_sq",
+        products_shader,
+        &[mean_g, &sq],
+        params_bytes,
+        workgroups,
+    );
+
+    let subtract_shader = r#"
         struct Params {
             width: u32,
             height: u32,
@@ -495,7 +643,7 @@ fn var_from_means_gpu(
             _pad: f32,
         };
         @group(0) @binding(0) var<storage, read> mean_gg: array<f32>;
-        @group(0) @binding(1) var<storage, read> mean_g: array<f32>;
+        @group(0) @binding(1) var<storage, read> sq: array<f32>;
         @group(0) @binding(2) var<storage, read_write> var_g: array<f32>;
         @group(0) @binding(3) var<uniform> params: Params;
 
@@ -504,15 +652,14 @@ fn var_from_means_gpu(
             let i = global_id.x + global_id.y * 16776960u;
             let n = params.width * params.height;
             if (i >= n) { return; }
-            let mg = mean_g[i];
-            var_g[i] = mean_gg[i] - mg * mg;
+            var_g[i] = mean_gg[i] - sq[i];
         }
     "#;
     ctx.dispatch_compute_shader_multi(
-        "var_from_means",
-        shader,
-        &[mean_gg, mean_g, var_g],
-        bytemuck::bytes_of(params),
+        "var_sub",
+        subtract_shader,
+        &[mean_gg, &sq, var_g],
+        params_bytes,
         workgroups,
     );
 }
@@ -536,7 +683,46 @@ fn guided_filter_channel_gpu(
     box_filter_gpu(ctx, work1, work2, tmp, params, workgroups); // mean_gp
 
     // a = cov / (var + eps), b = mean_p - a * mean_g
-    let ab_shader = r#"
+    //
+    // Three passes so every multiply is rounded before its use, exactly like
+    // the CPU's plain f32 ops: the Metal compiler otherwise contracts
+    // `mean_gp - mg*mp` and `mp - a_val*mg` into FMA chains whose exact
+    // products leave denormal residuals where the CPU cancels to zero.
+    // mean_gp and amg are overwritten in place (same-index read-then-write),
+    // so every buffer appears at exactly one binding.
+    let ab_products_shader = r#"
+        struct Params {
+            width: u32,
+            height: u32,
+            radius: u32,
+            epsilon: f32,
+            wr: f32,
+            wg: f32,
+            wb: f32,
+            _pad: f32,
+        };
+        @group(0) @binding(0) var<storage, read> mean_p: array<f32>;
+        @group(0) @binding(1) var<storage, read> mean_g: array<f32>;
+        @group(0) @binding(2) var<storage, read_write> prod: array<f32>;
+        @group(0) @binding(3) var<uniform> params: Params;
+
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let i = global_id.x + global_id.y * 16776960u;
+            let n = params.width * params.height;
+            if (i >= n) { return; }
+            prod[i] = mean_p[i] * mean_g[i];
+        }
+    "#;
+    ctx.dispatch_compute_shader_multi(
+        "guided_ab_products",
+        ab_products_shader,
+        &[work0, mean_g, work1],
+        params_bytes,
+        workgroups,
+    );
+
+    let ab_a_shader = r#"
         struct Params {
             width: u32,
             height: u32,
@@ -548,12 +734,11 @@ fn guided_filter_channel_gpu(
             _pad: f32,
         };
         @group(0) @binding(0) var<storage, read> mean_g: array<f32>;
-        @group(0) @binding(1) var<storage, read> mean_p: array<f32>;
-        @group(0) @binding(2) var<storage, read> mean_gp: array<f32>;
-        @group(0) @binding(3) var<storage, read> var_g: array<f32>;
-        @group(0) @binding(4) var<storage, read_write> a_out: array<f32>;
-        @group(0) @binding(5) var<storage, read_write> b_out: array<f32>;
-        @group(0) @binding(6) var<uniform> params: Params;
+        @group(0) @binding(1) var<storage, read_write> mean_gp: array<f32>;
+        @group(0) @binding(2) var<storage, read> var_g: array<f32>;
+        @group(0) @binding(3) var<storage, read> prod: array<f32>;
+        @group(0) @binding(4) var<storage, read_write> amg: array<f32>;
+        @group(0) @binding(5) var<uniform> params: Params;
 
         @compute @workgroup_size(256)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -561,23 +746,93 @@ fn guided_filter_channel_gpu(
             let n = params.width * params.height;
             if (i >= n) { return; }
             let mg = mean_g[i];
-            let mp = mean_p[i];
-            let cov = mean_gp[i] - mg * mp;
-            let a_val = cov / (var_g[i] + params.epsilon);
-            a_out[i] = a_val;
-            b_out[i] = mp - a_val * mg;
+            let cov = mean_gp[i] - prod[i];
+            let denom = var_g[i] + params.epsilon;
+            let inv = 1.0 / denom;
+            let q0 = cov * inv;
+            let e = fma(-denom, q0, cov);
+            let a_val = fma(e, inv, q0);
+            mean_gp[i] = a_val;
+            amg[i] = a_val * mg;
         }
     "#;
     ctx.dispatch_compute_shader_multi(
-        "guided_ab",
-        ab_shader,
-        &[mean_g, work0, work2, var_g, work1, work3],
+        "guided_ab_a",
+        ab_a_shader,
+        &[mean_g, work2, var_g, work1, work3],
         params_bytes,
         workgroups,
     );
 
-    box_filter_gpu(ctx, work1, work2, tmp, params, workgroups); // mean_a
+    let ab_b_shader = r#"
+        struct Params {
+            width: u32,
+            height: u32,
+            radius: u32,
+            epsilon: f32,
+            wr: f32,
+            wg: f32,
+            wb: f32,
+            _pad: f32,
+        };
+        @group(0) @binding(0) var<storage, read> mean_p: array<f32>;
+        @group(0) @binding(1) var<storage, read_write> amg: array<f32>;
+        @group(0) @binding(2) var<uniform> params: Params;
+
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let i = global_id.x + global_id.y * 16776960u;
+            let n = params.width * params.height;
+            if (i >= n) { return; }
+            amg[i] = mean_p[i] - amg[i];
+        }
+    "#;
+    ctx.dispatch_compute_shader_multi(
+        "guided_ab_b",
+        ab_b_shader,
+        &[work0, work3],
+        params_bytes,
+        workgroups,
+    );
+
+    box_filter_gpu(ctx, work2, work1, tmp, params, workgroups); // mean_a
     box_filter_gpu(ctx, work3, work0, tmp, params, workgroups); // mean_b
+
+    // out = mean_a * guide + mean_b
+    //
+    // Two passes so the multiply is rounded before the add, like the CPU's
+    // plain `ma * gv + mb`; a fused `fma(ma, gv, mb)` differs by 1 ULP.
+    let apply_products_shader = r#"
+        struct Params {
+            width: u32,
+            height: u32,
+            radius: u32,
+            epsilon: f32,
+            wr: f32,
+            wg: f32,
+            wb: f32,
+            _pad: f32,
+        };
+        @group(0) @binding(0) var<storage, read> mean_a: array<f32>;
+        @group(0) @binding(1) var<storage, read> guide: array<f32>;
+        @group(0) @binding(2) var<storage, read_write> prod: array<f32>;
+        @group(0) @binding(3) var<uniform> params: Params;
+
+        @compute @workgroup_size(256)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let i = global_id.x + global_id.y * 16776960u;
+            let n = params.width * params.height;
+            if (i >= n) { return; }
+            prod[i] = mean_a[i] * guide[i];
+        }
+    "#;
+    ctx.dispatch_compute_shader_multi(
+        "guided_apply_products",
+        apply_products_shader,
+        &[work1, guide, tmp],
+        params_bytes,
+        workgroups,
+    );
 
     let apply_shader = r#"
         struct Params {
@@ -590,24 +845,23 @@ fn guided_filter_channel_gpu(
             wb: f32,
             _pad: f32,
         };
-        @group(0) @binding(0) var<storage, read> mean_a: array<f32>;
+        @group(0) @binding(0) var<storage, read> prod: array<f32>;
         @group(0) @binding(1) var<storage, read> mean_b: array<f32>;
-        @group(0) @binding(2) var<storage, read> guide: array<f32>;
-        @group(0) @binding(3) var<storage, read_write> out_data: array<f32>;
-        @group(0) @binding(4) var<uniform> params: Params;
+        @group(0) @binding(2) var<storage, read_write> out_data: array<f32>;
+        @group(0) @binding(3) var<uniform> params: Params;
 
         @compute @workgroup_size(256)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let i = global_id.x + global_id.y * 16776960u;
             let n = params.width * params.height;
             if (i >= n) { return; }
-            out_data[i] = mean_a[i] * guide[i] + mean_b[i];
+            out_data[i] = prod[i] + mean_b[i];
         }
     "#;
     ctx.dispatch_compute_shader_multi(
         "guided_apply",
         apply_shader,
-        &[work2, work0, guide, source],
+        &[tmp, work0, source],
         params_bytes,
         workgroups,
     );

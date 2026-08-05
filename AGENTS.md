@@ -45,6 +45,8 @@ after the gpu path is equal to the cpu and all the tests pases you inform the us
 YOU WILL NOT COMMIT CODE OWN YOUR OWN, only the user can commit, create branches etc
 use git only for research, restore files etc
 
+if you need scripts to measure, tests etc prefer doing that in rust and run it with --release so is fast, same for cargo test --release
+
 for implementation use use 2 agents
 Agent 1: code planner / code writer
 Agent 2: reviewer

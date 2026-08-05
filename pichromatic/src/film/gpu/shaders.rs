@@ -998,22 +998,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// Two-sublayer grain apply (CPU `apply_grain` sublayer structure): one pass
-/// applies both dye-cloud sublayers (κ·√2 each) and writes their average.
-/// `kappa` uniform carries the already-scaled sublayer κ (κ·√2); `noise0` and
-/// `noise1` hold the two independent blurred sublayer noise planes.
+/// Two-sublayer grain apply (CPU `apply_continuum_grain` sublayer structure):
+/// one pass applies both dye-cloud sublayers and writes their average.
+/// `kappa0`/`kappa1` carry the already-scaled per-sublayer κ
+/// (scale_kappa·√2 / L2²); `noise0` and `noise1` hold the two independent
+/// blurred sublayer noise planes.
 pub const GRAIN_APPLY_SUB: &str = r#"
-struct U { n:u32, off:u32, kappa:f32, dmax:f32, norm:f32, noise0_off:u32, noise1_off:u32, p0:u32 };
+struct U { n:u32, off:u32, kappa0:f32, kappa1:f32, dmax:f32, norm:f32, noise0_off:u32, noise1_off:u32, p0:u32 };
 @group(0) @binding(0) var<storage, read_write> dye: array<f32>;
 @group(0) @binding(1) var<storage, read_write> noise0: array<f32>;
 @group(0) @binding(2) var<storage, read_write> noise1: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
-fn sublayer_d(dens: f32, n: f32) -> f32 {
+fn sublayer_d(dens: f32, n: f32, kappa: f32) -> f32 {
     let eps_toe = 0.05 * u.dmax;
     let taper = min(dens / (dens + eps_toe), 1.0);
     let sd = taper * sqrt(max(dens * (u.dmax - dens), 0.0));
-    let noisy = dens + u.kappa * sd * n * u.norm;
+    let noisy = dens + kappa * sd * n * u.norm;
     let knee = 0.005 * u.dmax;
     var dd = noisy;
     if (noisy < knee) {
@@ -1027,8 +1028,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
     let dens = clamp(dye[u.off + i], 0.0, u.dmax);
-    let s0 = sublayer_d(dens, noise0[u.noise0_off + i]);
-    let s1 = sublayer_d(dens, noise1[u.noise1_off + i]);
+    let s0 = sublayer_d(dens, noise0[u.noise0_off + i], u.kappa0);
+    let s1 = sublayer_d(dens, noise1[u.noise1_off + i], u.kappa1);
     dye[u.off + i] = (s0 + s1) * 0.5;
 }
 "#;
@@ -1040,7 +1041,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 pub const GRAIN_APPLY_SUB_RAW_ROI: &str = r#"
 struct U {
     n:u32, dye_off:u32, noise0_off:u32, noise1_off:u32,
-    kappa:f32, dmax:f32, norm:f32, root_w:u32,
+    kappa0:f32, kappa1:f32, dmax:f32, norm:f32, root_w:u32,
     root_h:u32, radius0:u32, radius1:u32, p0:u32,
 };
 @group(0) @binding(0) var<storage, read_write> arena: array<f32>;
@@ -1079,7 +1080,8 @@ fn sublayer_d(dens: f32, noise_off: u32, lx: i32, ly: i32, radius: u32, sl: u32)
     let eps_toe = 0.05 * u.dmax;
     let taper = min(dens / (dens + eps_toe), 1.0);
     let sd = taper * sqrt(max(dens * (u.dmax - dens), 0.0));
-    let noisy = dens + u.kappa * sd * blurred_noise(noise_off, lx, ly, radius, sl) * u.norm;
+    let kappa = select(u.kappa1, u.kappa0, sl == 0u);
+    let noisy = dens + kappa * sd * blurred_noise(noise_off, lx, ly, radius, sl) * u.norm;
     let knee = 0.005 * u.dmax;
     var dd = noisy;
     if (noisy < knee) {

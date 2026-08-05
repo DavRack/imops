@@ -175,7 +175,161 @@ pub fn apply_vignette_radial_correction_gpu(
                     _pad: 0,
                 };
 
-                let shader_source = r#"
+                // Four passes so every float op matches the CPU bit-for-bit.
+                // A single-pass shader gets the correction polynomial and the
+                // `1.0 + strength*correction` fused into FMA chains by the
+                // Metal compiler; the polynomial has large intermediate terms
+                // (~6.0) that cancel down to ~1.6, so the fusion shifts the
+                // gain by several ULP. Passing intermediates through storage
+                // memory (products -> distance -> scaled correction -> gain)
+                // makes the adds plain, exactly like the CPU.
+                let uvdr_shader = r#"
+                    struct Params {
+                        k0: f32,
+                        k1: f32,
+                        k2: f32,
+                        k3: f32,
+                        k4: f32,
+                        cx: f32,
+                        cy: f32,
+                        strength: f32,
+                        d_max: f32,
+                        width: u32,
+                        height: u32,
+                        pad: u32,
+                    };
+
+                    @group(0) @binding(0) var<storage, read_write> sqd: array<vec4<f32>>;
+                    @group(0) @binding(1) var<uniform> params: Params;
+
+                    fn div_exact(a: f32, b: f32) -> f32 {
+                        let inv = 1.0 / b;
+                        let q0 = a * inv;
+                        let e = fma(-b, q0, a);
+                        return fma(e, inv, q0);
+                    }
+
+                    @compute @workgroup_size(16, 16)
+                    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                        let px = f32(global_id.x);
+                        let py = f32(global_id.y);
+                        if (global_id.x >= params.width || global_id.y >= params.height) {
+                            return;
+                        }
+                        let index = global_id.y * params.width + global_id.x;
+
+                        let w_f32 = f32(params.width - 1u);
+                        let h_f32 = f32(params.height - 1u);
+
+                        // Correctly-rounded division (the compiler lowers `/`
+                        // to a reciprocal multiply, which is 1-2 ULP off the
+                        // CPU's IEEE division; one Newton step recovers the
+                        // exact quotient).
+                        let u = div_exact(px, w_f32);
+                        let v = div_exact(py, h_f32);
+
+                        let du = u - params.cx;
+                        let dv = v - params.cy;
+                        sqd[index] = vec4<f32>(du * du, dv * dv, 0.0, 0.0);
+                    }
+                "#;
+                let drterms_shader = r#"
+                    struct Params {
+                        k0: f32,
+                        k1: f32,
+                        k2: f32,
+                        k3: f32,
+                        k4: f32,
+                        cx: f32,
+                        cy: f32,
+                        strength: f32,
+                        d_max: f32,
+                        width: u32,
+                        height: u32,
+                        pad: u32,
+                    };
+
+                    @group(0) @binding(0) var<storage, read_write> sqd: array<vec4<f32>>;
+                    @group(0) @binding(1) var<storage, read_write> terms0: array<vec4<f32>>;
+                    @group(0) @binding(2) var<storage, read_write> terms1: array<vec4<f32>>;
+                    @group(0) @binding(3) var<uniform> params: Params;
+
+                    fn div_exact(a: f32, b: f32) -> f32 {
+                        let inv = 1.0 / b;
+                        let q0 = a * inv;
+                        let e = fma(-b, q0, a);
+                        return fma(e, inv, q0);
+                    }
+
+                    // Correctly-rounded sqrt: the builtin `sqrt` is up to 2 ULP
+                    // off the CPU's IEEE sqrt (measured over the vignette's
+                    // distance range); one residual-corrected Newton step on
+                    // `inverseSqrt` is bit-exact there.
+                    fn sqrt_exact(x: f32) -> f32 {
+                        if (x == 0.0) { return 0.0; }
+                        let r = inverseSqrt(x);
+                        let y = x * r;
+                        let e = fma(-y, y, x);
+                        return fma(e, 0.5 * r, y);
+                    }
+
+                    @compute @workgroup_size(16, 16)
+                    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                        if (global_id.x >= params.width || global_id.y >= params.height) {
+                            return;
+                        }
+                        let index = global_id.y * params.width + global_id.x;
+
+                        let s = sqd[index];
+                        let d = sqrt_exact(s.x + s.y);
+                        let r = div_exact(d, params.d_max);
+
+                        let r2 = r * r;
+                        let r4 = r2 * r2;
+                        let r6 = r4 * r2;
+                        let r8 = r4 * r4;
+                        let r10 = r8 * r2;
+
+                        sqd[index] = vec4<f32>(d, r, 0.0, 0.0);
+                        terms0[index] = vec4<f32>(params.k0 * r2, params.k1 * r4, params.k2 * r6, params.k3 * r8);
+                        terms1[index] = vec4<f32>(params.k4 * r10, 0.0, 0.0, 0.0);
+                    }
+                "#;
+                let gain_shader = r#"
+                    struct Params {
+                        k0: f32,
+                        k1: f32,
+                        k2: f32,
+                        k3: f32,
+                        k4: f32,
+                        cx: f32,
+                        cy: f32,
+                        strength: f32,
+                        d_max: f32,
+                        width: u32,
+                        height: u32,
+                        pad: u32,
+                    };
+
+                    @group(0) @binding(0) var<storage, read> terms0: array<vec4<f32>>;
+                    @group(0) @binding(1) var<storage, read> terms1: array<vec4<f32>>;
+                    @group(0) @binding(2) var<storage, read_write> gain: array<f32>;
+                    @group(0) @binding(3) var<uniform> params: Params;
+
+                    @compute @workgroup_size(16, 16)
+                    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                        if (global_id.x >= params.width || global_id.y >= params.height) {
+                            return;
+                        }
+                        let index = global_id.y * params.width + global_id.x;
+
+                        let t = terms0[index];
+                        let t4 = terms1[index].x;
+                        let correction = (((t.x + t.y) + t.z) + t.w) + t4;
+                        gain[index] = params.strength * correction;
+                    }
+                "#;
+                let apply_shader = r#"
                     struct Params {
                         k0: f32,
                         k1: f32,
@@ -192,47 +346,60 @@ pub fn apply_vignette_radial_correction_gpu(
                     };
 
                     @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
-                    @group(0) @binding(1) var<uniform> params: Params;
+                    @group(0) @binding(1) var<storage, read> gain: array<f32>;
+                    @group(0) @binding(2) var<uniform> params: Params;
 
                     @compute @workgroup_size(16, 16)
                     fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-                        let px = f32(global_id.x);
-                        let py = f32(global_id.y);
                         if (global_id.x >= params.width || global_id.y >= params.height) {
                             return;
                         }
                         let index = global_id.y * params.width + global_id.x;
 
-                        let w_f32 = f32(params.width - 1u);
-                        let h_f32 = f32(params.height - 1u);
-
-                        let u = px / w_f32;
-                        let v = py / h_f32;
-
-                        let du = u - params.cx;
-                        let dv = v - params.cy;
-                        let d = sqrt(du * du + dv * dv);
-                        let r = d / params.d_max;
-
-                        let r2 = r * r;
-                        let r4 = r2 * r2;
-                        let r6 = r4 * r2;
-                        let r8 = r4 * r4;
-                        let r10 = r8 * r2;
-
-                        let correction = params.k0 * r2 + params.k1 * r4 + params.k2 * r6 + params.k3 * r8 + params.k4 * r10;
-                        let gain = max(0.0, 1.0 + params.strength * correction);
-
+                        let gain_clamped = max(0.0, 1.0 + gain[index]);
                         let p = pixels[index];
-                        pixels[index] = vec4<f32>(p.rgb * gain, p.a);
+                        pixels[index] = vec4<f32>(p.rgb * gain_clamped, p.a);
                     }
                 "#;
 
-                ctx.dispatch_compute_shader_2d(
-                    "vignette",
-                    shader_source,
-                    storage_buffer,
+                let count = storage_buffer.width * storage_buffer.height;
+                let sqd_buf = ctx.create_f32_buffer(4 * count, "vignette_sqd");
+                let terms0_buf = ctx.create_f32_buffer(4 * count, "vignette_terms0");
+                let terms1_buf = ctx.create_f32_buffer(4 * count, "vignette_terms1");
+                let gain_buf = ctx.create_f32_buffer(count, "vignette_gain");
+                let gx = (storage_buffer.width as u32 + 15) / 16;
+                let gy = (storage_buffer.height as u32 + 15) / 16;
+                ctx.dispatch_compute_shader_2d_multi(
+                    "vignette_uvdr",
+                    uvdr_shader,
+                    &[&sqd_buf],
                     bytemuck::bytes_of(&gpu_params),
+                    gx,
+                    gy,
+                );
+                ctx.dispatch_compute_shader_2d_multi(
+                    "vignette_drterms",
+                    drterms_shader,
+                    &[&sqd_buf, &terms0_buf, &terms1_buf],
+                    bytemuck::bytes_of(&gpu_params),
+                    gx,
+                    gy,
+                );
+                ctx.dispatch_compute_shader_2d_multi(
+                    "vignette_gain",
+                    gain_shader,
+                    &[&terms0_buf, &terms1_buf, &gain_buf],
+                    bytemuck::bytes_of(&gpu_params),
+                    gx,
+                    gy,
+                );
+                ctx.dispatch_compute_shader_2d_multi(
+                    "vignette_apply",
+                    apply_shader,
+                    &[&storage_buffer.buffer, &gain_buf],
+                    bytemuck::bytes_of(&gpu_params),
+                    gx,
+                    gy,
                 );
             }
         }

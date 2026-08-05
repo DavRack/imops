@@ -12,10 +12,6 @@
 //! finishes the `f64` reduction for `norm` so it matches the CPU path bit-near.
 //! All spatial grain work stays on GPU.
 //!
-//! Note: the grain path is currently frozen on the legacy model (per-sublayer
-//! κ, the pre-particle CPU model) until the CPU-first migration is completed.
-//! The CPU/GPU parity tests are expected to stay red in the meantime; do not
-//! chase them to green while the CPU grain refactor is in flight.
 
 mod roi;
 #[doc(hidden)]
@@ -27,15 +23,12 @@ pub(crate) use workspace::acquire_film_resources;
 use bytemuck::{Pod, Zeroable};
 use wgpu::Buffer;
 
+use crate::film::blur::gaussian_kernel_l2_sq;
 use crate::film::constants::{
     ABSORPTION_SIGMA_SCALE_PER_UM, DYE_CLOUD_CORRELATION_UM, LOCAL_SCATTER_MIX,
     MASK_DENSITY_FRACTION_OF_DMAX,
 };
-/// Legacy CPU sublayer κ (old grain model, frozen on GPU until the migration):
-/// κ_ref·0.15 at ≥ 1.5 µm pitch.
-fn legacy_scale_kappa(kappa_ref: f32, pixel_pitch_um: f32) -> f32 {
-    (kappa_ref * 0.15) / pixel_pitch_um.max(1.5)
-}
+use crate::film::development::grain::{scale_kappa, SUBLAYER_SCALES};
 use crate::film::exposure::halation::{
     bleed_weights_for_layers, effective_reflectance, reflectance_at, sigma_px_from_um,
 };
@@ -132,7 +125,8 @@ struct NoiseU {
 struct GrainApplySubU {
     n: u32,
     off: u32,
-    kappa: f32,
+    kappa0: f32,
+    kappa1: f32,
     dmax: f32,
     norm: f32,
     noise0_off: u32,
@@ -147,7 +141,8 @@ struct GrainApplySubRoiU {
     dye_off: u32,
     noise0_off: u32,
     noise1_off: u32,
-    kappa: f32,
+    kappa0: f32,
+    kappa1: f32,
     dmax: f32,
     norm: f32,
     root_w: u32,
@@ -424,8 +419,9 @@ pub(crate) struct StockConsts {
     scan_scale: f32,
     do_invert: bool,
     // Per-emulsion runtime scalars.
-    // `kappa` is the CPU sublayer κ = scale_kappa(...)·√2 (two dye-cloud sublayers).
-    kappa: Vec<f32>,
+    // `kappa` is the CPU per-sublayer κ = scale_kappa(...)·√2 / L2² for the two
+    // dye-cloud sublayers (scales 1.3 / 0.7).
+    kappa: Vec<[f32; 2]>,
     dmax: Vec<f32>,
     // Blur sigmas (px) for spatial stages.
     sigma_local: f32,
@@ -681,15 +677,31 @@ pub(crate) fn bake_consts(
     }
 
     // ── halation gains (r_e * bleed[e]) ──
+    // With halation disabled the CPU zeroes `stock.antihalation.reflectance`
+    // (film::process) before exposing, which makes every gain zero and skips the
+    // halation accumulation (`max_r <= 0`). Replicate by substituting a
+    // zero-valued reflectance curve in both reflectance queries.
     let pitch = params.film_format.pixel_pitch_um(width);
     let emul_refs: Vec<&EmulsionLayer> = emuls.iter().map(|(_, l)| *l).collect();
     let bleed = bleed_weights_for_layers(&emul_refs);
+    let zero_reflectance = if !params.enable_halation {
+        Some(crate::film::spectrum::SpectralCurve::constant(0.0))
+    } else {
+        None
+    };
+    let zero_model = zero_reflectance.as_ref().map(|refl| crate::film::stock::AntihalationModel {
+        reflectance: refl.clone(),
+        psf_local_um: stock.antihalation.psf_local_um,
+        psf_halation_um: stock.antihalation.psf_halation_um,
+    });
     let mut gains_v: Vec<f32> = Vec::with_capacity(num_emul);
     for (e, layer) in emul_refs.iter().enumerate() {
         let r_e = if let Some(sens) = layer.spectral_sensitivity.as_ref() {
-            effective_reflectance(&stock.antihalation.reflectance, sens)
+            let refl = zero_reflectance.as_ref().unwrap_or(&stock.antihalation.reflectance);
+            effective_reflectance(refl, sens)
         } else {
-            reflectance_at(&stock.antihalation, 650.0)
+            let model = zero_model.as_ref().unwrap_or(&stock.antihalation);
+            reflectance_at(model, 650.0)
         };
         gains_v.push(r_e * bleed[e]);
     }
@@ -754,21 +766,19 @@ pub(crate) fn bake_consts(
     };
 
     // Grain scalars and per-layer crystal-aware dye-cloud sublayer kernels.
-    // Mirrors CPU `apply_grain`: two sublayers (scales 1.3 / 0.7) with independent
-    // SplitMix64 streams; sublayer κ = scale_kappa·√2.
+    // Mirrors CPU `apply_continuum_grain`: two sublayers (scales 1.3 / 0.7) with
+    // independent SplitMix64 streams; per-sublayer κ =
+    // scale_kappa(kappa_ref, pitch, correlation_um)·√2 / L2²(kernel).
     let mut kappa = Vec::with_capacity(num_emul);
     let mut dmax_grain = Vec::with_capacity(num_emul);
     let mut grain_seed_base = Vec::with_capacity(num_emul);
     let mut grain_kernels = Vec::with_capacity(num_emul);
 
-    const SUBLAYER_SCALES: [f32; 2] = [1.3, 0.7];
     const SUBLAYER_STREAM_MIX: u64 = 0x123456789;
 
     for (e, &(li, layer)) in emuls.iter().enumerate() {
         let coupler = layer.coupler.as_ref().unwrap();
         let kappa_ref = stock.grain_kappa[li].unwrap_or(0.0);
-        let k = legacy_scale_kappa(kappa_ref, pitch) * (SUBLAYER_SCALES.len() as f32).sqrt();
-        kappa.push(k);
         dmax_grain.push(coupler.d_max);
         let base = params
             .seed
@@ -781,16 +791,21 @@ pub(crate) fn bake_consts(
         }
         grain_seed_base.push(bases);
 
+        let dye_cloud_sigma = DYE_CLOUD_CORRELATION_UM * 0.25;
         let base_correlation_um = if let Some(dist) = &layer.crystal_size {
-            let mean_s = (dist.mu_ln + 0.5 * dist.sigma_ln * dist.sigma_ln).exp();
-            (mean_s / 0.7) as f32 * DYE_CLOUD_CORRELATION_UM
+            let mean_s = (dist.mu_ln + 0.5 * dist.sigma_ln * dist.sigma_ln).exp() as f32;
+            (mean_s / 0.7) * dye_cloud_sigma
         } else {
-            DYE_CLOUD_CORRELATION_UM
+            dye_cloud_sigma
         };
+        let mut kappas = [0.0f32; 2];
         let mut kernels: Vec<(std::sync::Arc<Buffer>, u32)> = Vec::with_capacity(2);
-        for &sl_scale in SUBLAYER_SCALES.iter() {
+        for (sl, &sl_scale) in SUBLAYER_SCALES.iter().enumerate() {
             let correlation_um = base_correlation_um * sl_scale;
             let grain_sigma = (correlation_um / pitch.max(1e-6)).max(1.0);
+            let kappa_target =
+                scale_kappa(kappa_ref, pitch, correlation_um) * (SUBLAYER_SCALES.len() as f32).sqrt();
+            kappas[sl] = kappa_target / gaussian_kernel_l2_sq(grain_sigma);
             let k_grain = make_gaussian_kernel(grain_sigma);
             let rad_grain = crate::film::blur::gaussian_radius(grain_sigma) as u32;
             let buf_grain = std::sync::Arc::new(ctx.create_f32_buffer_init(
@@ -799,6 +814,7 @@ pub(crate) fn bake_consts(
             ));
             kernels.push((buf_grain, rad_grain));
         }
+        kappa.push(kappas);
         grain_kernels.push(kernels.try_into().unwrap());
     }
 
@@ -1550,7 +1566,7 @@ async fn process_gpu_full_frame(
         for plane_e in 0..e {
             let kappa = consts.kappa[plane_e];
             let dmax = consts.dmax[plane_e];
-            if kappa <= 0.0 || dmax <= 0.0 {
+            if (kappa[0] <= 0.0 && kappa[1] <= 0.0) || dmax <= 0.0 {
                 continue;
             }
             let (ref k0, r0) = consts.grain_kernels[plane_e][0];
@@ -1638,7 +1654,8 @@ async fn process_gpu_full_frame(
             let gu = GrainApplySubU {
                 n: n as u32,
                 off: dst_off,
-                kappa,
+                kappa0: kappa[0],
+                kappa1: kappa[1],
                 dmax,
                 norm: 1.0,
                 noise0_off: dst_off,
@@ -1759,7 +1776,7 @@ async fn process_gpu_roi(
     for e in 0..num_emul {
         let kappa = consts.kappa[e];
         let dmax = consts.dmax[e];
-        if kappa > 0.0 && dmax > 0.0 {
+        if (kappa[0] > 0.0 || kappa[1] > 0.0) && dmax > 0.0 {
             active_grain_emuls.push(e);
         }
     }
@@ -2184,7 +2201,8 @@ async fn process_gpu_roi(
                     dye_off,
                     noise0_off: blur_tmp_off,
                     noise1_off: blur_out_off,
-                    kappa: consts.kappa[e],
+                    kappa0: consts.kappa[e][0],
+                    kappa1: consts.kappa[e][1],
                     dmax: consts.dmax[e],
                     norm: grain_norms[e],
                     root_w: plan.root.width,
