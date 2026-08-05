@@ -8,11 +8,7 @@ use crate::film::blur::gaussian_blur_separable;
 use crate::film::types::DyePlanes;
 
 /// Apply adjacency correction to image dye planes.
-pub fn apply_adjacency(
-    dyes: &mut DyePlanes,
-    sigma_px: f32,
-    beta: f32,
-) {
+pub fn apply_adjacency(dyes: &mut DyePlanes, sigma_px: f32, beta: f32) {
     if beta.abs() < 1e-8 || sigma_px < 1e-3 {
         return;
     }
@@ -36,11 +32,7 @@ pub fn apply_adjacency(
 /// column = target emulsion `j` receiving inhibition). Target `j` receives
 /// `I_total,j = Σ_i matrix[i][j] · (I_i ⊛ G_σ)` and its image dye is scaled by
 /// `exp(−I_total,j)`.
-pub fn apply_dir_inhibition(
-    dyes: &mut DyePlanes,
-    sigma_dir_px: f32,
-    matrix: &[Vec<f32>],
-) {
+pub fn apply_dir_inhibition(dyes: &mut DyePlanes, sigma_dir_px: f32, matrix: &[Vec<f32>]) {
     let num_emulsions = dyes.image_dye.len();
     if num_emulsions == 0 || matrix.is_empty() || sigma_dir_px < 1e-3 {
         return;
@@ -168,8 +160,14 @@ mod tests {
         apply_dir_inhibition(&mut dyes, 2.0, &matrix);
         let got0_edge = dyes.image_dye[0][8 * 16 + 8];
         let got1 = dyes.image_dye[1][8 * 16 + 8];
-        assert!(got0_edge != 1.0, "target 0 should be inhibited on edge by source 1");
-        assert_eq!(got1, 1.0, "target 1 must be unchanged under matrix[1][0]-only coupling");
+        assert!(
+            got0_edge != 1.0,
+            "target 0 should be inhibited on edge by source 1"
+        );
+        assert_eq!(
+            got1, 1.0,
+            "target 1 must be unchanged under matrix[1][0]-only coupling"
+        );
     }
 
     #[test]

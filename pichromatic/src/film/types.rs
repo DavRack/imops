@@ -29,6 +29,8 @@ pub enum FilmFormat {
     Film6x6,
     /// 4×5 sheet: 101.6 mm.
     Film4x5,
+    /// 1 mm debug frame: ~1 µm/px at 1000 px wide, resolves dye clouds.
+    Film1mmDebug,
 }
 
 impl FilmFormat {
@@ -38,6 +40,7 @@ impl FilmFormat {
             FilmFormat::Film35mm => Millimeters(36.0),
             FilmFormat::Film6x6 => Millimeters(56.0),
             FilmFormat::Film4x5 => Millimeters(101.6),
+            FilmFormat::Film1mmDebug => Millimeters(1.0),
         }
     }
 

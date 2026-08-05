@@ -167,6 +167,7 @@ fn vv_macbeth_colorchecker_delta_e00_gate() {
         film_format: pichromatic::film::types::FilmFormat::Film35mm,
         seed: 1,
         output: FilmOutput::PositiveLinear,
+        enable_halation: true,
         compensate_box_speed: true,
     };
 

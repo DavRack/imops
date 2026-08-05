@@ -47,7 +47,7 @@ pub(crate) fn gaussian_radius(sigma: f32) -> usize {
     }
 }
 
-fn make_gaussian_kernel(sigma: f32) -> Vec<f32> {
+pub(crate) fn make_gaussian_kernel(sigma: f32) -> Vec<f32> {
     // Radius ≈ 3σ covers ~99.7% of mass.
     let radius = gaussian_radius(sigma);
     let mut k = vec![0.0f32; 2 * radius + 1];
@@ -63,6 +63,19 @@ fn make_gaussian_kernel(sigma: f32) -> Vec<f32> {
         *v /= sum;
     }
     k
+}
+
+/// L2-norm squared (Σ w²) of the 1D separable kernel at `sigma`.
+///
+/// Convolving unit-variance white noise with the unit-sum kernel `H·Hᵀ`
+/// scales the output variance by (Σh²)², so the output std is Σh². Dividing
+/// the grain amplitude by this factor keeps the correlated noise field
+/// unit-variance: the dye-cloud footprint then shapes the spectrum without
+/// attenuating the per-pixel granularity (Selwyn's law at the pixel aperture).
+#[inline]
+pub(crate) fn gaussian_kernel_l2_sq(sigma: f32) -> f32 {
+    let k = make_gaussian_kernel(sigma);
+    k.iter().map(|&w| w * w).sum()
 }
 
 fn convolve_1d_reflect(input: &[f32], output: &mut [f32], kernel: &[f32]) {

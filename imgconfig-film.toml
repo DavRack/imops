@@ -1,8 +1,9 @@
 #### Pixel Pipeline — physically-based film (PositiveLinear) ####
 # Usage: ./run <raw.dng> imgconfig-film.toml
 #
-# PositiveLinear is a diagnostic negative invert; the following display transform
-# provides bounded tone and gamut mapping, not a measured film-print profile.
+# PositiveLinear is the analytic mid/Dmin inversion used for display output.
+# NegativeLinear is the densitometric scan of the developed negative and is
+# appropriate for inspecting film grain/cloud structure.
 
 [[pipeline_modules]]
 name = "Demosaic"
@@ -13,6 +14,9 @@ name = "Vignette"
 strength = 1.0
 
 [[pipeline_modules]]
+name = "HighlightReconstruction"
+
+[[pipeline_modules]]
 name = "CFACoeffs"
 
 [[pipeline_modules]]
@@ -21,14 +25,11 @@ radius = 2
 epsilon = 0.01
 
 [[pipeline_modules]]
-name = "HighlightReconstruction"
-
-[[pipeline_modules]]
 name = "BaselineExposureCompensation"
 
 [[pipeline_modules]]
 name = "Exp"
-ev = 0.0
+ev = 3.0
 
 # [[pipeline_modules]]
 # name = "Contrast"
@@ -42,7 +43,9 @@ target_color_space = "AcesCg"
 name = "Film"
 stock = "Ektar100"
 film_format = "Film35mm"
+# film_format = "Film1mmDebug"
 seed = 1
+enable_halation = true
 output = "PositiveLinear"
 # compensate_box_speed = true  (default): exposure is scene-relative, stock
 #   box ISO does not shift brightness — swapping stocks only changes character.

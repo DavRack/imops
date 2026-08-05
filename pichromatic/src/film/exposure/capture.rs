@@ -105,7 +105,8 @@ fn expected_survival(dist: &LogNormalDist, k: f64, phi: f64) -> f64 {
         let pdf = inv_sqrt_2pi * (-0.5 * z * z).exp();
         let s = (dist.mu_ln + dist.sigma_ln * z).exp();
         let lambda = k * s * s * phi;
-        let p_not_dev = (-lambda).exp() * (1.0 + lambda + lambda * lambda / 2.0 + lambda * lambda * lambda / 6.0);
+        let p_not_dev = (-lambda).exp()
+            * (1.0 + lambda + lambda * lambda / 2.0 + lambda * lambda * lambda / 6.0);
         acc += trap_w * pdf * p_not_dev * dz;
     }
     acc

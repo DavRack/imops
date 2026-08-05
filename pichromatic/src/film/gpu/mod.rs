@@ -26,7 +26,11 @@ use crate::film::constants::{
     ABSORPTION_SIGMA_SCALE_PER_UM, DYE_CLOUD_CORRELATION_UM, LOCAL_SCATTER_MIX,
     MASK_DENSITY_FRACTION_OF_DMAX,
 };
-use crate::film::development::grain::scale_kappa;
+/// Legacy CPU sublayer κ (old grain model, frozen on GPU until the migration):
+/// κ_ref·0.15 at ≥ 1.5 µm pitch.
+fn legacy_scale_kappa(kappa_ref: f32, pixel_pitch_um: f32) -> f32 {
+    (kappa_ref * 0.15) / pixel_pitch_um.max(1.5)
+}
 use crate::film::exposure::halation::{
     bleed_weights_for_layers, effective_reflectance, reflectance_at, sigma_px_from_um,
 };
@@ -758,7 +762,7 @@ pub(crate) fn bake_consts(
     for (e, &(li, layer)) in emuls.iter().enumerate() {
         let coupler = layer.coupler.as_ref().unwrap();
         let kappa_ref = stock.grain_kappa[li].unwrap_or(0.0);
-        let k = scale_kappa(kappa_ref, pitch) * (SUBLAYER_SCALES.len() as f32).sqrt();
+        let k = legacy_scale_kappa(kappa_ref, pitch) * (SUBLAYER_SCALES.len() as f32).sqrt();
         kappa.push(k);
         dmax_grain.push(coupler.d_max);
         let base = params
@@ -2419,6 +2423,7 @@ mod tests {
                 film_format,
                 seed: 42,
                 output,
+                enable_halation: true,
                 compensate_box_speed: true,
             };
 
@@ -2502,6 +2507,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output: FilmOutput::PositiveLinear,
+            enable_halation: true,
             compensate_box_speed: true,
         };
 
@@ -2592,6 +2598,7 @@ mod tests {
                 film_format,
                 seed: 42,
                 output,
+                enable_halation: true,
                 compensate_box_speed: true,
             };
 

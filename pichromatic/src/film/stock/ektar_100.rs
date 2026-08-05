@@ -255,7 +255,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
             antihalation,
         ],
         antihalation: AntihalationModel {
-            reflectance: gaussian_curve(680.0, 60.0, 0.05),
+            reflectance: gaussian_curve(680.0, 60.0, 0.08),
             psf_local_um: 2.5,
             psf_halation_um: 55.0,
         },
@@ -293,23 +293,22 @@ mod tests {
             .filter(|l| l.kind == LayerKind::Emulsion)
             .map(|l| l.gamma_contrast)
             .collect();
-        assert!(e_gamma.iter().any(|&g| g < 0.36), "slow layers should be hard-γ");
-        assert!(e_gamma.iter().any(|&g| g > 0.55), "fast layers should be toe-open γ");
+        assert!(
+            e_gamma.iter().any(|&g| g < 0.36),
+            "slow layers should be hard-γ"
+        );
+        assert!(
+            e_gamma.iter().any(|&g| g > 0.55),
+            "fast layers should be toe-open γ"
+        );
         assert!(p_gamma.iter().all(|&g| (0.5..0.72).contains(&g)));
         assert!(ektar.adjacency_beta > portra.adjacency_beta);
 
-        let e_dir: f32 = ektar
-            .dir_inhibition_matrix
-            .iter()
-            .flatten()
-            .copied()
-            .sum();
-        let p_dir: f32 = portra
-            .dir_inhibition_matrix
-            .iter()
-            .flatten()
-            .copied()
-            .sum();
-        assert!(e_dir > p_dir, "Ektar DIR sum {e_dir} should exceed Portra {p_dir}");
+        let e_dir: f32 = ektar.dir_inhibition_matrix.iter().flatten().copied().sum();
+        let p_dir: f32 = portra.dir_inhibition_matrix.iter().flatten().copied().sum();
+        assert!(
+            e_dir > p_dir,
+            "Ektar DIR sum {e_dir} should exceed Portra {p_dir}"
+        );
     }
 }

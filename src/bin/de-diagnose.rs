@@ -62,6 +62,7 @@ fn main() {
         film_format: FilmFormat::Film35mm,
         seed: 1,
         output: FilmOutput::PositiveLinear,
+        enable_halation: true,
         compensate_box_speed: true,
     })
     .unwrap();
@@ -88,6 +89,7 @@ fn main() {
         film_format: FilmFormat::Film35mm,
         seed: 1,
         output: FilmOutput::NegativeLinear,
+        enable_halation: true,
         compensate_box_speed: true,
     })
     .unwrap();

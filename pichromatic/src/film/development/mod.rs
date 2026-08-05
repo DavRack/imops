@@ -5,7 +5,9 @@ pub mod grain;
 pub mod reduction;
 
 use crate::film::development::diffusion::{apply_adjacency, apply_dir_inhibition};
-use crate::film::development::grain::{apply_grain, scale_kappa};
+use crate::film::development::grain::{
+    apply_continuum_grain, apply_particle_grain_to_latent, particle_resolution_limit_um,
+};
 use crate::film::development::reduction::reduce;
 use crate::film::stock::{FilmStock, LayerKind};
 use crate::film::types::{DyePlanes, LatentPlanes};
@@ -20,7 +22,34 @@ pub fn develop(
     seed: u64,
     pixel_pitch_um: f32,
 ) -> DyePlanes {
-    let mut dyes = reduce(stock, latent);
+    let mut kappas = Vec::new();
+    let mut crystal_sizes = Vec::new();
+    for (layer_idx, layer) in stock.layers.iter().enumerate() {
+        if layer.kind != LayerKind::Emulsion {
+            continue;
+        }
+        kappas.push(stock.grain_kappa[layer_idx].unwrap_or(0.0));
+        crystal_sizes.push(layer.crystal_size.clone());
+    }
+
+    // Resolve individual particles only when the render aperture can sample a
+    // typical crystal. Larger apertures use the central-limit approximation of
+    // the same population process.
+    let resolves_particles =
+        pixel_pitch_um < particle_resolution_limit_um(&crystal_sizes).max(1e-6);
+    let mut dyes = if resolves_particles {
+        let mut latent_particles = latent.clone();
+        apply_particle_grain_to_latent(
+            &mut latent_particles,
+            &kappas,
+            pixel_pitch_um,
+            seed,
+            &crystal_sizes,
+        );
+        reduce(stock, &latent_particles)
+    } else {
+        reduce(stock, latent)
+    };
 
     let sigma_dir_px = stock.dir_diffusion_length.0 / pixel_pitch_um.max(1e-6);
     apply_dir_inhibition(&mut dyes, sigma_dir_px, &stock.dir_inhibition_matrix);
@@ -28,22 +57,20 @@ pub fn develop(
     let sigma_px = stock.developer_diffusion_length.0 / pixel_pitch_um.max(1e-6);
     apply_adjacency(&mut dyes, sigma_px, stock.adjacency_beta);
 
-    let mut d_max = Vec::new();
-    let mut kappas = Vec::new();
-    let mut crystal_sizes = Vec::new();
-    for (layer_idx, layer) in stock.layers.iter().enumerate() {
-        if layer.kind != LayerKind::Emulsion {
-            continue;
-        }
-        let coupler = layer.coupler.as_ref().unwrap();
-        d_max.push(coupler.d_max);
-        let kappa_ref = stock.grain_kappa[layer_idx].unwrap_or(0.0);
-        // κ(pitch) = κ_1µm / pitch
-        let kappa = scale_kappa(kappa_ref, pixel_pitch_um);
-        kappas.push(kappa);
-        crystal_sizes.push(layer.crystal_size.clone());
+    if !resolves_particles {
+        let d_max: Vec<f32> = stock
+            .emulsion_layers()
+            .map(|(_, layer)| layer.coupler.as_ref().unwrap().d_max)
+            .collect();
+        apply_continuum_grain(
+            &mut dyes,
+            &d_max,
+            &kappas,
+            pixel_pitch_um,
+            seed,
+            &crystal_sizes,
+        );
     }
-    apply_grain(&mut dyes, &d_max, &kappas, pixel_pitch_um, seed, &crystal_sizes);
 
     dyes
 }

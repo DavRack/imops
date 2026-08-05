@@ -16,7 +16,7 @@ use rayon::prelude::*;
 const LOG2_10: f32 = 3.3219280948873623;
 
 /// Effective spectral density at one pixel: Σ_layers (D_image * ε_image + D_mask * ε_mask).
-fn density_spectrum(
+pub(crate) fn density_spectrum(
     stock: &FilmStock,
     dyes: &DyePlanes,
     pixel: usize,
@@ -41,13 +41,23 @@ fn density_spectrum(
     d
 }
 
-fn transmittance_from_density(d: &[f32; 16]) -> [f32; 16] {
+pub(crate) fn transmittance_from_density(d: &[f32; 16]) -> [f32; 16] {
     let mut t = [0.0f32; 16];
     for i in 0..16 {
         // 10^-d via exp2, mirroring the `SCAN` shader.
         t[i] = (-d[i] * LOG2_10).exp2();
     }
     t
+}
+
+/// Unnormalized scanner spectrum for one pixel.
+fn scan_pixel_spectrum(stock: &FilmStock, dyes: &DyePlanes, pixel: usize) -> [f32; 16] {
+    let dens = density_spectrum(stock, dyes, pixel);
+    let mut spectrum = transmittance_from_density(&dens);
+    for (value, &light) in spectrum.iter_mut().zip(stock.scanner_light.samples.iter()) {
+        *value *= light as f32;
+    }
+    spectrum
 }
 
 /// Scan dye planes to interleaved ACEScg RGB, Dmin-normalized so peak unexposed ≈ 1.0.
@@ -58,11 +68,7 @@ pub fn scan_to_acescg(stock: &FilmStock, dyes: &DyePlanes) -> ImageBuffer {
     let mut raw: Vec<Pixel> = (0..n)
         .into_par_iter()
         .map(|p| {
-            let dens = density_spectrum(stock, dyes, p);
-            let mut t = transmittance_from_density(&dens);
-            for i in 0..16 {
-                t[i] *= stock.scanner_light.samples[i] as f32;
-            }
+            let t = scan_pixel_spectrum(stock, dyes, p);
             spectrum_to_acescg_rgb_f32(&t)
         })
         .collect();
@@ -102,13 +108,10 @@ pub fn dmin_reference_acescg(stock: &FilmStock) -> [f32; 3] {
         image_dye,
         mask_dye,
     };
-    let dens = density_spectrum(stock, &dyes, 0);
-    let mut t = transmittance_from_density(&dens);
-    for i in 0..16 {
-        t[i] *= stock.scanner_light.samples[i] as f32;
-    }
+    let t = scan_pixel_spectrum(stock, &dyes, 0);
     spectrum_to_acescg_rgb_f32(&t)
 }
+
 
 /// Scan-normalized film-base RGB (same encoding as [`scan_to_acescg`]; peak ≈ 1).
 pub fn normalized_dmin_acescg(stock: &FilmStock) -> [f32; 3] {

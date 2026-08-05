@@ -9,6 +9,7 @@ pub struct Film {
     pub stock: Parameter<String>,
     pub film_format: Parameter<String>,
     pub seed: Parameter<u64>,
+    pub enable_halation: Parameter<bool>,
     pub output: Parameter<String>,
     pub compensate_box_speed: Parameter<bool>,
 }
@@ -32,6 +33,7 @@ fn parse_film_format(s: &str) -> Option<FilmFormat> {
         "Film35mm" => FilmFormat::Film35mm,
         "Film6x6" => FilmFormat::Film6x6,
         "Film4x5" => FilmFormat::Film4x5,
+        "Film1mmDebug" => FilmFormat::Film1mmDebug,
         _ => return None,
     })
 }
@@ -71,6 +73,7 @@ fn film_params_from_config(config: &Film) -> Option<FilmParams> {
         film_format,
         seed: config.seed.value,
         output,
+        enable_halation: config.enable_halation.value,
         compensate_box_speed: config.compensate_box_speed.value,
     })
 }
@@ -110,9 +113,14 @@ impl Default for Film {
                     "Film35mm".to_string(),
                     "Film6x6".to_string(),
                     "Film4x5".to_string(),
+                    "Film1mmDebug".to_string(),
                 ],
             ),
             seed: Parameter::new_ranged(1, 1, 100000, "RNG seed for grain (deterministic)."),
+            enable_halation: Parameter::new(
+                true,
+                "Enable wide backing halation (reflectance bounce) in the film exposure.",
+            ),
             output: Parameter::new_with_choices(
                 "NegativeLinear".to_string(),
                 "NegativeLinear: densitometric scanned negative. PositiveLinear: mid/Dmin invert from stock film base + mid-gray gain.",

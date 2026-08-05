@@ -29,8 +29,10 @@ pub const WAVELENGTH_SAMPLE_COUNT: usize = 16;
 /// latent-image speck. Standard AgX photographic-science assumption (T = 4).
 pub const DEVELOPABILITY_THRESHOLD_ATOMS: u32 = 4;
 
-/// Typical chromogenic dye-cloud correlation length (µm).
-/// Order-of-magnitude from published chromogenic emulsion surveys.
+/// Typical chromogenic dye-cloud physical extent (µm).
+/// Order-of-magnitude from published chromogenic emulsion surveys. The CPU
+/// particle path treats this as an effective cloud diameter and converts it to
+/// a Gaussian footprint from the circular-area second moment.
 pub const DYE_CLOUD_CORRELATION_UM: f32 = 3.0;
 
 /// Relative absorption cross-section scale (1/µm) for Beer–Lambert in
@@ -42,7 +44,7 @@ pub const DYE_CLOUD_CORRELATION_UM: f32 = 3.0;
 /// Single global MVP calibration — not per-stock physics.
 pub const ABSORPTION_SIGMA_SCALE_PER_UM: f64 = 2.0;
 
-/// Absolute radiometric anchor. Converts the relative upsampled proxy spectrum 
+/// Absolute radiometric anchor. Converts the relative upsampled proxy spectrum
 /// into absolute photon fluence to correctly anchor the T=4 crystal threshold model.
 pub const RADIOMETRIC_SCALE: f64 = 6.0;
 

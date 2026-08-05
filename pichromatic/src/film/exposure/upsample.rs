@@ -305,10 +305,7 @@ mod tests {
         let s = upsample_acescg([g as f32, g as f32, g as f32]);
         let rgb = spectrum_to_acescg_rgb(&s);
         for (i, &c) in rgb.iter().enumerate() {
-            assert!(
-                (c - g).abs() < 0.02,
-                "channel {i}: got {c}, expected ~{g}"
-            );
+            assert!((c - g).abs() < 0.02, "channel {i}: got {c}, expected ~{g}");
         }
     }
 

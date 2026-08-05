@@ -19,15 +19,15 @@ algorithm = "markesteijn"
 # view_window = [1920, 1080]
 
 [[pipeline_modules]]
+name = "HighlightReconstruction"
+
+[[pipeline_modules]]
 name = "CFACoeffs"
 
 [[pipeline_modules]]
 name = "LumaGuidedChromaDenoise"
 radius = 2
 epsilon = 0.01
-
-[[pipeline_modules]]
-name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "Vignette"

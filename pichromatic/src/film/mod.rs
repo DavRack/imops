@@ -58,6 +58,10 @@ pub struct FilmParams {
     /// RNG seed for grain (deterministic shot noise).
     pub seed: u64,
     pub output: FilmOutput,
+    /// Enable the wide backing halation (reflectance-driven bounce). `false`
+    /// zeroes the AH reflectance so `max_r <= 0` gates the wide bounce; local
+    /// gelatin scatter remains (gated by `psf_local`/`LOCAL_SCATTER_MIX`).
+    pub enable_halation: bool,
     /// Normalize exposure across stocks to the capture ISO (scene-relative
     /// fluence `∝ v`, independent of stock box speed). `false` keeps the raw
     /// box-speed difference: a faster stock receives `box_iso/capture_iso`
@@ -73,6 +77,7 @@ impl Default for FilmParams {
             film_format: FilmFormat::Film35mm,
             seed: 0,
             output: FilmOutput::NegativeLinear,
+            enable_halation: true,
             compensate_box_speed: true,
         }
     }
@@ -100,7 +105,10 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
         return Err(FilmError::InvalidDimensions);
     }
 
-    let stock = params.stock.load()?;
+    let mut stock = params.stock.load()?;
+    if !params.enable_halation {
+        stock.antihalation.reflectance = crate::film::spectrum::SpectralCurve::constant(0.0);
+    }
     let pitch = params.film_format.pixel_pitch_um(width);
     let shutter = image
         .metadata
@@ -120,23 +128,13 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
     let dyes = develop(&stock, &latent, params.seed, pitch);
 
     let is_reversal = stock.layers.iter().any(|l| l.is_reversal);
-    let mode = if is_reversal {
-        ScanMode::NegativeLinear
+    image.rgb_data = if is_reversal || params.output == FilmOutput::NegativeLinear {
+        scan(&stock, &dyes, ScanMode::NegativeLinear)
     } else {
-        match params.output {
-            FilmOutput::NegativeLinear => ScanMode::NegativeLinear,
-            FilmOutput::PositiveLinear => {
-                // Film base from stock mask / d_max / scanner light (same reference
-                // scan_to_acescg normalizes to). Mid-gray negative sets per-channel
-                // invert gain so reference mid lands at MIDDLE_GRAY.
-                let dmin = crate::film::scan::normalized_dmin_acescg(&stock);
-                let mid = mid_negative_acescg(&stock, pitch, shutter);
-                ScanMode::PositiveLinear { dmin, mid }
-            }
-        }
+        let dmin = crate::film::scan::normalized_dmin_acescg(&stock);
+        let mid = mid_negative_acescg(&stock, pitch, shutter);
+        scan(&stock, &dyes, ScanMode::PositiveLinear { dmin, mid })
     };
-
-    image.rgb_data = scan(&stock, &dyes, mode);
     image.metadata.color_space = Some(ColorSpaceTag::AcesCg);
     Ok(())
 }
@@ -397,6 +395,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output: FilmOutput::NegativeLinear,
+            enable_halation: true,
             compensate_box_speed: true,
         }
     }
@@ -407,6 +406,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output,
+            enable_halation: true,
             compensate_box_speed: true,
         }
     }
@@ -539,6 +539,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 99,
             output: FilmOutput::PositiveLinear,
+            enable_halation: true,
             compensate_box_speed: true,
         };
         let mut img = make_image(64, 64, [0.0, 0.0, 0.0], 200.0);
@@ -562,6 +563,7 @@ mod tests {
                 film_format: FilmFormat::Film35mm,
                 seed: 1,
                 output,
+                enable_halation: true,
                 compensate_box_speed: true,
             };
             let mut copy = img.clone();
@@ -581,6 +583,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 2,
             output: FilmOutput::NegativeLinear,
+            enable_halation: true,
             compensate_box_speed: true,
         };
         let mut img = make_image(32, 32, [0.185, 0.185, 0.185], 200.0);
@@ -588,6 +591,65 @@ mod tests {
         for px in &img.rgb_data {
             for &c in px {
                 assert!(c.is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn enable_halation_off_matches_zero_reflectance_stock() {
+        let mut params = color_params(FilmOutput::PositiveLinear);
+        params.film_format = FilmFormat::Film1mmDebug;
+        let mut off_params = params.clone();
+        off_params.enable_halation = false;
+
+        let base = to_absolute_rgb([0.02, 0.02, 0.02], 200.0);
+        let patch = to_absolute_rgb([9.0, 9.0, 9.0], 200.0);
+        let mut data = vec![base; 32 * 32];
+        for y in 12..20 {
+            for x in 12..20 {
+                data[y * 32 + x] = patch;
+            }
+        }
+        let e = crate::film::exposure::radiance::sunny16_exposure(crate::film::units::IsoSpeed(
+            200.0,
+        ));
+        let mk = |data: Vec<[f32; 3]>| Image {
+            rgb_data: data,
+            raw_data: std::sync::Arc::from([]),
+            metadata: ImageMetadata {
+                width: 32,
+                height: 32,
+                color_space: Some(ColorSpaceTag::AcesCg),
+                shutter_seconds: Some(e.shutter_seconds),
+                f_number: Some(e.f_number),
+                iso: Some(e.iso),
+                ..Default::default()
+            },
+        };
+
+        let mut with = mk(data.clone());
+        let mut without = mk(data);
+        process(&mut with, &params).unwrap();
+        process(&mut without, &off_params).unwrap();
+        assert_ne!(
+            with.rgb_data, without.rgb_data,
+            "halation must change the output on a specular patch"
+        );
+        let ring_diff = with
+            .rgb_data
+            .iter()
+            .zip(without.rgb_data.iter())
+            .enumerate()
+            .filter(|(i, _)| !(12..20).contains(&(*i / 32)) || !(12..20).contains(&(*i % 32)))
+            .flat_map(|(_, (a, b))| a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()))
+            .fold(0.0f32, f32::max);
+        assert!(
+            ring_diff > 1e-3,
+            "halation must add signal around the patch (ring diff {ring_diff})"
+        );
+        for px in with.rgb_data.iter().chain(without.rgb_data.iter()) {
+            for &c in px {
+                assert!(c.is_finite(), "NaN/Inf in halation toggle output");
             }
         }
     }
@@ -712,6 +774,7 @@ mod tests {
             film_format: FilmFormat::Film35mm,
             seed: 1,
             output: FilmOutput::PositiveLinear, // ignored for reversal
+            enable_halation: true,
             compensate_box_speed: true,
         };
         let mut img = make_image(16, 16, [MIDDLE_GRAY, MIDDLE_GRAY, MIDDLE_GRAY], 100.0);

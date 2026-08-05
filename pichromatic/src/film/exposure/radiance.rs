@@ -158,7 +158,10 @@ mod tests {
         let gain1 = absolute_luminance_gain(t, n, iso);
         let lv = calculate_light_value(t, n, iso);
         let gain2 = absolute_luminance_gain_from_lv(lv);
-        assert!((gain1 - gain2).abs() < 1e-10, "gain1={gain1}, gain2={gain2}, lv={lv}");
+        assert!(
+            (gain1 - gain2).abs() < 1e-10,
+            "gain1={gain1}, gain2={gain2}, lv={lv}"
+        );
         assert!((gain1 - 30.625).abs() < 1e-10);
     }
 }

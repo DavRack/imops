@@ -63,7 +63,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(2.5),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(445.0, 35.0, 1.0)),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.82_f64.ln(), sigma_ln: 0.33 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.82_f64.ln(),
+            sigma_ln: 0.33,
+        }),
         silver_halide_fraction: 0.17,
         coupler: Some(DyeCoupler {
             name: "yellow",
@@ -82,7 +85,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(2.5),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(445.0, 35.0, 0.8)),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.40_f64.ln(), sigma_ln: 0.28 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.40_f64.ln(),
+            sigma_ln: 0.28,
+        }),
         silver_halide_fraction: 0.19,
         coupler: Some(DyeCoupler {
             name: "yellow",
@@ -118,7 +124,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(2.0),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(490.0, 30.0, 0.9)),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.50_f64.ln(), sigma_ln: 0.30 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.50_f64.ln(),
+            sigma_ln: 0.30,
+        }),
         silver_halide_fraction: 0.15,
         coupler: Some(DyeCoupler {
             name: "cyan",
@@ -139,7 +148,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(3.0),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(545.0, 40.0, 1.0)),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.88_f64.ln(), sigma_ln: 0.34 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.88_f64.ln(),
+            sigma_ln: 0.34,
+        }),
         silver_halide_fraction: 0.17,
         coupler: Some(DyeCoupler {
             name: "magenta",
@@ -158,7 +170,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(3.0),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(545.0, 40.0, 0.8)),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.44_f64.ln(), sigma_ln: 0.28 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.44_f64.ln(),
+            sigma_ln: 0.28,
+        }),
         silver_halide_fraction: 0.19,
         coupler: Some(DyeCoupler {
             name: "magenta",
@@ -179,7 +194,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(3.5),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(650.0, 45.0, 1.0)),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.92_f64.ln(), sigma_ln: 0.34 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.92_f64.ln(),
+            sigma_ln: 0.34,
+        }),
         silver_halide_fraction: 0.17,
         coupler: Some(DyeCoupler {
             name: "cyan",
@@ -198,7 +216,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(3.5),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(gaussian_curve(650.0, 45.0, 0.8)),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.46_f64.ln(), sigma_ln: 0.28 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.46_f64.ln(),
+            sigma_ln: 0.28,
+        }),
         silver_halide_fraction: 0.19,
         coupler: Some(DyeCoupler {
             name: "cyan",
@@ -256,7 +277,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
             antihalation,
         ],
         antihalation: AntihalationModel {
-            reflectance: gaussian_curve(670.0, 50.0, 0.05),
+            reflectance: gaussian_curve(670.0, 50.0, 0.06),
             psf_local_um: 2.5,
             psf_halation_um: 65.0,
         },

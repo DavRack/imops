@@ -34,7 +34,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(6.0),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(panchromatic_sensitivity()),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.95_f64.ln(), sigma_ln: 0.38 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.95_f64.ln(),
+            sigma_ln: 0.38,
+        }),
         silver_halide_fraction: 0.22,
         coupler: Some(DyeCoupler {
             name: "neutral_silver_fast",
@@ -54,7 +57,10 @@ pub fn load() -> Result<FilmStock, FilmError> {
         thickness: Microns(6.0),
         kind: LayerKind::Emulsion,
         spectral_sensitivity: Some(panchromatic_sensitivity()),
-        crystal_size: Some(LogNormalDist { mu_ln: 0.45_f64.ln(), sigma_ln: 0.28 }),
+        crystal_size: Some(LogNormalDist {
+            mu_ln: 0.45_f64.ln(),
+            sigma_ln: 0.28,
+        }),
         silver_halide_fraction: 0.24,
         coupler: Some(DyeCoupler {
             name: "neutral_silver_slow",
@@ -73,17 +79,14 @@ pub fn load() -> Result<FilmStock, FilmError> {
         box_iso: IsoSpeed(400.0),
         layers: vec![fast_emulsion, slow_emulsion],
         antihalation: AntihalationModel {
-            reflectance: SpectralCurve::constant(0.01),
+            reflectance: SpectralCurve::constant(0.02),
             psf_local_um: 3.5,
             psf_halation_um: 50.0,
         },
         developer_diffusion_length: Microns(6.0),
         adjacency_beta: 0.35,
         dir_diffusion_length: Microns(12.0),
-        dir_inhibition_matrix: vec![
-            vec![0.03, 0.02],
-            vec![0.02, 0.02],
-        ],
+        dir_inhibition_matrix: vec![vec![0.03, 0.02], vec![0.02, 0.02]],
         scanner_light: SpectralCurve::constant(1.0),
         capture_luts: vec![],
         grain_kappa: vec![],

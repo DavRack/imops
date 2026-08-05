@@ -8,8 +8,8 @@ use rayon::prelude::*;
 ///
 /// `D_image = D_max * f_eff^(1/γ_eff)` with `f_eff = f` (negative) or `1−f` (reversal).
 ///
-/// Coloured film base stays constant while image dye develops. This keeps every
-/// developed negative at or below the synthetic Dmin scan reference.
+/// Coloured film base remains a separate, unnoised mask plane. Grain never
+/// modulates residual colored-coupler density.
 pub fn reduce(stock: &FilmStock, latent: &LatentPlanes) -> DyePlanes {
     let n = latent.width * latent.height;
     let mut image_dye = Vec::new();

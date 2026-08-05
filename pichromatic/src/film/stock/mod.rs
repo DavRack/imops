@@ -118,7 +118,9 @@ pub struct FilmStock {
     pub scanner_light: SpectralCurve,
     /// Precomputed at load: per-layer capture LUT (None for non-emulsion).
     pub capture_luts: Vec<Option<DevelopableFractionLut>>,
-    /// Per emulsion layer grain κ at a reference 1 µm pitch; scaled at runtime.
+    /// Per emulsion layer grain coefficient κ_ref = 1/√ρ. The inverse square
+    /// supplies the physical crystal areal density used by the particle grain
+    /// realization; the render pitch is applied when deriving crystals/pixel.
     pub grain_kappa: Vec<Option<f32>>,
 }
 
@@ -169,7 +171,9 @@ impl FilmStock {
                     return Err(FilmError::InvalidStock("emulsion thickness must be > 0"));
                 }
                 if layer.spectral_sensitivity.is_none() {
-                    return Err(FilmError::InvalidStock("emulsion missing spectral sensitivity"));
+                    return Err(FilmError::InvalidStock(
+                        "emulsion missing spectral sensitivity",
+                    ));
                 }
                 if layer.crystal_size.is_none() {
                     return Err(FilmError::InvalidStock("emulsion missing crystal_size"));
@@ -205,7 +209,10 @@ impl FilmStock {
                     let packing = layer.silver_halide_fraction as f64;
                     let thickness = layer.thickness.0 as f64;
                     let rho_areal = packing * thickness / volume.max(1e-18);
-                    // κ at 1 µm pitch: fluctuation scale ~ 1/√(ρ · A_pixel); A=1 µm² → 1/√ρ.
+                    // Selwyn coefficient κ_ref = 1/√ρ. The particle renderer
+                    // recovers ρ and multiplies it by the physical pixel area
+                    // at render time, so no image-resolution-specific grain
+                    // amount is baked into the stock.
                     Some((1.0 / rho_areal.sqrt()) as f32)
                 } else {
                     None
@@ -222,7 +229,6 @@ impl FilmStock {
             .enumerate()
             .filter(|(_, l)| l.kind == LayerKind::Emulsion)
     }
-
 }
 
 #[cfg(test)]
