@@ -182,6 +182,9 @@ impl FilmStock {
                 if layer.crystal_size.is_none() {
                     return Err(FilmError::InvalidStock("emulsion missing crystal_size"));
                 }
+                if layer.coupler.is_none() {
+                    return Err(FilmError::InvalidStock("emulsion missing coupler"));
+                }
             }
         }
 

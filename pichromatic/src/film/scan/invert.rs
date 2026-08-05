@@ -19,7 +19,6 @@ pub const GAMMA_EFF: f32 = 0.6;
 /// Substrate fog density offset threshold above reference Dmin (~0.005).
 pub const FOG_OFFSET: f32 = 0.005;
 
-
 /// Shared CPU/GPU calibration for the diagnostic negative invert.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InvertConstants {

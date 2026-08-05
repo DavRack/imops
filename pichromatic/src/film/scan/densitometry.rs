@@ -112,7 +112,6 @@ pub fn dmin_reference_acescg(stock: &FilmStock) -> [f32; 3] {
     spectrum_to_acescg_rgb_f32(&t)
 }
 
-
 /// Scan-normalized film-base RGB (same encoding as [`scan_to_acescg`]; peak ≈ 1).
 pub fn normalized_dmin_acescg(stock: &FilmStock) -> [f32; 3] {
     let d = dmin_reference_acescg(stock);

@@ -11,6 +11,11 @@
 //! partial sum-of-squares (`GRAIN_VAR_PARTIAL`) then a tiny download; the CPU
 //! finishes the `f64` reduction for `norm` so it matches the CPU path bit-near.
 //! All spatial grain work stays on GPU.
+//!
+//! Note: the grain path is currently frozen on the legacy model (per-sublayer
+//! κ, the pre-particle CPU model) until the CPU-first migration is completed.
+//! The CPU/GPU parity tests are expected to stay red in the meantime; do not
+//! chase them to green while the CPU grain refactor is in flight.
 
 mod roi;
 #[doc(hidden)]
@@ -2479,13 +2484,17 @@ mod tests {
     }
 
     #[test]
-    fn gpu_matches_cpu_with_hirf_reciprocity_ektar100() {
+    fn cpu_vs_gpu_parity_hirf_reciprocity() {
         // Regression test for the pipeline parity failure on
         // 20260713_104012-16EV.DNG (shutter 1/1618s < 1ms triggers HIRF): the GPU
         // film pipeline used to skip the per-emulsion reciprocity factor eta(t, p)
         // that the CPU applies before the capture LUT, making the GPU output
         // ~12-16% brighter on bright content. Uniform ACEScg patches across the
-        // value range, Ektar100 PositiveLinear, the failing file's exposure metadata.
+        // value range with the failing file's exposure metadata. Ektar100 is the
+        // original repro stock; the loop extends coverage to the other films —
+        // eta(t, p) is per-emulsion via `reciprocity_p`, so each stock exercises
+        // its own HIRF response. NOTE: expected red on every stock while GPU
+        // grain stays frozen on the legacy model (CPU-first workflow).
         let ctx = match pollster::block_on(GpuContext::try_new()) {
             Ok(c) => c,
             Err(_) => return,
@@ -2502,56 +2511,66 @@ mod tests {
             iso: Some(80.0),
             ..Default::default()
         };
-        let params = FilmParams {
-            stock: StockId::Ektar100,
-            film_format: FilmFormat::Film35mm,
-            seed: 1,
-            output: FilmOutput::PositiveLinear,
-            enable_halation: true,
-            compensate_box_speed: true,
-        };
+        let film_format = FilmFormat::Film35mm;
+        let output = FilmOutput::PositiveLinear;
 
-        for &v in &[0.18f32, 10.0, 100.0, 300.0, 500.0] {
-            let rgb: Vec<[f32; 3]> = vec![[v, v, v]; n];
-            let mut cpu_image = crate::pixel::Image {
-                metadata: meta.clone(),
-                rgb_data: rgb.clone(),
-                raw_data: std::sync::Arc::from([]),
+        for &stock in &[
+            StockId::Ektar100,
+            StockId::Portra400,
+            StockId::ColorNeg200,
+            StockId::FujiPro400H,
+        ] {
+            let params = FilmParams {
+                stock,
+                film_format,
+                seed: 1,
+                output,
+                enable_halation: true,
+                compensate_box_speed: true,
             };
-            crate::film::process(&mut cpu_image, &params).unwrap();
 
-            let gpu_buf = ctx.create_output_buffer(width, height);
-            let input: Vec<[f32; 4]> = rgb.iter().map(|p| [p[0], p[1], p[2], 1.0]).collect();
-            ctx.queue
-                .write_buffer(&gpu_buf.buffer, 0, bytemuck::cast_slice(&input));
-            pollster::block_on(process_gpu_full_frame(&ctx, &gpu_buf, &meta, &params)).unwrap();
-            let gpu_floats = ctx.download_f32(&gpu_buf.buffer, n * 4);
+            for &v in &[0.18f32, 10.0, 100.0, 300.0, 500.0] {
+                let rgb: Vec<[f32; 3]> = vec![[v, v, v]; n];
+                let mut cpu_image = crate::pixel::Image {
+                    metadata: meta.clone(),
+                    rgb_data: rgb.clone(),
+                    raw_data: std::sync::Arc::from([]),
+                };
+                crate::film::process(&mut cpu_image, &params).unwrap();
 
-            let mut max_diff = 0.0f32;
-            let mut worst = (0usize, 0usize);
-            for (px, cp) in cpu_image.rgb_data.iter().enumerate() {
-                for ch in 0..3 {
-                    let d = (cp[ch] - gpu_floats[px * 4 + ch]).abs();
-                    if d > max_diff {
-                        max_diff = d;
-                        worst = (px, ch);
+                let gpu_buf = ctx.create_output_buffer(width, height);
+                let input: Vec<[f32; 4]> = rgb.iter().map(|p| [p[0], p[1], p[2], 1.0]).collect();
+                ctx.queue
+                    .write_buffer(&gpu_buf.buffer, 0, bytemuck::cast_slice(&input));
+                pollster::block_on(process_gpu_full_frame(&ctx, &gpu_buf, &meta, &params)).unwrap();
+                let gpu_floats = ctx.download_f32(&gpu_buf.buffer, n * 4);
+
+                let mut max_diff = 0.0f32;
+                let mut worst = (0usize, 0usize);
+                for (px, cp) in cpu_image.rgb_data.iter().enumerate() {
+                    for ch in 0..3 {
+                        let d = (cp[ch] - gpu_floats[px * 4 + ch]).abs();
+                        if d > max_diff {
+                            max_diff = d;
+                            worst = (px, ch);
+                        }
                     }
                 }
+                // Relative gate: HIRF eta shifts the film response curve, so the
+                // absolute tolerance must scale with the output magnitude (values
+                // reach ~6 here; 1e-4 relative + 1e-5 floor is far below the ~0.2+
+                // error the missing-eta bug produced).
+                let (px, ch) = worst;
+                let tol = 1e-4 * cpu_image.rgb_data[px][ch].abs().max(1e-1);
+                assert!(
+                    max_diff <= tol,
+                    "CPU/GPU mismatch stock={stock:?} v={v} at ({}, {}) ch={ch}: cpu={:?}, gpu={:?}, diff={max_diff} tol={tol}",
+                    px % width,
+                    px / width,
+                    cpu_image.rgb_data[px][ch],
+                    gpu_floats[px * 4 + ch]
+                );
             }
-            // Relative gate: HIRF eta shifts the film response curve, so the
-            // absolute tolerance must scale with the output magnitude (values
-            // reach ~6 here; 1e-4 relative + 1e-5 floor is far below the ~0.2+
-            // error the missing-eta bug produced).
-            let (px, ch) = worst;
-            let tol = 1e-4 * cpu_image.rgb_data[px][ch].abs().max(1e-1);
-            assert!(
-                max_diff <= tol,
-                "CPU/GPU mismatch v={v} at ({}, {}) ch={ch}: cpu={:?}, gpu={:?}, diff={max_diff} tol={tol}",
-                px % width,
-                px / width,
-                cpu_image.rgb_data[px][ch],
-                gpu_floats[px * 4 + ch]
-            );
         }
     }
 
