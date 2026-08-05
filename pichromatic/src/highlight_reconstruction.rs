@@ -7,9 +7,9 @@ pub fn highlight_reconstruction(image_buffer: &mut ImageBuffer, wb_coeffs: [SubP
 let [_, clip_g, _, _] = wb_coeffs;
         image_buffer.par_iter_mut().for_each(|pixel|{
             let [r, g, b] = *pixel;
-            if g >= clip_g {
-                pixel[1] = (r + b) * 0.5;
-            }
+            let factor = g/clip_g;
+            let reconstructed_g = ((1.0-factor)*g) + (factor*(r+b)*(1.0/2.0));
+            pixel[1] = reconstructed_g;
         });
 }
 
@@ -78,7 +78,7 @@ mod tests {
         highlight_reconstruction(&mut pixels, wb_coeffs);
         
         let diff_r = (pixels[0][0] - 0.6).abs();
-        let diff_g = (pixels[0][1] - 0.4).abs();
+        let diff_g = (pixels[0][1] - 0.52).abs();
         let diff_b = (pixels[0][2] - 0.8).abs();
         
         assert!(diff_r < 1e-6);
