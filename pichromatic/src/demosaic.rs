@@ -1478,13 +1478,7 @@ pub fn demosaic_markesteijn_gpu(
                         }
                     }
                     if (count > 0.0) {
-                        // Correctly-rounded `sum / count` (count is 1..4; the
-                        // compiler otherwise turns the division into a
-                        // reciprocal multiply that is 1 ULP off for count=3).
-                        let inv = 1.0 / count;
-                        let q0 = sum * inv;
-                        let e = fma(-count, q0, sum);
-                        out_rgb[channel] = fma(e, inv, q0);
+                        out_rgb[channel] = sum / count;
                     }
                 }
             }

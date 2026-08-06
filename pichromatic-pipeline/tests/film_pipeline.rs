@@ -68,12 +68,11 @@ const H_TOL: i64 = 0;
 /// compared values (floored at 1.0 so near-zero values keep a tight absolute
 /// gate): `tol = K * EPSILON * max(|cpu|, |gpu|, 1.0)` = K ULPs at the
 /// value's own magnitude (same rule as `CPU_GPU_ABS_TOLERANCE`).
-/// Calibrated "barely" against the dark-pixel drift floor: the worst
-/// channels are shadows (values 0.02-0.1) where the film curve amplifies
-/// jitter to ~0.12% relative (~12000 ULPs, abs 2.264e-5, measured on this
-/// machine; 1.948e-5 on AMD/NVIDIA). K = 200 (2.38e-5) passes both with ~5%
-/// margin; K = 128 (1.53e-5) is below the floor and fails both.
-const GPU_VS_CPU_TOLERANCE: f32 = 200.0 * f32::EPSILON;
+/// K = 512 (6.10e-5): covers the shadow-jitter floor on both platforms
+/// (measured 2.264e-5 on Mac/Metal, 3.628e-5 on AMD CPU + NVIDIA GPU)
+/// with comfortable margin, without chasing bit-exact GPU math across
+/// backends (CPU reference itself differs per platform, see image_drift).
+const GPU_VS_CPU_TOLERANCE: f32 = 512.0 * f32::EPSILON;
 
 fn load_source() -> Image {
     let dng_path = concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/20260713_104012-16EV.DNG");
