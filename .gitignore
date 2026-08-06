@@ -5,6 +5,7 @@ venv
 .DS_Store
 *.RAF
 *.ppm
+*.exr
 *.ARW
 *.dng
 *.jpeg

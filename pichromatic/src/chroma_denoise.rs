@@ -19,137 +19,226 @@ pub fn chroma_denoise(
     radius: usize,
     epsilon: f32,
 ) {
-    let luma = |p: &[f32; 3]| -> f32 {
-        R_RELATIVE_LUMINANCE * p[0] + G_RELATIVE_LUMINANCE * p[1] + B_RELATIVE_LUMINANCE * p[2]
-    };
-
-    let y: Vec<f32> = rgb_data.par_iter().map(luma).collect();
-    let cr: Vec<f32> = rgb_data.par_iter().zip(&y).map(|(p, &yv)| p[0] - yv).collect();
-    let cb: Vec<f32> = rgb_data.par_iter().zip(&y).map(|(p, &yv)| p[2] - yv).collect();
-
-    let cr_smooth = guided_filter(&y, &cr, width, height, radius, epsilon);
-    let cb_smooth = guided_filter(&y, &cb, width, height, radius, epsilon);
+    let n = rgb_data.len();
+    if n == 0 || width == 0 || height == 0 {
+        return;
+    }
 
     let wr = R_RELATIVE_LUMINANCE;
     let wg = G_RELATIVE_LUMINANCE;
     let wb = B_RELATIVE_LUMINANCE;
+    let luma = |p: &[f32; 3]| -> f32 { wr * p[0] + wg * p[1] + wb * p[2] };
 
-    rgb_data.par_iter_mut().enumerate().for_each(|(i, p)| {
-        let yv = luma(p);
-        p[0] = yv + cr_smooth[i];
-        p[1] = yv - (wr / wg) * cr_smooth[i] - (wb / wg) * cb_smooth[i];
-        p[2] = yv + cb_smooth[i];
-    });
+    let mut y = vec![0.0; n];
+    let mut cr = vec![0.0; n];
+    let mut cb = vec![0.0; n];
+    rgb_data
+        .par_iter()
+        .zip(&mut y)
+        .zip(&mut cr)
+        .zip(&mut cb)
+        .for_each(|(((p, yv), c_r), c_b)| {
+            let l = luma(p);
+            *yv = l;
+            *c_r = p[0] - l;
+            *c_b = p[2] - l;
+        });
+
+    // Guide (luma) statistics are shared by both chroma channels.
+    let mut mean_g = vec![0.0; n];
+    let mut var_g = vec![0.0; n];
+    let mut scratch = vec![0.0; n];
+    let mut box_tmp = vec![0.0; n];
+    box_filter(&y, &mut mean_g, &mut box_tmp, width, height, radius);
+    y.par_iter()
+        .zip(&mut scratch)
+        .for_each(|(&g, s)| *s = g * g);
+    box_filter(&scratch, &mut var_g, &mut box_tmp, width, height, radius);
+    var_g.par_iter_mut()
+        .zip(&mean_g)
+        .for_each(|(v, &mg)| *v -= mg * mg);
+
+    let cr_smooth = guided_filter_channel(
+        &y, &mean_g, &var_g, &cr, &mut scratch, &mut box_tmp, width, height, radius, epsilon,
+    );
+    let cb_smooth = guided_filter_channel(
+        &y, &mean_g, &var_g, &cb, &mut scratch, &mut box_tmp, width, height, radius, epsilon,
+    );
+
+    rgb_data
+        .par_iter_mut()
+        .enumerate()
+        .zip(&y)
+        .zip(&cr_smooth)
+        .zip(&cb_smooth)
+        .for_each(|((((_, p), &yv), &crs), &cbs)| {
+            p[0] = yv + crs;
+            p[1] = yv - (wr / wg) * crs - (wb / wg) * cbs;
+            p[2] = yv + cbs;
+        });
 }
 
-/// Guided filter (single-channel).
-fn guided_filter(
+/// Guided filter for a single channel, reusing the shared guide statistics
+/// (mean and variance of the guide) computed once in [`chroma_denoise`].
+fn guided_filter_channel(
     guide: &[f32],
+    mean_g: &[f32],
+    var_g: &[f32],
     source: &[f32],
+    scratch: &mut [f32],
+    box_tmp: &mut [f32],
     width: usize,
     height: usize,
     radius: usize,
     epsilon: f32,
 ) -> Vec<f32> {
-    let mean_g = box_filter(guide, width, height, radius);
-    let mean_p = box_filter(source, width, height, radius);
+    let n = source.len();
 
-    let guide_sq: Vec<f32> = guide.par_iter().map(|&v| v * v).collect();
-    let guide_p: Vec<f32> = guide.par_iter().zip(source).map(|(&g, &s)| g * s).collect();
-
-    let mean_gg = box_filter(&guide_sq, width, height, radius);
-    let mean_gp = box_filter(&guide_p, width, height, radius);
-
-    let var_g: Vec<f32> = mean_gg
+    let mut mean_p = vec![0.0; n];
+    let mut b = vec![0.0; n];
+    box_filter(source, &mut mean_p, box_tmp, width, height, radius);
+    guide
         .par_iter()
-        .zip(&mean_g)
-        .map(|(&gg, &mg)| gg - mg * mg)
-        .collect();
-    let cov_gp: Vec<f32> = mean_gp
+        .zip(source)
+        .zip(scratch.par_iter_mut())
+        .for_each(|((&g, &s), out)| *out = g * s);
+    box_filter(&scratch, &mut b, box_tmp, width, height, radius);
+
+    mean_p
+        .par_iter_mut()
+        .zip(&mut b)
+        .zip(mean_g)
+        .zip(var_g)
+        .for_each(|(((mp, mgp), &mg), &vg)| {
+            let a_val = (*mgp - mg * *mp) / (vg + epsilon);
+            let b_val = *mp - a_val * mg;
+            *mp = a_val;
+            *mgp = b_val;
+        });
+
+    let mut result = vec![0.0; n];
+    box_filter(&mean_p, scratch, box_tmp, width, height, radius);
+    box_filter(&b, &mut mean_p, box_tmp, width, height, radius);
+    scratch
         .par_iter()
-        .zip(&mean_g)
         .zip(&mean_p)
-        .map(|((&gp, &mg), &mp)| gp - mg * mp)
-        .collect();
-
-    let a: Vec<f32> = var_g
-        .par_iter()
-        .zip(&cov_gp)
-        .map(|(&v, &c)| c / (v + epsilon))
-        .collect();
-    let b: Vec<f32> = mean_p
-        .par_iter()
-        .zip(&a)
-        .zip(&mean_g)
-        .map(|((&mp, &a_val), &mg)| mp - a_val * mg)
-        .collect();
-
-    let mean_a = box_filter(&a, width, height, radius);
-    let mean_b = box_filter(&b, width, height, radius);
-
-    mean_a
-        .par_iter()
-        .zip(&mean_b)
         .zip(guide)
-        .map(|((&ma, &mb), &gv)| ma * gv + mb)
-        .collect()
+        .zip(&mut result)
+        .for_each(|(((ma, mb), &gv), out)| *out = ma * gv + mb);
+    result
+}
+
+/// Width of a column block in the vertical pass of [`box_filter`]. Chosen so
+/// that each row of a block is a small run of contiguous cache lines.
+const VERTICAL_BLOCK: usize = 32;
+
+/// Raw pointer shared with rayon workers. Sound only when every worker writes
+/// a disjoint region of the target slice, which the vertical pass of
+/// [`box_filter`] guarantees (each worker owns a distinct column range).
+#[derive(Copy, Clone)]
+struct RawPtr(std::ptr::NonNull<f32>);
+unsafe impl Send for RawPtr {}
+unsafe impl Sync for RawPtr {}
+
+impl RawPtr {
+    unsafe fn write(&self, i: usize, v: f32) {
+        *self.0.as_ptr().add(i) = v;
+    }
 }
 
 /// Separable box filter (axis-aligned sliding window) with correct border
-/// handling.  Each pixel is the mean over the largest window that fits inside
+/// handling. Each pixel is the mean over the largest window that fits inside
 /// the image bounds at that location.
-fn box_filter(data: &[f32], width: usize, height: usize, radius: usize) -> Vec<f32> {
-    let mut tmp = vec![0.0; data.len()];
-
-    // Horizontal pass
-    for y in 0..height {
-        let row = y * width;
-        let mut sum = 0.0;
-        for dx in 0..=radius.min(width - 1) {
-            sum += data[row + dx];
-        }
-        tmp[row] = sum;
-        for x in 1..width {
-            if x > radius {
-                sum -= data[row + x - radius - 1];
-            }
-            if x + radius < width {
-                sum += data[row + x + radius];
-            }
-            tmp[row + x] = sum;
-        }
+///
+/// Horizontal pass: one row per worker, sequential sliding window.
+/// Vertical pass: workers own a block of `VERTICAL_BLOCK` columns and keep the
+/// running window sums of all its columns in a small stack array while sliding
+/// down the rows, so the filter stays within a few cache lines per row instead
+/// of striding across the full image width. Normalization is fused into the
+/// vertical pass. Every pixel is the sum of exactly the same values, in the
+/// same order, as a plain per-column accumulation, so results are bit-identical.
+fn box_filter(
+    data: &[f32],
+    out: &mut [f32],
+    tmp: &mut [f32],
+    width: usize,
+    height: usize,
+    radius: usize,
+) {
+    let n = data.len();
+    if n == 0 || width == 0 || height == 0 {
+        return;
     }
+    debug_assert!(
+        width * height <= out.len() && width * height <= tmp.len(),
+        "box_filter: buffers must be at least width*height"
+    );
 
-    let mut result = vec![0.0; data.len()];
+    // Horizontal pass: unnormalized sliding-window sums, one worker per row.
+    data.par_chunks_exact(width)
+        .zip(tmp.par_chunks_exact_mut(width))
+        .for_each(|(row, trow)| {
+            let mut sum = 0.0;
+            let dx_max = radius.min(width - 1);
+            for dx in 0..=dx_max {
+                sum += row[dx];
+            }
+            trow[0] = sum;
+            for x in 1..width {
+                if x > radius {
+                    sum -= row[x - radius - 1];
+                }
+                if x + radius < width {
+                    sum += row[x + radius];
+                }
+                trow[x] = sum;
+            }
+        });
 
-    // Vertical pass
-    for x in 0..width {
-        let mut sum = 0.0;
-        for dy in 0..=radius.min(height - 1) {
-            sum += tmp[dy * width + x];
+    // Vertical pass: each worker owns a contiguous block of columns and slides
+    // all of the block's window sums down the rows together. Writes go through
+    // a raw pointer: rayon's `for_each` needs `Fn` closures, and each block
+    // writes a disjoint column range of `out`, so the writes never alias.
+    let out_ptr = RawPtr(std::ptr::NonNull::new(out.as_mut_ptr()).unwrap());
+    let dy_max = radius.min(height - 1);
+    let n_blocks = (width + VERTICAL_BLOCK - 1) / VERTICAL_BLOCK;
+    (0..n_blocks).into_par_iter().for_each(move |block| {
+        let xb = block * VERTICAL_BLOCK;
+        let xe = (xb + VERTICAL_BLOCK).min(width);
+        let block_w = xe - xb;
+        let mut sums = [0.0f32; VERTICAL_BLOCK];
+        for dy in 0..=dy_max {
+            let row = dy * width + xb;
+            for (x, s) in sums.iter_mut().take(block_w).enumerate() {
+                *s += tmp[row + x];
+            }
         }
-        result[x] = sum;
+        let cy0 = (radius.min(0) + radius.min(height - 1) + 1) as f32;
+        for x in 0..block_w {
+            let cx = (radius.min(xb + x) + radius.min(width - 1 - (xb + x)) + 1) as f32;
+            unsafe { out_ptr.write(xb + x, sums[x] / (cx * cy0)) };
+        }
         for y in 1..height {
             if y > radius {
-                sum -= tmp[(y - radius - 1) * width + x];
+                let row = (y - radius - 1) * width + xb;
+                for (x, s) in sums.iter_mut().take(block_w).enumerate() {
+                    *s -= tmp[row + x];
+                }
             }
             if y + radius < height {
-                sum += tmp[(y + radius) * width + x];
+                let row = (y + radius) * width + xb;
+                for (x, s) in sums.iter_mut().take(block_w).enumerate() {
+                    *s += tmp[row + x];
+                }
             }
-            result[y * width + x] = sum;
+            let cy = (radius.min(y) + radius.min(height - 1 - y) + 1) as f32;
+            let base = y * width + xb;
+            for x in 0..block_w {
+                let cx = (radius.min(xb + x) + radius.min(width - 1 - (xb + x)) + 1) as f32;
+                unsafe { out_ptr.write(base + x, sums[x] / (cx * cy)) };
+            }
         }
-    }
-
-    // Normalize by the actual window size at each position
-    for y in 0..height {
-        let cy = (radius.min(y) + radius.min(height - 1 - y) + 1) as f32;
-        for x in 0..width {
-            let cx = (radius.min(x) + radius.min(width - 1 - x) + 1) as f32;
-            result[y * width + x] /= cx * cy;
-        }
-    }
-
-    result
+    });
 }
 
 #[repr(C)]

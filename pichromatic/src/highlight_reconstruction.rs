@@ -57,9 +57,11 @@ pub fn highlight_reconstruction_gpu(
             }
             let index = y * params.width + x;
             let p = pixels[index];
-            let factor = p.g / params.clip_g;
-            let reconstructed_g = ((1.0 - factor) * p.g) + (factor * (p.r + p.b) * 0.5);
-            pixels[index] = vec4<f32>(p.r, reconstructed_g, p.b, p.a);
+            // Matches the CPU path: saturated green (g >= clip_g) is lost
+            // sensor data, reconstruct it from red/blue assuming a neutral
+            // highlight. Unclipped green is real data and must stay untouched.
+            let g_recon = select(p.g, (p.r + p.b) * 0.5, p.g >= params.clip_g);
+            pixels[index] = vec4<f32>(p.r, g_recon, p.b, p.a);
         }
     "#;
 

@@ -57,6 +57,7 @@ if agent 2 review is PASS finish else use that feedback to run agent 1 againg an
 ### Agent 1
 follow yagni principles, do not over engineer code, be pragmatic, dont include external deps if not
 necesary, etc
+we are using a very cheap model so make sure to use as many sub agents as make sense
 
 ### Agent 2
 Eskeptical reviewer your job is to be an expert in the topic of the feature implemented, you need to
@@ -66,3 +67,4 @@ check agent 1 code and ask yourself:
 - is it under or over engineered?
 - are we changing files that we shoudnt change? (like formatting etc)
 - are the physics sound for this change?
+we are using a very cheap model so make sure to use as many sub agents as make sense
