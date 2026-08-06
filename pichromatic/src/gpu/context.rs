@@ -614,7 +614,7 @@ impl GpuContext {
     /// Download a GPU Storage Buffer (layout: RGBA f32 per pixel) back to a CPU `Image`
     pub fn download_image(&self, gpu_buf: &GpuImageBuffer, original_metadata: &crate::image::ImageMetadata) -> Image {
         let num_pixels = gpu_buf.width * gpu_buf.height;
-        let buffer_size = (num_pixels * 4 * std::mem::size_of::<f32>()) as u64;
+        let buffer_size = (num_pixels as usize * 4 * std::mem::size_of::<f32>()) as u64;
 
         let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Pichromatic Staging Download Buffer"),
@@ -666,7 +666,7 @@ impl GpuContext {
 
     pub async fn download_image_async(&self, gpu_buf: &GpuImageBuffer, original_metadata: &crate::image::ImageMetadata) -> Image {
         let num_pixels = gpu_buf.width * gpu_buf.height;
-        let buffer_size = (num_pixels * 4 * std::mem::size_of::<f32>()) as u64;
+        let buffer_size = (num_pixels as usize * 4 * std::mem::size_of::<f32>()) as u64;
 
         let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Pichromatic Staging Download Buffer"),
@@ -842,7 +842,7 @@ impl GpuContext {
     /// Allocate an uninitialized GPU Storage Buffer for output
     pub fn create_output_buffer(&self, width: usize, height: usize) -> GpuImageBuffer {
         let num_pixels = width * height;
-        let buffer_size = (num_pixels * 4 * std::mem::size_of::<f32>()) as u64;
+        let buffer_size = (num_pixels as usize * 4 * std::mem::size_of::<f32>()) as u64;
 
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Pichromatic Image Output Buffer"),

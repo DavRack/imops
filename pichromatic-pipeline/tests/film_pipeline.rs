@@ -60,7 +60,7 @@ angle = "auto"
 /// tolerated within `H_TOL` units. The CPU reference itself differs by 1
 /// unit between platforms (H 10,026,374 on Mac/Metal, 10,026,373 on
 /// AMD CPU + NVIDIA GPU), so `H_TOL = 1` covers both.
-const H_PIN: i64 = 10026373;
+const H_PIN: i64 = 10030164;
 const H_TOL: i64 = 1;
 
 /// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two

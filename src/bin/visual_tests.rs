@@ -1,19 +1,19 @@
+use pichromatic::gpu::GpuContext;
+use pichromatic::image::ImageMetadata;
+use pichromatic::pixel::Image;
 use pichromatic_pipeline::backend::Backend;
 use pichromatic_pipeline::modules::{
-    BaselineExposureCompensation, CFACoeffs, CST, Demosaic, DemosaicAlgorithmType, Exp, Film,
-    HighlightReconstruction, LumaGuidedChromaDenoise, Module, Parameter, PipelineModule, Rotation,
-    SigmoidToneMap, Vignette,
+    CFACoeffs, Demosaic, DemosaicAlgorithmType, Exp, HighlightReconstruction,
+    LumaGuidedChromaDenoise, Module, Parameter, PipelineModule, SigmoidToneMap, Vignette,
 };
 use pichromatic_pipeline::pipeline::run_pixel_pipeline_with_backend;
-use pichromatic::pixel::Image;
-use pichromatic::image::ImageMetadata;
 
 use std::time::Instant;
 use std::vec::Vec;
 
-use eframe::{egui, App, Frame, NativeOptions, run_native};
-use egui::{CentralPanel, ColorImage, Context, Rect, TextureHandle, Vec2, pos2, Sense};
-use image::{RgbImage, GenericImageView, DynamicImage};
+use eframe::{egui, run_native, App, Frame, NativeOptions};
+use egui::{pos2, CentralPanel, ColorImage, Context, Rect, Sense, TextureHandle, Vec2};
+use image::{DynamicImage, GenericImageView, RgbImage};
 
 fn main() {
     let raw_image_path = std::env::args()
@@ -28,11 +28,13 @@ fn main() {
 
     let file_bytes_clone = file_bytes.clone();
 
-    let pipeline1_label = "Ektar100";
-    let pipeline2_label = "Portra400";
+    let pipeline1_label = "CPU";
+    let pipeline2_label = "GPU";
 
-    run_viewer("imgconfig-film comparison (CPU)", pipeline1_label, pipeline2_label, move || {
-        // --- Pipeline 1: matches imgconfig-film.toml ---
+    run_viewer("Pipeline comparison (CPU vs GPU)", pipeline1_label, pipeline2_label, move || {
+        let gpu_context = GpuContext::try_new_sync().expect("Failed to initialize GPU context");
+
+        // --- Pipeline 1: CPU ---
         let pipeline1: Vec<Box<dyn PipelineModule>> = vec![
             Box::new(Module {
                 name: "Demosaic".to_string(),
@@ -57,53 +59,21 @@ fn main() {
             Box::new(Module {
                 name: "LumaGuidedChromaDenoise".to_string(),
                 cache: None,
-                config: LumaGuidedChromaDenoise { radius: Parameter::new(2, ""), epsilon: Parameter::new(0.01, "") },
-            }),
-            Box::new(Module {
-                name: "BaselineExposureCompensation".to_string(),
-                cache: None,
-                config: BaselineExposureCompensation { },
+                config: LumaGuidedChromaDenoise { radius: Parameter::new(4, ""), epsilon: Parameter::new(0.01, "") },
             }),
             Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
-                config: Exp { ev: Parameter::new(2.0, "") },
-            }),
-            Box::new(Module {
-                name: "CST".to_string(),
-                cache: None,
-                config: CST { target_color_space: Parameter::new("AcesCg".to_string(), "") },
-            }),
-            Box::new(Module {
-                name: "Film".to_string(),
-                cache: None,
-                config: Film {
-                    stock: Parameter::new("Ektar100".to_string(), ""),
-                    film_format: Parameter::new("Film35mm".to_string(), ""),
-                    seed: Parameter::new(1u64, ""),
-                    enable_halation: Parameter::new(true, ""),
-                    output: Parameter::new("PositiveLinear".to_string(), ""),
-                    compensate_box_speed: Parameter::new(true, ""),
-                },
+                config: Exp { ev: Parameter::new(3.0, "") },
             }),
             Box::new(Module {
                 name: "SigmoidToneMap".to_string(),
                 cache: None,
                 config: SigmoidToneMap { },
             }),
-            Box::new(Module {
-                name: "CST".to_string(),
-                cache: None,
-                config: CST { target_color_space: Parameter::new("Srgb".to_string(), "") },
-            }),
-            Box::new(Module {
-                name: "Rotation".to_string(),
-                cache: None,
-                config: Rotation::default(),
-            }),
         ];
 
-        // --- Pipeline 2: identical, Portra400 instead of Ektar100 ---
+        // --- Pipeline 2: GPU ---
         let pipeline2: Vec<Box<dyn PipelineModule>> = vec![
             Box::new(Module {
                 name: "Demosaic".to_string(),
@@ -128,49 +98,17 @@ fn main() {
             Box::new(Module {
                 name: "LumaGuidedChromaDenoise".to_string(),
                 cache: None,
-                config: LumaGuidedChromaDenoise { radius: Parameter::new(2, ""), epsilon: Parameter::new(0.01, "") },
-            }),
-            Box::new(Module {
-                name: "BaselineExposureCompensation".to_string(),
-                cache: None,
-                config: BaselineExposureCompensation { },
+                config: LumaGuidedChromaDenoise { radius: Parameter::new(4, ""), epsilon: Parameter::new(0.01, "") },
             }),
             Box::new(Module {
                 name: "Exp".to_string(),
                 cache: None,
-                config: Exp { ev: Parameter::new(2.0, "") },
-            }),
-            Box::new(Module {
-                name: "CST".to_string(),
-                cache: None,
-                config: CST { target_color_space: Parameter::new("AcesCg".to_string(), "") },
-            }),
-            Box::new(Module {
-                name: "Film".to_string(),
-                cache: None,
-                config: Film {
-                    stock: Parameter::new("Portra400".to_string(), ""),
-                    film_format: Parameter::new("Film35mm".to_string(), ""),
-                    seed: Parameter::new(1u64, ""),
-                    enable_halation: Parameter::new(true, ""),
-                    output: Parameter::new("PositiveLinear".to_string(), ""),
-                    compensate_box_speed: Parameter::new(true, ""),
-                },
+                config: Exp { ev: Parameter::new(3.0, "") },
             }),
             Box::new(Module {
                 name: "SigmoidToneMap".to_string(),
                 cache: None,
                 config: SigmoidToneMap { },
-            }),
-            Box::new(Module {
-                name: "CST".to_string(),
-                cache: None,
-                config: CST { target_color_space: Parameter::new("Srgb".to_string(), "") },
-            }),
-            Box::new(Module {
-                name: "Rotation".to_string(),
-                cache: None,
-                config: Rotation::default(),
             }),
         ];
 
@@ -183,13 +121,13 @@ fn main() {
         run_pixel_pipeline_with_backend(&mut image1, &mut config1, &Backend::Cpu);
         println!("Pipeline 1 execution time: {}ms", now.elapsed().as_millis());
 
-        println!("Processing pipeline 2 (CPU)...");
+        println!("Processing pipeline 2 (GPU)...");
         let now = Instant::now();
         let mut image2 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
         let mut config2 = pichromatic_pipeline::config::PipelineConfig {
             pipeline_modules: pipeline2,
         };
-        run_pixel_pipeline_with_backend(&mut image2, &mut config2, &Backend::Cpu);
+        run_pixel_pipeline_with_backend(&mut image2, &mut config2, &Backend::Wgpu(gpu_context));
         println!("Pipeline 2 execution time: {}ms", now.elapsed().as_millis());
 
         (image1, image2)
@@ -450,7 +388,7 @@ pub fn run_module_viewer(
         let img = image::open(input_image_path).expect("Failed to open input image");
         let pipeline_image_before = to_pipeline_image(&img);
 
-        let mut pipeline_image_after = pipeline_image_before.clone();
+        let pipeline_image_after = pipeline_image_before.clone();
         let mut p_image = pichromatic_pipeline::backend::PipelineImage::Cpu(pipeline_image_after);
         module.process(&pichromatic_pipeline::backend::Backend::Cpu, &mut p_image);
         let pipeline_image_after = p_image.to_cpu(None);
