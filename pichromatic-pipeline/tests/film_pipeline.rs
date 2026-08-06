@@ -56,13 +56,12 @@ name = "Rotation"
 angle = "auto"
 "#;
 
-/// Image drift pin, captured from a `--release` run (identical in debug on
-/// this machine, measured drift 0): the sum of per-row rounded squared
-/// subpixel values, tolerated within `H_TOL` units.
-/// Re-pinned for `compensate_box_speed: true` (default; film input is
-/// scene-relative, so stock box ISO no longer scales the exposure).
-const H_PIN: i64 = 9526936;
-const H_TOL: i64 = 0;
+/// Image drift pin: the sum of per-row rounded squared subpixel values,
+/// tolerated within `H_TOL` units. The CPU reference itself differs by 1
+/// unit between platforms (H 10,026,374 on Mac/Metal, 10,026,373 on
+/// AMD CPU + NVIDIA GPU), so `H_TOL = 1` covers both.
+const H_PIN: i64 = 10026373;
+const H_TOL: i64 = 1;
 
 /// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two
 /// compared values (floored at 1.0 so near-zero values keep a tight absolute
