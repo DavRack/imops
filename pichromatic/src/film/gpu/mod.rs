@@ -2444,6 +2444,7 @@ mod tests {
             let params = FilmParams {
                 stock,
                 film_format,
+                render_width_mm: None,
                 seed: 42,
                 output,
                 enable_halation: true,
@@ -2541,6 +2542,7 @@ mod tests {
             let params = FilmParams {
                 stock,
                 film_format,
+                render_width_mm: None,
                 seed: 1,
                 output,
                 enable_halation: true,
@@ -2633,6 +2635,7 @@ mod tests {
             let params = FilmParams {
                 stock,
                 film_format,
+                render_width_mm: None,
                 seed: 42,
                 output,
                 enable_halation: true,

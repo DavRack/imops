@@ -43,7 +43,8 @@ target_color_space = "AcesCg"
 name = "Film"
 stock = "Ektar100"
 film_format = "Film35mm"
-# film_format = "Film1mmDebug"
+# Debug/microscope render width: the same stock chemistry sampled across 0.5 mm.
+render_width_mm = 0.5
 seed = 1
 enable_halation = true
 output = "PositiveLinear"

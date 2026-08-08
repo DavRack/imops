@@ -165,6 +165,7 @@ fn vv_macbeth_colorchecker_delta_e00_gate() {
     let params = FilmParams {
         stock,
         film_format: pichromatic::film::types::FilmFormat::Film35mm,
+        render_width_mm: None,
         seed: 1,
         output: FilmOutput::PositiveLinear,
         enable_halation: true,

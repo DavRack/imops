@@ -317,3 +317,115 @@ pub fn load() -> Result<FilmStock, FilmError> {
     };
     stock.finalize()
 }
+
+#[cfg(test)]
+mod runtime_calibration_tests {
+    use super::*;
+    use crate::film::development::reduction::reduce;
+    use crate::film::FilmFormat;
+    use crate::film::scan::{invert::invert_negative, normalized_dmin_acescg};
+    use crate::film::types::{DyePlanes, LatentPlanes};
+
+    #[test]
+    fn spectral_sensitivity_and_dye_curves_are_finite_and_grid_resolved() {
+        let stock = load().unwrap();
+        let expected_sensitivity_peaks = [400.0, 400.0, 540.0, 540.0, 640.0, 640.0];
+        let expected_dye_peaks = [440.0, 440.0, 540.0, 540.0, 680.0, 680.0];
+        let emulsions: Vec<_> = stock.emulsion_layers().collect();
+        assert_eq!(emulsions.len(), 6);
+
+        for (i, (_, layer)) in emulsions.iter().enumerate() {
+            let sensitivity = layer.spectral_sensitivity.as_ref().unwrap();
+            let dye = &layer.coupler.as_ref().unwrap().epsilon;
+            assert_eq!(sensitivity.grid, WavelengthGrid::mvp());
+            assert_eq!(dye.grid, WavelengthGrid::mvp());
+            assert_eq!(sensitivity.peak_wavelength(), expected_sensitivity_peaks[i]);
+            assert_eq!(dye.peak_wavelength(), expected_dye_peaks[i]);
+            assert!(sensitivity
+                .samples
+                .iter()
+                .chain(dye.samples.iter())
+                .all(|value| value.is_finite() && *value >= 0.0));
+        }
+    }
+
+    #[test]
+    fn density_totals_base_and_viewing_illuminant_are_finite() {
+        let stock = load().unwrap();
+        let emulsions: Vec<_> = stock.emulsion_layers().collect();
+        let dmax = [
+            emulsions[0].1.coupler.as_ref().unwrap().d_max
+                + emulsions[1].1.coupler.as_ref().unwrap().d_max,
+            emulsions[2].1.coupler.as_ref().unwrap().d_max
+                + emulsions[3].1.coupler.as_ref().unwrap().d_max,
+            emulsions[4].1.coupler.as_ref().unwrap().d_max
+                + emulsions[5].1.coupler.as_ref().unwrap().d_max,
+        ];
+        assert_eq!(dmax, [2.82, 2.38, 1.76]);
+
+        assert_eq!(stock.scanner_light, SpectralCurve::d50());
+        assert!(stock
+            .scanner_light
+            .samples
+            .iter()
+            .all(|value| value.is_finite() && *value > 0.0));
+
+        let dmin = normalized_dmin_acescg(&stock);
+        assert!(dmin.iter().all(|value| value.is_finite() && *value > 0.0));
+        assert!((dmin[0] - 1.0).abs() < 1e-6);
+        assert!(dmin[0] > dmin[1] && dmin[1] > dmin[2]);
+    }
+
+    #[test]
+    fn hd_and_layered_density_curves_are_monotonic_and_finite() {
+        let stock = load().unwrap();
+        for (layer_index, layer) in stock.layers.iter().enumerate() {
+            if layer.kind != LayerKind::Emulsion {
+                continue;
+            }
+            let lut = stock.capture_luts[layer_index].as_ref().unwrap();
+            let dmax = layer.coupler.as_ref().unwrap().d_max;
+            let inv_gamma = 1.0 / layer.gamma_contrast;
+            let mut previous_fraction = 0.0;
+            let mut previous_density = 0.0;
+            for (&fraction, _) in lut.fraction.iter().zip(&lut.log10_fluence) {
+                let density = dmax * fraction.powf(inv_gamma);
+                assert!(fraction.is_finite() && density.is_finite());
+                assert!(fraction + 1e-6 >= previous_fraction);
+                assert!(density + 1e-6 >= previous_density);
+                previous_fraction = fraction;
+                previous_density = density;
+            }
+        }
+
+        let latent = LatentPlanes {
+            width: 3,
+            height: 1,
+            layers: vec![vec![0.0, 0.5, 1.0]; 6],
+        };
+        let dyes: DyePlanes = reduce(&stock, &latent);
+        for plane in &dyes.image_dye {
+            assert!(plane.iter().all(|value| value.is_finite()));
+            assert!(plane[0] <= plane[1] + 1e-6 && plane[1] <= plane[2] + 1e-6);
+        }
+    }
+
+    #[test]
+    fn midgray_negative_and_invert_reference_are_finite() {
+        let stock = load().unwrap();
+        let mid = crate::film::mid_negative_acescg(
+            &stock,
+            FilmFormat::Film35mm.pixel_pitch_um(1024),
+            1.0 / stock.box_iso.0,
+        );
+        let dmin = normalized_dmin_acescg(&stock);
+        assert!(mid.iter().all(|value| value.is_finite() && *value > 0.0));
+
+        let mut positive = vec![mid];
+        invert_negative(&mut positive, mid, dmin);
+        for value in positive[0] {
+            assert!(value.is_finite());
+            assert!((value - crate::pixel::MIDDLE_GRAY).abs() < 1e-3);
+        }
+    }
+}

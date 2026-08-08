@@ -27,6 +27,7 @@ fn main() {
         img.film(&FilmParams {
             stock: StockId::ColorNeg200,
             film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
             seed: 1,
             output: FilmOutput::PositiveLinear,
             enable_halation: true,
@@ -64,6 +65,7 @@ fn main() {
         img.film(&FilmParams {
             stock: StockId::ColorNeg200,
             film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
             seed: 1,
             output: FilmOutput::PositiveLinear,
             enable_halation: true,

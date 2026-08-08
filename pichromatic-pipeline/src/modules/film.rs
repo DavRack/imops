@@ -8,6 +8,7 @@ use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule}
 pub struct Film {
     pub stock: Parameter<String>,
     pub film_format: Parameter<String>,
+    pub render_width_mm: Parameter<Option<f32>>,
     pub seed: Parameter<u64>,
     pub enable_halation: Parameter<bool>,
     pub output: Parameter<String>,
@@ -71,6 +72,7 @@ fn film_params_from_config(config: &Film) -> Option<FilmParams> {
     Some(FilmParams {
         stock,
         film_format,
+        render_width_mm: config.render_width_mm.value,
         seed: config.seed.value,
         output,
         enable_halation: config.enable_halation.value,
@@ -115,6 +117,10 @@ impl Default for Film {
                     "Film4x5".to_string(),
                     "Film1mmDebug".to_string(),
                 ],
+            ),
+            render_width_mm: Parameter::new(
+                None,
+                "Optional physical render width in millimetres; overrides the film format width.",
             ),
             seed: Parameter::new_ranged(1, 1, 100000, "RNG seed for grain (deterministic)."),
             enable_halation: Parameter::new(
@@ -309,9 +315,17 @@ mod tests {
 
     #[test]
     fn test_film_deserialization() {
-        let json_str = r#"{"stock": "Portra400", "film_format": "Film35mm", "seed": 1, "output": "PositiveLinear"}"#;
+        let json_str = r#"{"stock": "Portra400", "film_format": "Film35mm", "render_width_mm": 1.0, "seed": 1, "output": "PositiveLinear"}"#;
         let map: toml::Table = serde_json::from_str(json_str).unwrap();
-        let _film: Film = map.try_into().unwrap();
+        let film: Film = map.try_into().unwrap();
+        assert_eq!(film.render_width_mm.value, Some(1.0));
+        let params = film_params_from_config(&film).unwrap();
+        assert_eq!(params.render_width_mm, Some(1.0));
+
+        let default: Film = serde_json::from_str(
+            r#"{"stock": "Portra400", "film_format": "Film35mm", "seed": 1, "output": "PositiveLinear"}"#,
+        )
+        .unwrap();
+        assert_eq!(default.render_width_mm.value, None);
     }
 }
-

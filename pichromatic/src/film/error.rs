@@ -9,6 +9,7 @@ pub enum FilmError {
         got: String,
     },
     InvalidDimensions,
+    InvalidRenderWidth,
     InvalidStock(&'static str),
 }
 
@@ -19,6 +20,9 @@ impl fmt::Display for FilmError {
                 write!(f, "wrong color space: expected {expected}, got {got}")
             }
             FilmError::InvalidDimensions => write!(f, "invalid image dimensions"),
+            FilmError::InvalidRenderWidth => {
+                write!(f, "invalid render width: expected a finite value greater than zero mm")
+            }
             FilmError::InvalidStock(msg) => write!(f, "invalid film stock: {msg}"),
         }
     }

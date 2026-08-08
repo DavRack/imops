@@ -29,7 +29,7 @@ pub enum FilmFormat {
     Film6x6,
     /// 4×5 sheet: 101.6 mm.
     Film4x5,
-    /// 1 mm debug frame: ~1 µm/px at 1000 px wide, resolves dye clouds.
+    /// Compatibility alias for a generic 1 mm physical render width.
     Film1mmDebug,
 }
 
@@ -49,6 +49,14 @@ impl FilmFormat {
         assert!(image_width_px > 0);
         self.width_mm().0 * 1000.0 / image_width_px as f32
     }
+}
+
+/// Validated physical geometry for one film render.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FilmRenderGeometry {
+    pub pixel_count: usize,
+    pub width_mm: f32,
+    pub pixel_pitch_um: f32,
 }
 
 /// Post-LUT developable fraction planes (one per emulsion layer that captures).

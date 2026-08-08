@@ -30,7 +30,7 @@ pub mod units;
 pub use error::FilmError;
 pub use gpu::process_gpu;
 pub use stock::StockId;
-pub use types::{ExposureMeta, FilmFormat};
+pub use types::{ExposureMeta, FilmFormat, FilmRenderGeometry};
 
 use crate::film::development::develop;
 use crate::film::exposure::{expose_with_pitch_and_shutter, expose_with_pitch_shutter_and_scale};
@@ -55,6 +55,9 @@ pub enum FilmOutput {
 pub struct FilmParams {
     pub stock: StockId,
     pub film_format: FilmFormat,
+    /// Optional physical width of the source image on film, in millimetres.
+    /// `None` uses the selected [`FilmFormat`] width.
+    pub render_width_mm: Option<f32>,
     /// RNG seed for grain (deterministic shot noise).
     pub seed: u64,
     pub output: FilmOutput,
@@ -70,11 +73,50 @@ pub struct FilmParams {
     pub compensate_box_speed: bool,
 }
 
+impl FilmParams {
+    /// Resolve and validate the effective physical width for this render.
+    pub fn effective_width_mm(&self) -> Result<f32, FilmError> {
+        let width_mm = self
+            .render_width_mm
+            .unwrap_or_else(|| self.film_format.width_mm().0);
+        if width_mm.is_finite() && width_mm > 0.0 {
+            Ok(width_mm)
+        } else {
+            Err(FilmError::InvalidRenderWidth)
+        }
+    }
+
+    /// Validate image dimensions and derive the physical pixel pitch once.
+    pub fn render_geometry(
+        &self,
+        width: usize,
+        height: usize,
+    ) -> Result<FilmRenderGeometry, FilmError> {
+        if width == 0 || height == 0 {
+            return Err(FilmError::InvalidDimensions);
+        }
+        let pixel_count = width
+            .checked_mul(height)
+            .ok_or(FilmError::InvalidDimensions)?;
+        let width_mm = self.effective_width_mm()?;
+        let pixel_pitch_um = (f64::from(width_mm) * 1000.0 / width as f64) as f32;
+        if !pixel_pitch_um.is_finite() || pixel_pitch_um <= 0.0 {
+            return Err(FilmError::InvalidRenderWidth);
+        }
+        Ok(FilmRenderGeometry {
+            pixel_count,
+            width_mm,
+            pixel_pitch_um,
+        })
+    }
+}
+
 impl Default for FilmParams {
     fn default() -> Self {
         Self {
             stock: StockId::BwStub,
             film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
             seed: 0,
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
@@ -101,7 +143,8 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
 
     let width = image.metadata.width;
     let height = image.metadata.height;
-    if width == 0 || height == 0 || image.rgb_data.len() != width * height {
+    let geometry = params.render_geometry(width, height)?;
+    if image.rgb_data.len() != geometry.pixel_count {
         return Err(FilmError::InvalidDimensions);
     }
 
@@ -109,7 +152,7 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
     if !params.enable_halation {
         stock.antihalation.reflectance = crate::film::spectrum::SpectralCurve::constant(0.0);
     }
-    let pitch = params.film_format.pixel_pitch_um(width);
+    let pitch = geometry.pixel_pitch_um;
     let shutter = image
         .metadata
         .shutter_seconds
@@ -393,6 +436,7 @@ mod tests {
         FilmParams {
             stock: StockId::BwStub,
             film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
             seed: 1,
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
@@ -404,10 +448,77 @@ mod tests {
         FilmParams {
             stock: StockId::ColorNeg200,
             film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
             seed: 1,
             output,
             enable_halation: true,
             compensate_box_speed: true,
+        }
+    }
+
+    #[test]
+    fn render_geometry_uses_format_or_override_width() {
+        let params = color_params(FilmOutput::NegativeLinear);
+        let normal = params.render_geometry(1000, 2).unwrap();
+        assert_eq!(normal.pixel_count, 2000);
+        assert_eq!(normal.width_mm, 36.0);
+        assert_eq!(normal.pixel_pitch_um, 36.0);
+
+        for (width_mm, expected_pitch) in [(1.0, 1.0), (0.5, 0.5)] {
+            let mut custom = params.clone();
+            custom.render_width_mm = Some(width_mm);
+            let geometry = custom.render_geometry(1000, 2).unwrap();
+            assert_eq!(geometry.pixel_count, 2000);
+            assert_eq!(geometry.width_mm, width_mm);
+            assert_eq!(geometry.pixel_pitch_um, expected_pitch);
+        }
+
+        let mut alias = params.clone();
+        alias.film_format = FilmFormat::Film1mmDebug;
+        let mut generic = params;
+        generic.render_width_mm = Some(1.0);
+        assert_eq!(alias.render_geometry(1000, 2), generic.render_geometry(1000, 2));
+    }
+
+    #[test]
+    fn render_geometry_rejects_invalid_widths_and_overflow() {
+        let params = color_params(FilmOutput::NegativeLinear);
+        for width_mm in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let mut invalid = params.clone();
+            invalid.render_width_mm = Some(width_mm);
+            assert_eq!(
+                invalid.render_geometry(8, 8),
+                Err(FilmError::InvalidRenderWidth)
+            );
+        }
+        assert_eq!(
+            params.render_geometry(usize::MAX, 2),
+            Err(FilmError::InvalidDimensions)
+        );
+    }
+
+    #[test]
+    fn physical_width_outputs_are_deterministic_finite_and_same_size() {
+        for stock in [StockId::ColorNeg200, StockId::Portra400] {
+            for width_mm in [None, Some(1.0), Some(0.5)] {
+                let mut params = color_params(FilmOutput::NegativeLinear);
+                params.stock = stock;
+                params.render_width_mm = width_mm;
+                let mut first = make_image(16, 12, [0.2, 0.15, 0.1], 200.0);
+                let mut second = first.clone();
+                process(&mut first, &params).unwrap();
+                process(&mut second, &params).unwrap();
+
+                assert_eq!(first.metadata.width, 16);
+                assert_eq!(first.metadata.height, 12);
+                assert_eq!(first.rgb_data.len(), 16 * 12);
+                assert_eq!(first.rgb_data, second.rgb_data);
+                assert!(first
+                    .rgb_data
+                    .iter()
+                    .flat_map(|px| px.iter())
+                    .all(|value| value.is_finite()));
+            }
         }
     }
 
@@ -537,6 +648,7 @@ mod tests {
         let params = FilmParams {
             stock: StockId::ColorNeg200,
             film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
             seed: 99,
             output: FilmOutput::PositiveLinear,
             enable_halation: true,
@@ -561,6 +673,7 @@ mod tests {
             let params = FilmParams {
                 stock: StockId::ColorNeg200,
                 film_format: FilmFormat::Film35mm,
+                render_width_mm: None,
                 seed: 1,
                 output,
                 enable_halation: true,
@@ -581,6 +694,7 @@ mod tests {
         let params = FilmParams {
             stock: StockId::ColorNeg200,
             film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
             seed: 2,
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
@@ -772,6 +886,7 @@ mod tests {
         let params = FilmParams {
             stock: StockId::EktachromeE100,
             film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
             seed: 1,
             output: FilmOutput::PositiveLinear, // ignored for reversal
             enable_halation: true,
