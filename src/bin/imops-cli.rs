@@ -10,11 +10,11 @@ struct Args {
     #[arg(name = "input path", value_name = "input_path")]
     input_path: String,
 
-    /// Output path (`.exr` = 16-bit lossless OpenEXR, `.jpg`/`.jpeg` = 8-bit JPEG)
+    /// Output path (`.png` = 16-bit lossless PNG, `.exr` = 16-bit lossless OpenEXR, `.jpg`/`.jpeg` = 8-bit JPEG)
     #[arg(
         short,
         name = "output path",
-        default_value = "result.exr",
+        default_value = "result.png",
         value_name = "output_path"
     )]
     output_path: String,
@@ -82,6 +82,9 @@ fn main() {
         }
         imops::output::OutputFormat::Jpeg => {
             println!("jpeg save: {:.2?}", now.elapsed());
+        }
+        imops::output::OutputFormat::Png => {
+            println!("png save (16-bit lossless): {:.2?}", now.elapsed());
         }
     }
     println!("wrote {}", args.output_path);

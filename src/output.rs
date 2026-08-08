@@ -1,4 +1,4 @@
-//! Image export helpers (OpenEXR archival + JPEG preview).
+//! Image export helpers (OpenEXR archival + JPEG preview + PNG lossless).
 
 use color::ColorSpaceTag;
 use pichromatic::image::ImageMetadata;
@@ -13,6 +13,8 @@ pub enum OutputFormat {
     Exr,
     /// 8-bit display JPEG (kept for quick previews / switching).
     Jpeg,
+    /// 16-bit lossless RGB PNG.
+    Png,
 }
 
 impl OutputFormat {
@@ -24,6 +26,7 @@ impl OutputFormat {
             .to_ascii_lowercase();
         match ext.as_str() {
             "jpg" | "jpeg" => Self::Jpeg,
+            "png" => Self::Png,
             _ => Self::Exr,
         }
     }
@@ -244,6 +247,32 @@ pub fn save_jpeg(
         .map_err(|e| format!("JPEG write failed: {e}"))
 }
 
+/// Write an encoded-sRGB 16-bit lossless PNG.
+pub fn save_png(
+    path: &str,
+    width: usize,
+    height: usize,
+    pixels: &[[f32; 3]],
+    color_space: Option<ColorSpaceTag>,
+) -> Result<(), String> {
+    assert_eq!(width * height, pixels.len());
+    let mut data = Vec::with_capacity(pixels.len() * 3);
+    for p in pixels {
+        let encoded = match color_space {
+            Some(ColorSpaceTag::Srgb) => *p,
+            Some(source) => source.convert(ColorSpaceTag::Srgb, *p),
+            None => *p,
+        };
+        data.push((encoded[0].clamp(0.0, 1.0) * 65535.0).round() as u16);
+        data.push((encoded[1].clamp(0.0, 1.0) * 65535.0).round() as u16);
+        data.push((encoded[2].clamp(0.0, 1.0) * 65535.0).round() as u16);
+    }
+    let img = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::from_vec(width as u32, height as u32, data)
+        .ok_or_else(|| "failed to build PNG buffer".to_string())?;
+    img.save(path)
+        .map_err(|e| format!("PNG write failed: {e}"))
+}
+
 fn exr_source(image: &Image) -> Cow<'_, Image> {
     if matches!(
         image.metadata.color_space,
@@ -257,7 +286,7 @@ fn exr_source(image: &Image) -> Cow<'_, Image> {
     }
 }
 
-/// Save pipeline output; format from path extension (`.exr` default, `.jpg`/`.jpeg` → JPEG).
+/// Save pipeline output; format from path extension (`.exr` default, `.png` → PNG, `.jpg`/`.jpeg` → JPEG).
 pub fn save_image(
     path: &str,
     image: &Image,
@@ -284,6 +313,15 @@ pub fn save_image(
             );
             save_jpeg(path, w, h, pixels.as_ref(), image.metadata.color_space)?;
         }
+        OutputFormat::Png => {
+            let (w, h, pixels) = apply_orientation(
+                &image.rgb_data,
+                image.metadata.width,
+                image.metadata.height,
+                orientation,
+            );
+            save_png(path, w, h, pixels.as_ref(), image.metadata.color_space)?;
+        }
     }
     Ok(format)
 }
@@ -291,6 +329,40 @@ pub fn save_image(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_from_path_detection() {
+        assert_eq!(OutputFormat::from_path("result.png"), OutputFormat::Png);
+        assert_eq!(OutputFormat::from_path("test.PNG"), OutputFormat::Png);
+        assert_eq!(OutputFormat::from_path("image.jpg"), OutputFormat::Jpeg);
+        assert_eq!(OutputFormat::from_path("image.jpeg"), OutputFormat::Jpeg);
+        assert_eq!(OutputFormat::from_path("result.exr"), OutputFormat::Exr);
+        assert_eq!(OutputFormat::from_path("no_ext"), OutputFormat::Exr);
+    }
+
+    #[test]
+    fn save_png_roundtrip() {
+        let pixels = vec![
+            [0.0, 0.5, 1.0],
+            [0.25, 0.75, 0.1],
+        ];
+        let tmp_dir = std::env::temp_dir();
+        let tmp_path = tmp_dir.join("test_output_16bit.png");
+        let path_str = tmp_path.to_str().unwrap();
+
+        let res = save_png(path_str, 2, 1, &pixels, Some(ColorSpaceTag::Srgb));
+        assert!(res.is_ok());
+
+        let loaded = image::open(&tmp_path).expect("failed to open saved PNG");
+        assert_eq!(loaded.color(), image::ColorType::Rgb16);
+        let rgb16 = loaded.to_rgb16();
+        let p0 = rgb16.get_pixel(0, 0);
+        assert_eq!(p0[0], 0);
+        assert_eq!(p0[1], (0.5 * 65535.0_f32).round() as u16);
+        assert_eq!(p0[2], 65535);
+
+        let _ = std::fs::remove_file(&tmp_path);
+    }
 
     #[test]
     fn normal_orientation_borrows_pixels() {
