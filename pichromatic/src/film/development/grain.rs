@@ -1,14 +1,11 @@
 //! Discrete shot-noise grain on image-forming dye only.
 //!
-//! The LUT supplies the local expected density and therefore the local
-//! development probability. At a fine film pitch, the final image-forming dye
-//! must then be reconstructed from the random population of developed
-//! particles, not made by adding a continuous texture to the LUT result. For a
-//! pixel aperture with expected crystal count `n`, the model samples a virtual
-//! particle population, develops it with probability `D / D_max`, converts the
-//! developed count back to optical density, and then spreads the same
-//! particles through a cloud-scale PSF plus a crystal-scale microstructure
-//! PSF.
+//! The LUT supplies the local expected dye density after H&D reduction. At a
+//! fine film pitch, the model samples the same stock-derived particle
+//! population in that reduced-density space, then spreads the resulting dye
+//! clouds through a cloud-scale PSF plus a crystal-scale microstructure PSF.
+//! Sampling after reduction keeps the H&D mean; sampling latent `f` and then
+//! raising each sparse realization to `1/γ` would create Jensen bias and zeros.
 //!
 //! The expected variance reduces to Selwyn's law above the cloud scale and
 //! saturates below it, but the realization remains discrete instead of a
@@ -199,6 +196,17 @@ fn cloud_uniformity(rho_areal: f32) -> f32 {
     population / (population + 1.0)
 }
 
+/// Positive H&D toe used for a low-density stochastic realization.
+#[inline]
+fn positive_density_toe(noisy: f32, d_max: f32) -> f32 {
+    let knee = 0.005 * d_max;
+    if noisy >= knee {
+        noisy.min(d_max * 1.05)
+    } else {
+        ((knee * knee) / (2.0 * knee - noisy)).min(d_max * 1.05)
+    }
+}
+
 /// Switch to discrete particles once the render aperture resolves a typical
 /// crystal diameter. Above this limit the Gaussian continuum is the
 /// central-limit approximation of the same population process.
@@ -373,13 +381,7 @@ pub(crate) fn apply_continuum_grain(
                     let taper = (density / (density + toe)).min(1.0);
                     let sigma_density = taper * (density * (d_max - density)).max(0.0).sqrt();
                     let noisy = density + kappa_sub * sigma_density * normal;
-                    let knee = 0.005 * d_max;
-                    *output = if noisy >= knee {
-                        noisy
-                    } else {
-                        (knee * knee) / (2.0 * knee - noisy)
-                    }
-                    .min(d_max * 1.05);
+                    *output = positive_density_toe(noisy, d_max);
                 });
         }
 
@@ -427,8 +429,12 @@ pub fn apply_grain(
         plane
             .par_iter_mut()
             .zip(particles.par_iter())
-            .for_each(|(density, &fraction)| {
-                *density = (fraction * d_max).clamp(0.0, d_max * 1.05);
+            .zip(probabilities.par_iter())
+            .for_each(|((density, &fraction), &probability)| {
+                // Keep reduced dye density as the local physical baseline;
+                // only the stock-derived particle deviation is stochastic.
+                let noisy = *density + d_max * (fraction - probability);
+                *density = positive_density_toe(noisy, d_max);
             });
     }
 }
@@ -584,6 +590,51 @@ mod tests {
         assert!(
             correlation > 0.8,
             "crystal sites should persist, correlation={correlation}"
+        );
+    }
+
+    #[test]
+    fn density_space_grain_preserves_h_and_d_mean() {
+        let d_max = 1.9f32;
+        let gamma = 0.34f32;
+        let expected_fraction = 0.5f32;
+        let expected_density = d_max * expected_fraction.powf(1.0 / gamma);
+        let mut dyes = flat_dyes(expected_density, d_max, 256, 256);
+
+        apply_grain(&mut dyes, &[d_max], &[0.18], 0.25, 17, &[None]);
+
+        let plane = &dyes.image_dye[0];
+        let mean = plane.iter().map(|&value| value as f64).sum::<f64>() / plane.len() as f64;
+        let relative_mean_error = (mean as f32 - expected_density).abs() / expected_density;
+        assert!(
+            relative_mean_error < 0.08,
+            "density-space grain changed H&D mean: expected={expected_density}, mean={mean}"
+        );
+        assert!(std_of(plane) > 0.0, "particle clouds should vary in dye density");
+        assert!(
+            plane.iter().any(|&value| value > 0.0 && value < d_max),
+            "cloud field should contain intermediate optical densities"
+        );
+    }
+
+    #[test]
+    fn dark_density_space_grain_keeps_continuous_dye_clouds() {
+        let d_max = 1.9f32;
+        let gamma = 0.34f32;
+        let dark_fraction = 0.2f32;
+        let baseline = d_max * dark_fraction.powf(1.0 / gamma);
+        let mut dyes = flat_dyes(baseline, d_max, 256, 256);
+
+        apply_grain(&mut dyes, &[d_max], &[0.18], 0.25, 17, &[None]);
+
+        let plane = &dyes.image_dye[0];
+        let min = plane.iter().copied().fold(f32::INFINITY, f32::min);
+        let max = plane.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!(min > 0.0, "dark cells must retain positive dye density");
+        assert!(max > min, "particle clouds should vary optically");
+        assert!(
+            plane.iter().any(|&value| value > min && value < max),
+            "cloud density should vary continuously, not only by occupancy"
         );
     }
 }

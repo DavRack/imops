@@ -6,7 +6,7 @@ pub mod reduction;
 
 use crate::film::development::diffusion::{apply_adjacency, apply_dir_inhibition};
 use crate::film::development::grain::{
-    apply_continuum_grain, apply_particle_grain_to_latent, particle_resolution_limit_um,
+    apply_continuum_grain, apply_grain, particle_resolution_limit_um,
 };
 use crate::film::development::reduction::reduce;
 use crate::film::stock::{FilmStock, LayerKind};
@@ -37,19 +37,25 @@ pub fn develop(
     // the same population process.
     let resolves_particles =
         pixel_pitch_um < particle_resolution_limit_um(&crystal_sizes).max(1e-6);
-    let mut dyes = if resolves_particles {
-        let mut latent_particles = latent.clone();
-        apply_particle_grain_to_latent(
-            &mut latent_particles,
+    let mut dyes = reduce(stock, latent);
+
+    if resolves_particles {
+        let d_max: Vec<f32> = stock
+            .emulsion_layers()
+            .map(|(_, layer)| layer.coupler.as_ref().unwrap().d_max)
+            .collect();
+        // Apply discrete clouds after H&D reduction. Sampling latent f and
+        // then raising each sparse realization to 1/gamma biases the mean and
+        // turns zero-count clouds into crushed holes.
+        apply_grain(
+            &mut dyes,
+            &d_max,
             &kappas,
             pixel_pitch_um,
             seed,
             &crystal_sizes,
         );
-        reduce(stock, &latent_particles)
-    } else {
-        reduce(stock, latent)
-    };
+    }
 
     let sigma_dir_px = stock.dir_diffusion_length.0 / pixel_pitch_um.max(1e-6);
     apply_dir_inhibition(&mut dyes, sigma_dir_px, &stock.dir_inhibition_matrix);
