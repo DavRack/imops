@@ -1,12 +1,17 @@
 //! Latent → dye density reduction (no spatial effects).
 
+use crate::film::constants::FOG_OFFSET;
 use crate::film::stock::{FilmStock, LayerKind};
 use crate::film::types::{DyePlanes, LatentPlanes};
 use rayon::prelude::*;
 
 /// Convert developable fraction planes to image/mask dye optical densities.
 ///
-/// `D_image = D_max * f_eff^(1/γ_eff)` with `f_eff = f` (negative) or `1−f` (reversal).
+/// `D_image = D_max * f_eff^(1/γ_eff)` with `f_eff = f` (negative) or `1−f` (reversal),
+/// after chemical fog: developable fraction floor from random fog crystals at
+/// zero exposure (`f_fog = FOG_OFFSET / d_max`, then `f_eff = 1 − (1−f)(1−f_fog)`).
+/// Particle overwrite at fine pitch uses γ-recovered `f` and linear `d_max·f`, so
+/// the expected linear density floor at f=0 is ≈ `FOG_OFFSET`.
 ///
 /// Coloured film base remains a separate, unnoised mask plane. Grain never
 /// modulates residual colored-coupler density.
@@ -35,16 +40,14 @@ pub fn reduce(stock: &FilmStock, latent: &LatentPlanes) -> DyePlanes {
             .par_iter_mut()
             .zip(f_plane.par_iter())
             .for_each(|(d, &f)| {
-                let eff_f = if is_reversal {
+                let f_clamped = if is_reversal {
                     1.0 - f.clamp(0.0, 1.0)
                 } else {
                     f.clamp(0.0, 1.0)
                 };
-                *d = if eff_f > 0.0 {
-                    d_max * eff_f.powf(inv_gamma)
-                } else {
-                    0.0
-                };
+                let f_fog = (FOG_OFFSET / d_max).clamp(0.0, 1.0);
+                let f_eff = 1.0 - (1.0 - f_clamped) * (1.0 - f_fog);
+                *d = d_max * f_eff.powf(inv_gamma);
             });
 
         if coupler.mask_epsilon.is_some() {
@@ -73,6 +76,40 @@ pub fn reduce(stock: &FilmStock, latent: &LatentPlanes) -> DyePlanes {
 mod tests {
     use super::*;
     use crate::film::{constants::MASK_DENSITY_FRACTION_OF_DMAX, StockId};
+
+    #[test]
+    fn zero_exposure_chemical_fog_floor() {
+        use crate::film::constants::FOG_OFFSET;
+
+        let stock = StockId::Portra400.load().unwrap();
+        let emulsion_count = stock
+            .layers
+            .iter()
+            .filter(|l| l.kind == LayerKind::Emulsion)
+            .count();
+        let latent = LatentPlanes {
+            width: 2,
+            height: 1,
+            layers: vec![vec![0.0f32; 2]; emulsion_count],
+        };
+        let dyes = reduce(&stock, &latent);
+        for (plane, layer) in dyes
+            .image_dye
+            .iter()
+            .zip(stock.layers.iter().filter(|l| l.kind == LayerKind::Emulsion))
+        {
+            let d_max = layer.coupler.as_ref().unwrap().d_max;
+            let gamma = layer.gamma_contrast.max(1e-6);
+            let f_fog = (FOG_OFFSET / d_max).clamp(0.0, 1.0);
+            let expected = d_max * f_fog.powf(1.0 / gamma);
+            for &d in plane {
+                assert!(
+                    (d - expected).abs() < 1e-6,
+                    "zero exposure must lift to chemical fog H&D floor {expected}, got {d}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn coloured_base_is_not_cleared_by_development() {

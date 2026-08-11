@@ -583,20 +583,20 @@ mod roi_workspace_tests {
         // Compute real plan.root dimensions (1024 + 2 * total_halo)
         let roi_w = plan.root.width as usize;
         let roi_h = plan.root.height as usize;
-        // Portra 400 halo radius: local(2) + wide(41) + dir(6) + adj(3) = 52.
+        // Portra 400 halo radius: local(1) + wide(41) + dir(6) + adj(3) = 51.
         // Wide covers the CPU multi-bounce halation's widest kernel (σ·√3).
-        // 1024 + 104 = 1128.
-        assert_eq!(roi_w, 1128);
-        assert_eq!(roi_h, 1128);
+        // 1024 + 102 = 1126.
+        assert_eq!(roi_w, 1126);
+        assert_eq!(roi_h, 1126);
 
         let breakdown = film_roi_memory_breakdown(roi_w, roi_h, 4032, 3024, 6).unwrap();
 
-        // Exact byte verification for 1128x1128 root:
-        // Arena: (3*6 + 2) * 1128 * 1128 * 4 = 20 * 1,272,384 * 4 = 101,790,720 bytes (~97.07 MiB)
+        // Exact byte verification for 1126x1126 root:
+        // Arena: (3*6 + 2) * 1126 * 1126 * 4 = 20 * 1,267,876 * 4 = 101,430,080 bytes (~96.73 MiB)
         // Grain Spill: 4032 * 3024 * 4 = 12,192,768 * 4 = 48,771,072 bytes (~46.51 MiB)
         // Partial: 2048 * 6 * 4 = 49,152 bytes (~0.05 MiB)
         // Output: 4032 * 3024 * 16 = 195,084,288 bytes (~186.05 MiB)
-        assert_eq!(breakdown.arena_bytes, 101_790_720);
+        assert_eq!(breakdown.arena_bytes, 101_430_080);
         assert_eq!(breakdown.grain_spill_bytes, 48_771_072);
         assert_eq!(breakdown.var_partial_bytes, 49_152);
         assert_eq!(breakdown.output_bytes, 195_084_288);
@@ -604,8 +604,8 @@ mod roi_workspace_tests {
         let internal_scratch_mb = breakdown.internal_scratch_bytes as f64 / (1024.0 * 1024.0);
         let total_owned_mb = breakdown.total_film_owned_bytes as f64 / (1024.0 * 1024.0);
 
-        assert_eq!(breakdown.internal_scratch_bytes, 150_610_944); // ~143.63 MiB
-        assert_eq!(breakdown.total_film_owned_bytes, 345_695_232); // ~329.68 MiB
+        assert_eq!(breakdown.internal_scratch_bytes, 150_250_304); // ~143.28 MiB
+        assert_eq!(breakdown.total_film_owned_bytes, 345_334_592); // ~329.33 MiB
 
         assert!(
             internal_scratch_mb <= 150.0,

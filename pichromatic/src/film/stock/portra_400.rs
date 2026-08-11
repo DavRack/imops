@@ -114,17 +114,17 @@ pub fn load() -> Result<FilmStock, FilmError> {
         spectral_sensitivity: Some(blue_sensitivity_curve()),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.85_f64.ln(),
-            sigma_ln: 0.35,
+            sigma_ln: 0.65,
         }),
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "yellow",
             epsilon: gaussian_curve(445.0, 35.0, 1.0),
             mask_epsilon: Some(orange_mask_epsilon()),
-            d_max: 1.41, // total 2.82 split fast/slow
+            d_max: 0.575, // total 1.15 split fast/slow
         }),
         gamma_contrast: 0.691,
-        capture_k: 4.8,
+        capture_k: 3.74,
         reciprocity_p: 0.85,
         is_reversal: false,
     };
@@ -143,7 +143,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
             name: "yellow",
             epsilon: gaussian_curve(445.0, 35.0, 1.0),
             mask_epsilon: Some(orange_mask_epsilon()),
-            d_max: 1.41,
+            d_max: 0.575, // yellow slow
         }),
         gamma_contrast: 0.691,
         capture_k: 2.2,
@@ -176,17 +176,17 @@ pub fn load() -> Result<FilmStock, FilmError> {
         spectral_sensitivity: Some(green_sensitivity_curve()),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.90_f64.ln(),
-            sigma_ln: 0.35,
+            sigma_ln: 0.65,
         }),
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "magenta",
             epsilon: gaussian_curve(550.0, 35.0, 1.0),
             mask_epsilon: Some(orange_mask_epsilon()),
-            d_max: 1.19, // total 2.38
+            d_max: 0.666,
         }),
         gamma_contrast: 0.618,
-        capture_k: 2.4,
+        capture_k: 1.87,
         reciprocity_p: 0.87,
         is_reversal: false,
     };
@@ -205,7 +205,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
             name: "magenta",
             epsilon: gaussian_curve(550.0, 35.0, 1.0),
             mask_epsilon: Some(orange_mask_epsilon()),
-            d_max: 1.19,
+            d_max: 0.666, // magenta slow
         }),
         gamma_contrast: 0.618,
         capture_k: 1.1,
@@ -223,17 +223,17 @@ pub fn load() -> Result<FilmStock, FilmError> {
         spectral_sensitivity: Some(red_sensitivity_curve()),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.95_f64.ln(),
-            sigma_ln: 0.35,
+            sigma_ln: 0.65,
         }),
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "cyan",
             epsilon: gaussian_curve(680.0, 40.0, 1.0),
             mask_epsilon: Some(orange_mask_epsilon()),
-            d_max: 0.88, // total 1.76
+            d_max: 0.704,
         }),
         gamma_contrast: 0.542,
-        capture_k: 1.5,
+        capture_k: 1.22,
         reciprocity_p: 0.89,
         is_reversal: false,
     };
@@ -252,7 +252,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
             name: "cyan",
             epsilon: gaussian_curve(680.0, 40.0, 1.0),
             mask_epsilon: Some(orange_mask_epsilon()),
-            d_max: 0.88,
+            d_max: 0.704, // cyan slow
         }),
         gamma_contrast: 0.542,
         capture_k: 0.7,
@@ -301,7 +301,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         ],
         antihalation: AntihalationModel {
             reflectance: gaussian_curve(680.0, 60.0, 0.06),
-            psf_local_um: 3.0,
+            psf_local_um: 0.75,
             psf_halation_um: 70.0,
         },
         developer_diffusion_length: Microns(7.0),
@@ -325,6 +325,72 @@ mod runtime_calibration_tests {
     use crate::film::FilmFormat;
     use crate::film::scan::{invert::invert_negative, normalized_dmin_acescg};
     use crate::film::types::{DyePlanes, LatentPlanes};
+
+    #[test]
+    fn fast_layer_capture_toe_has_shadow_latitude() {
+        use crate::film::exposure::expose_with_pitch_and_shutter;
+        use crate::film::exposure::radiance::relative_to_absolute_luminance;
+        use crate::pixel::MIDDLE_GRAY;
+
+        let stock = load().unwrap();
+        const N: usize = 16;
+        let shutter = 1.0f32 / stock.box_iso.0;
+        let l_mid = relative_to_absolute_luminance(
+            MIDDLE_GRAY as f64,
+            shutter as f64,
+            8.0,
+            stock.box_iso.0 as f64,
+        ) as f32;
+
+        let mut fast_at = |ratio: f32| -> [f32; 3] {
+            let l = l_mid * ratio;
+            let rgb = vec![[l, l, l]; N * N];
+            let latent = expose_with_pitch_and_shutter(&rgb, N, N, &stock, 10.0, shutter);
+            // Fast layers: blue, green, red (indices 0, 2, 4).
+            [
+                latent.layers[0].iter().sum::<f32>() / (N * N) as f32,
+                latent.layers[2].iter().sum::<f32>() / (N * N) as f32,
+                latent.layers[4].iter().sum::<f32>() / (N * N) as f32,
+            ]
+        };
+
+        let f_mid = fast_at(1.0);
+        for (name, f) in [("blue_fast", f_mid[0]), ("green_fast", f_mid[1]), ("red_fast", f_mid[2])]
+        {
+            assert!(
+                (0.40..=0.60).contains(&f),
+                "{name} mid-gray developable {f} outside [0.40, 0.60]"
+            );
+        }
+
+        let f_deep = fast_at(0.03);
+        let f_shadow = fast_at(0.1);
+        for (name, f) in [
+            ("blue_fast", f_deep[0]),
+            ("green_fast", f_deep[1]),
+            ("red_fast", f_deep[2]),
+        ] {
+            assert!(
+                f > 1.0e-4,
+                "{name} developable at L/L_mid=0.03 must exceed 1e-4, got {f}"
+            );
+        }
+        for (name, f) in [
+            ("blue_fast", f_shadow[0]),
+            ("green_fast", f_shadow[1]),
+            ("red_fast", f_shadow[2]),
+        ] {
+            assert!(
+                f >= 0.015,
+                "{name} developable at L/L_mid=0.1 must be >= 0.015, got {f}"
+            );
+        }
+
+        // Toe must stay below mid-gray calibration.
+        for f in f_shadow {
+            assert!(f < f_mid[0].min(f_mid[1]).min(f_mid[2]) * 0.5);
+        }
+    }
 
     #[test]
     fn spectral_sensitivity_and_dye_curves_are_finite_and_grid_resolved() {
@@ -361,7 +427,7 @@ mod runtime_calibration_tests {
             emulsions[4].1.coupler.as_ref().unwrap().d_max
                 + emulsions[5].1.coupler.as_ref().unwrap().d_max,
         ];
-        assert_eq!(dmax, [2.82, 2.38, 1.76]);
+        assert_eq!(dmax, [1.15, 1.332, 1.408]);
 
         assert_eq!(stock.scanner_light, SpectralCurve::d50());
         assert!(stock

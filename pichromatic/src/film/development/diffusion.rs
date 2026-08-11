@@ -1,13 +1,19 @@
 //! Eberhard / adjacency effect via reaction–diffusion unsharp mask.
 //!
+//! Developer exhaustion depends on the local developed dye field. Adjacency is
+//! applied to the realized image-bearing planes (particle or continuum):
+//!
+//! ```text
 //! D' = D + β * (D − (D ⊛ G_σ))
+//! ```
+//!
 //! σ = developer_diffusion_length in pixels; β = exhaustion sensitivity.
 //! Derived from reaction–diffusion, not a creative sharpening tool.
 
 use crate::film::blur::gaussian_blur_separable;
 use crate::film::types::DyePlanes;
 
-/// Apply adjacency correction to image dye planes.
+/// Apply Eberhard adjacency correction to realized image dye planes.
 pub fn apply_adjacency(dyes: &mut DyePlanes, sigma_px: f32, beta: f32) {
     if beta.abs() < 1e-8 || sigma_px < 1e-3 {
         return;
@@ -17,7 +23,7 @@ pub fn apply_adjacency(dyes: &mut DyePlanes, sigma_px: f32, beta: f32) {
     for plane in dyes.image_dye.iter_mut() {
         let mut blurred = plane.clone();
         gaussian_blur_separable(&mut blurred, width, height, sigma_px);
-        for (d, b) in plane.iter_mut().zip(blurred.iter()) {
+        for (d, &b) in plane.iter_mut().zip(blurred.iter()) {
             *d += beta * (*d - b);
         }
     }
@@ -25,14 +31,20 @@ pub fn apply_adjacency(dyes: &mut DyePlanes, sigma_px: f32, beta: f32) {
 
 /// Apply DIR (Development Inhibitor Releasing) coupler interlayer chemical inhibition.
 ///
-/// Developing silver halide in emulsion layer `i` releases inhibitor `I_i(x,y)`,
-/// which is blurred by σ_dir = `dir_diffusion_length / pitch`.
+/// Developing silver halide in emulsion layer `i` releases inhibitor `I_i(x,y)`
+/// proportional to the realized dye density in that layer. Inhibitor is blurred
+/// by σ_dir = `dir_diffusion_length / pitch`, and target layers are scaled
+/// multiplicatively — no additive scene reinjection.
 ///
 /// **Matrix layout:** `matrix[source][target]` (row = source emulsion `i` releasing inhibitor,
 /// column = target emulsion `j` receiving inhibition). Target `j` receives
-/// `I_total,j = Σ_i matrix[i][j] · (I_i ⊛ G_σ)` and its image dye is scaled by
-/// `exp(−I_total,j)`.
-pub fn apply_dir_inhibition(dyes: &mut DyePlanes, sigma_dir_px: f32, matrix: &[Vec<f32>]) {
+/// `ΔI_j = Σ_i matrix[i][j] · ((I_i ⊛ G_σ) − I_i)` from realized dyes, and its image
+/// dye is scaled by `exp(−ΔI_j)`.
+pub fn apply_dir_inhibition(
+    dyes: &mut DyePlanes,
+    sigma_dir_px: f32,
+    matrix: &[Vec<f32>],
+) {
     let num_emulsions = dyes.image_dye.len();
     if num_emulsions == 0 || matrix.is_empty() || sigma_dir_px < 1e-3 {
         return;
@@ -140,6 +152,33 @@ mod tests {
     }
 
     #[test]
+    fn adjacency_classic_eberhard_formula() {
+        let width = 32;
+        let height = 16;
+        let n = width * height;
+        let mut dyes = DyePlanes {
+            width,
+            height,
+            image_dye: vec![(0..n).map(|i| (i % width) as f32 / width as f32).collect()],
+            mask_dye: vec![vec![0.0; n]],
+        };
+        let reference = dyes.clone();
+        let sigma = 2.5f32;
+        let beta = 0.35f32;
+        apply_adjacency(&mut dyes, sigma, beta);
+
+        let mut blurred = reference.image_dye[0].clone();
+        crate::film::blur::gaussian_blur_separable(&mut blurred, width, height, sigma);
+        for (got, (&d, &b)) in dyes.image_dye[0]
+            .iter()
+            .zip(reference.image_dye[0].iter().zip(blurred.iter()))
+        {
+            let expected = d + beta * (d - b);
+            assert!((got - expected).abs() < 1e-5, "got={got} expected={expected}");
+        }
+    }
+
+    #[test]
     fn dir_matrix_is_source_row_target_column() {
         // Asymmetric coupling: source 1 → target 0 (matrix[1][0] = w).
         let n = 16 * 16;
@@ -186,5 +225,29 @@ mod tests {
             assert!((dyes.image_dye[0][p] - 0.8).abs() < 1e-5);
             assert!((dyes.image_dye[1][p] - 0.5).abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn dir_particle_spikes_affect_inhibition() {
+        let n = 16 * 16;
+        let flat = 0.5f32;
+        let mut flat_dyes = DyePlanes {
+            width: 16,
+            height: 16,
+            image_dye: vec![vec![flat; n], vec![flat; n]],
+            mask_dye: vec![vec![0.0; n], vec![0.0; n]],
+        };
+        let mut spiked = flat_dyes.clone();
+        for p in (0..n).step_by(7) {
+            spiked.image_dye[0][p] = 0.0;
+            spiked.image_dye[1][p] = 1.0;
+        }
+        let matrix = vec![vec![0.2, 0.4], vec![0.3, 0.1]];
+        apply_dir_inhibition(&mut flat_dyes, 2.0, &matrix);
+        apply_dir_inhibition(&mut spiked, 2.0, &matrix);
+        assert_ne!(
+            flat_dyes.image_dye, spiked.image_dye,
+            "DIR must act on realized dye, not ignore particle structure"
+        );
     }
 }

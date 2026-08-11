@@ -5,6 +5,7 @@
 //! 2. Film Dynamic Range (Gamma) Reconstruction: E_scene = 10^(D_img / γ_eff) − 1.0
 //! 3. Mid-Gray Anchor: Scale factor g_c = MIDDLE_GRAY / E_scene(mid_c) per channel.
 
+use crate::film::constants::FOG_OFFSET;
 use crate::pixel::{ImageBuffer, MIDDLE_GRAY};
 use rayon::prelude::*;
 
@@ -15,9 +16,6 @@ const LOG10_2: f32 = 0.3010299956639812;
 
 /// Target effective contrast gamma of developed color negative film (~0.6).
 pub const GAMMA_EFF: f32 = 0.6;
-
-/// Substrate fog density offset threshold above reference Dmin (~0.005).
-pub const FOG_OFFSET: f32 = 0.005;
 
 /// Shared CPU/GPU calibration for the diagnostic negative invert.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,6 +34,41 @@ pub struct InvertConstants {
     pub fog_offset: f32,
 }
 
+/// Effective density after fog toe, fed into the gamma `exp2` transfer.
+///
+/// C¹ quadratic toe (same shape as a filmistic shoulder/toe join):
+/// - `d_img ≤ 0` (Dmin) → `0`
+/// - `0 < d_img < fog` → `d_img² / (2·fog)` (preserves sub-fog dye-cloud structure)
+/// - `d_img ≥ fog` → `d_img − fog/2`
+///
+/// At `d_img = fog`, both pieces equal `fog/2` with matching slope 1 — no cliff.
+#[inline]
+fn fog_effective_density(d_img: f32, fog_offset: f32) -> f32 {
+    if d_img <= 0.0 {
+        0.0
+    } else if d_img < fog_offset {
+        (d_img * d_img) / (2.0 * fog_offset)
+    } else {
+        d_img - 0.5 * fog_offset
+    }
+}
+
+/// Map image density `d_img = −log10(T/Dmin)` to linear scene exposure.
+#[inline]
+pub fn density_img_to_exposure(
+    d_img: f32,
+    inv_gamma_log2_10: f32,
+    _slope: f32,
+    fog_offset: f32,
+) -> f32 {
+    let d_eff = fog_effective_density(d_img, fog_offset);
+    if d_eff <= 0.0 {
+        0.0
+    } else {
+        (d_eff * inv_gamma_log2_10).exp2() - 1.0
+    }
+}
+
 pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> InvertConstants {
     let eps = 1e-6f32;
     let dmin = dmin_negative.map(|v| v.max(eps));
@@ -45,9 +78,13 @@ pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> Inve
         (mid_negative[1] * inv_dmin[1]).clamp(eps, 1.0),
         (mid_negative[2] * inv_dmin[2]).clamp(eps, 1.0),
     ];
-    let d_mid = mid_t.map(|v| (-v.log10() - FOG_OFFSET).max(eps));
-    let e_mid = d_mid.map(|v| (10.0f32.powf(v / GAMMA_EFF) - 1.0).max(0.005));
     let inv_gamma = 1.0 / GAMMA_EFF;
+    let slope = 10.0f32.ln() / GAMMA_EFF;
+    let inv_gamma_log2_10 = inv_gamma * LOG2_10;
+    let d_mid = mid_t.map(|v| (-v.log10()).max(eps));
+    let e_mid = d_mid.map(|d_img| {
+        density_img_to_exposure(d_img, inv_gamma_log2_10, slope, FOG_OFFSET).max(0.005)
+    });
     InvertConstants {
         dmin,
         inv_dmin,
@@ -81,29 +118,25 @@ pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_ne
             -(t[2].log2() * LOG10_2),
         ];
 
-        let d_clamped = [
-            (d_img[0] - constants.fog_offset).max(0.0),
-            (d_img[1] - constants.fog_offset).max(0.0),
-            (d_img[2] - constants.fog_offset).max(0.0),
-        ];
-
-        // C1 continuous exposure transfer function matching slope (ln 10)/gamma at D = 0
         let e_scene = [
-            if d_clamped[0] > 0.0 {
-                (d_clamped[0] * constants.inv_gamma_log2_10).exp2() - 1.0
-            } else {
-                constants.slope * d_clamped[0]
-            },
-            if d_clamped[1] > 0.0 {
-                (d_clamped[1] * constants.inv_gamma_log2_10).exp2() - 1.0
-            } else {
-                constants.slope * d_clamped[1]
-            },
-            if d_clamped[2] > 0.0 {
-                (d_clamped[2] * constants.inv_gamma_log2_10).exp2() - 1.0
-            } else {
-                constants.slope * d_clamped[2]
-            },
+            density_img_to_exposure(
+                d_img[0],
+                constants.inv_gamma_log2_10,
+                constants.slope,
+                constants.fog_offset,
+            ),
+            density_img_to_exposure(
+                d_img[1],
+                constants.inv_gamma_log2_10,
+                constants.slope,
+                constants.fog_offset,
+            ),
+            density_img_to_exposure(
+                d_img[2],
+                constants.inv_gamma_log2_10,
+                constants.slope,
+                constants.fog_offset,
+            ),
         ];
 
         *px = [
@@ -214,6 +247,80 @@ mod tests {
             "channel ratio too low (B&W): {p:?} ratio={ratio}"
         );
         assert!(p[0] > p[1] && p[0] > p[2], "expected reddish {p:?}");
+    }
+
+    #[test]
+    fn near_dmin_fluctuation_preserves_structure() {
+        let dmin = [1.0f32, 0.45, 0.13];
+        let mid = [0.23f32, 0.15, 0.10];
+        let n = 256;
+        let mut buf = Vec::with_capacity(n);
+        for i in 0..n {
+            let wave = ((i % 17) as f32 + 0.5) / 17.0 * 0.008;
+            buf.push([
+                dmin[0] - wave,
+                dmin[1] - wave * 0.6,
+                dmin[2] - wave * 0.3,
+            ]);
+        }
+        invert_negative(&mut buf, mid, dmin);
+        let zero_frac = buf
+            .iter()
+            .filter(|px| px[0] == 0.0 && px[1] == 0.0 && px[2] == 0.0)
+            .count() as f32
+            / n as f32;
+        assert!(
+            zero_frac < 0.05,
+            "near-Dmin toe should not collapse all pixels to zero, zero_frac={zero_frac}"
+        );
+        let std_r = {
+            let mean = buf.iter().map(|px| px[0] as f64).sum::<f64>() / n as f64;
+            (buf
+                .iter()
+                .map(|px| {
+                    let e = px[0] as f64 - mean;
+                    e * e
+                })
+                .sum::<f64>()
+                / n as f64)
+                .sqrt() as f32
+        };
+        assert!(
+            std_r > 1e-7,
+            "near-Dmin fluctuations should survive invert, std_r={std_r}"
+        );
+        let mean_y = mean_rgb(&buf).luminance();
+        assert!(
+            mean_y < 0.01,
+            "near-Dmin patch should stay dark, mean Y={mean_y}"
+        );
+    }
+
+    #[test]
+    fn fog_toe_maps_dmin_to_zero_and_preserves_subfog_slope() {
+        let inv_gamma_log2_10 = (1.0 / GAMMA_EFF) * LOG2_10;
+        let slope = 10.0f32.ln() / GAMMA_EFF;
+        assert!(
+            density_img_to_exposure(0.0, inv_gamma_log2_10, slope, FOG_OFFSET).abs() < 1e-7,
+            "Dmin density maps to zero exposure"
+        );
+        let low = density_img_to_exposure(0.001, inv_gamma_log2_10, slope, FOG_OFFSET);
+        let high = density_img_to_exposure(0.002, inv_gamma_log2_10, slope, FOG_OFFSET);
+        assert!(low > 0.0 && high > low, "sub-fog densities rise monotonically");
+        let below = fog_effective_density(FOG_OFFSET - 1e-6, FOG_OFFSET);
+        let at = fog_effective_density(FOG_OFFSET, FOG_OFFSET);
+        let above_d = fog_effective_density(FOG_OFFSET + 1e-6, FOG_OFFSET);
+        assert!(
+            (at - 0.5 * FOG_OFFSET).abs() < 1e-6,
+            "knee density must be fog/2, got {at}"
+        );
+        assert!(
+            (below - at).abs() < 1e-5 && (above_d - at).abs() < 1e-5,
+            "C1 toe must be continuous at fog knee"
+        );
+        let knee = density_img_to_exposure(FOG_OFFSET, inv_gamma_log2_10, slope, FOG_OFFSET);
+        let above = density_img_to_exposure(FOG_OFFSET + 0.001, inv_gamma_log2_10, slope, FOG_OFFSET);
+        assert!(above >= knee, "exposure continues above fog knee");
     }
 
     #[test]

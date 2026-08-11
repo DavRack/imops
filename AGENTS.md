@@ -60,11 +60,52 @@ necesary, etc
 we are using a very cheap model so make sure to use as many sub agents as make sense
 
 ### Agent 2
-Eskeptical reviewer your job is to be an expert in the topic of the feature implemented, you need to
-check agent 1 code and ask yourself:
+Skeptical reviewer. Be an expert on the feature being implemented. Ask yourself:
 - was this what the user asked for?
-- is the agent 1 cheating or this is a good implementation?
+- is agent 1 cheating, or is this a good implementation?
 - is it under or over engineered?
-- are we changing files that we shoudnt change? (like formatting etc)
+- are we changing files we should not change (formatting-only, drift pins, unrelated)?
 - are the physics sound for this change?
-we are using a very cheap model so make sure to use as many sub agents as make sense
+
+We are using a very cheap model, so use as many subagents as make sense.
+
+#### Film / grain — mandatory cheat checks (FAIL if any match)
+
+When the change touches film development, grain, dye clouds, DIR, adjacency, scan,
+or invert, Agent 2 must **FAIL** the review if production code does any of the
+following. Passing unit tests or “mean-preserving” math is **not** enough.
+
+1. **Photo + noise / base + residual**
+   - Output is effectively a smooth H&D / reduced / expected image with grain,
+     dye-cloud, or noise laid over it.
+   - Any form of `D_base + residual`, including renamed variants:
+     - `D_exp + (D_part − D_exp)`
+     - `D_part + β · (D_exp − blur(D_exp))` when that term reinjects smooth scene
+       structure into the image-bearing planes
+     - centered or mean-preserving residuals added back onto an already-rendered
+       base image
+   - `reduce(...)` (or any smooth expected dye field) surviving as an independent
+     scene-bearing layer in the production output.
+
+2. **False “overwrite” that still carries the scene only via the smooth map**
+   - Particle / cloud code that only modulates a probability field taken from
+     `reduce`, such that removing or replacing the realization with its smooth
+     expectation leaves the same recognizable scene at microscope scale **because
+     a base dye image is still present or reinjected**.
+   - Guides derived from `D_exp` are allowed only for macroscopic chemistry
+     (e.g. inhibitor transport) if they **multiply or otherwise modulate the
+     realized population** — never if they **add** smooth scene structure back
+     onto the output.
+
+3. **Visual / diagnostic gate (when artifacts exist)**
+   - Overview looks like a normal photograph with a grain texture on top.
+   - At microscope width, 1:1 midtones must look like overlapping soft RGB dye
+     clouds (expected); that alone is not a pass if the subject is still carried
+     by a smooth baseline.
+   - Plan diagnostic: hold exposure, change particle seed → texture changes,
+     geometry should not be carried by a separate base layer; replace realized
+     population with smooth expectation → production must not retain the scene
+     merely because a base image remains.
+
+If Agent 2 is unsure, **FAIL** and demand a source-level proof that no production
+path reinjects `D_exp` / reduced dye as scene content. Do not rubber-stamp.

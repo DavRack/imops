@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
 use pichromatic::pixel::Image;
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule};
+use crate::backend::{Backend, PipelineImage};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(default)]
@@ -156,6 +157,66 @@ fn film_require_acescg(cs: Option<pichromatic::cst::ColorSpaceTag>, where_: &str
 }
 
 impl PipelineModule for Module<Film> {
+    fn process(&self, backend: &Backend, image: &mut PipelineImage) {
+        if self.config.render_width_mm.value.is_some() {
+            match backend {
+                Backend::Cpu => {
+                    let cpu_img = image.ensure_cpu(None);
+                    self.process_cpu(cpu_img);
+                }
+                Backend::Wgpu(ctx) => {
+                    let cpu_img = image.ensure_cpu(Some(ctx));
+                    self.process_cpu(cpu_img);
+                }
+            }
+            return;
+        }
+
+        match backend {
+            Backend::Cpu => {
+                let cpu_img = image.ensure_cpu(None);
+                self.process_cpu(cpu_img);
+            }
+            Backend::Wgpu(ctx) => {
+                let (gpu_buf, meta) = image.ensure_gpu(ctx);
+                self.process_gpu(ctx, gpu_buf, meta);
+            }
+        }
+    }
+
+    fn process_async<'a>(
+        &'a self,
+        backend: &'a Backend,
+        image: &'a mut PipelineImage,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(async move {
+            if self.config.render_width_mm.value.is_some() {
+                match backend {
+                    Backend::Cpu => {
+                        let cpu_img = image.ensure_cpu(None);
+                        self.process_cpu(cpu_img);
+                    }
+                    Backend::Wgpu(ctx) => {
+                        let cpu_img = image.ensure_cpu(Some(ctx));
+                        self.process_cpu(cpu_img);
+                    }
+                }
+                return;
+            }
+
+            match backend {
+                Backend::Cpu => {
+                    let cpu_img = image.ensure_cpu(None);
+                    self.process_cpu(cpu_img);
+                }
+                Backend::Wgpu(ctx) => {
+                    let (gpu_buf, meta) = image.ensure_gpu(ctx);
+                    self.process_gpu_async(ctx, gpu_buf, meta).await;
+                }
+            }
+        })
+    }
+
     fn process_cpu(&self, image: &mut Image) {
         film_require_acescg(image.metadata.color_space, "cpu");
 

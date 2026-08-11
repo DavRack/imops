@@ -276,6 +276,7 @@ mod tests {
     }
 
     #[test]
+
     fn stock_rejects_empty_layers() {
         let stock = FilmStock {
             name: "empty",

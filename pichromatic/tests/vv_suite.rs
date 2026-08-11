@@ -4,17 +4,14 @@
 //! 1. Beer-Lambert transmittance invariants (T = 10^-D ∈ (0, 1.0]).
 //! 2. 4-photon Poisson CDF emulsion saturation monotonicity (dD/dlogE ≥ 0).
 //! 3. Spatial blur convolution mass conservation (∑ K[x,y] = 1.0 ± 1e-6).
-//! 4. Dye-cloud shot-noise variance scaling (σ_D^2 → 0 at D=0 and D=D_max).
+//! 4. Production particle overwrite: fixed-site Poisson grain, finite densities, mid-tone variance.
 //! 5. Macbeth ColorChecker 24-patch colorimetric round-trip accuracy (ΔE00 < 0.5 mid-tones).
 //! 6. Cross-backend consensus metrics (SAM < 0.01 rad).
 
 use pichromatic::film::blur::gaussian_blur_separable;
-use pichromatic::film::scan::densitometry::dmin_reference_acescg;
 use pichromatic::film::stock::{LogNormalDist, StockId};
 use pichromatic::film::types::DyePlanes;
 use pichromatic::film::{process, FilmOutput, FilmParams};
-use pichromatic::image::ImageMetadata;
-use pichromatic::pixel::{Image, MIDDLE_GRAY};
 
 #[test]
 fn vv_beer_lambert_transmittance_invariant() {
@@ -75,9 +72,14 @@ fn vv_spatial_blur_mass_conservation() {
 
 #[test]
 fn vv_dye_cloud_grain_variance_scaling() {
-    // Shot-noise variance σ_D^2 must decay to zero at D=0 (Dmin) and D=D_max.
+    // Production fine-pitch overwrite: crystal locations are fixed; exposure
+    // scales dye amount at each site. Poisson site-count noise therefore
+    // persists at all developable fractions and does not collapse at D_max
+    // (unlike the old centered-residual Selwyn cheat).
     let d_max = 2.0f32;
     let kappa = 0.15f32;
+    let pitch_um = 3.0f32;
+    let seed = 42u64;
     let w = 128;
     let h = 128;
 
@@ -95,47 +97,77 @@ fn vv_dye_cloud_grain_variance_scaling() {
         var.sqrt() as f32
     };
 
+    let mean_of = |plane: &[f32]| plane.iter().map(|&x| x as f64).sum::<f64>() / plane.len() as f64;
+
+    let apply = |dyes: &mut DyePlanes| {
+        pichromatic::film::development::grain::apply_particle_grain_overwrite(
+            dyes,
+            &[d_max],
+            &[kappa],
+            &[1.0],
+            pitch_um,
+            seed,
+            &[None],
+        );
+    };
+
     let mut mid = flat(d_max / 2.0);
-    pichromatic::film::development::grain::apply_grain(
-        &mut mid,
-        &[d_max],
-        &[kappa],
-        3.0,
-        42,
-        &[None],
-    );
-    let std_mid = std_dev(&mid.image_dye[0]);
+    apply(&mut mid);
+    let plane_mid = &mid.image_dye[0];
+    let std_mid = std_dev(plane_mid);
+    let mean_mid = mean_of(plane_mid) as f32;
 
     let mut dmin = flat(0.001);
-    pichromatic::film::development::grain::apply_grain(
-        &mut dmin,
-        &[d_max],
-        &[kappa],
-        3.0,
-        42,
-        &[None],
-    );
-    let std_dmin = std_dev(&dmin.image_dye[0]);
+    apply(&mut dmin);
+    let plane_dmin = &dmin.image_dye[0];
+    let mean_dmin = mean_of(plane_dmin) as f32;
+    let min_dmin = plane_dmin.iter().copied().fold(f32::INFINITY, f32::min);
 
     let mut dmax = flat(d_max - 0.001);
-    pichromatic::film::development::grain::apply_grain(
-        &mut dmax,
-        &[d_max],
-        &[kappa],
-        3.0,
-        42,
-        &[None],
-    );
-    let std_dmax = std_dev(&dmax.image_dye[0]);
+    apply(&mut dmax);
+    let plane_dmax = &dmax.image_dye[0];
+    let std_dmax = std_dev(plane_dmax);
+    let mean_dmax = mean_of(plane_dmax) as f32;
 
     assert!(
-        std_dmin < 0.25 * std_mid,
-        "Dmin grain variance too high: std_dmin={std_dmin}, std_mid={std_mid}"
+        std_mid > 0.01,
+        "midtone grain too weak: std_mid={std_mid}"
     );
     assert!(
-        std_dmax < 0.25 * std_mid,
-        "Dmax grain variance too high: std_dmax={std_dmax}, std_mid={std_mid}"
+        std_dmax > 0.01,
+        "Dmax must retain site-count noise under fixed sites: std_dmax={std_dmax}"
     );
+    assert!(
+        mean_dmax > mean_mid && mean_mid > mean_dmin,
+        "mean ordering: dmin={mean_dmin} mid={mean_mid} dmax={mean_dmax}"
+    );
+    assert!(
+        mean_dmax > 0.5 * d_max,
+        "saturated field should cluster near D_max: mean_dmax={mean_dmax}"
+    );
+    assert!(
+        min_dmin >= 0.0,
+        "overwrite must not produce negative dye density"
+    );
+    assert!(
+        plane_dmin.iter().any(|&v| v > min_dmin),
+        "dark overwrite should vary continuously across fixed sites, not only by occupancy holes"
+    );
+    for plane in [plane_mid, plane_dmin, plane_dmax] {
+        assert!(
+            plane.iter().all(|&v| v.is_finite() && v <= d_max * 1.05),
+            "grain output must stay finite and within toe-clamped range"
+        );
+        assert!(
+            plane.iter().any(|&v| v > 0.0),
+            "cloud field must retain positive optical density"
+        );
+    }
+
+    // Same seed → same realization (deterministic overwrite).
+    let mut again = flat(d_max / 2.0);
+    apply(&mut again);
+    assert_eq!(again.image_dye[0], mid.image_dye[0]);
 }
 
 #[test]

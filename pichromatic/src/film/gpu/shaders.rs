@@ -1115,6 +1115,22 @@ struct U { n:u32, num_emul:u32, scale:f32, flags:u32 };
 const LOG10_2: f32 = 0.3010299956639812;
 const LOG2_10: f32 = 3.3219280948873623;
 
+fn fog_to_exposure(d_img: f32, inv_gamma_log2_10: f32, slope: f32, fog_offset: f32) -> f32 {
+    // C1 quadratic toe: d^2/(2f) below fog, d - f/2 above (matches CPU invert.rs).
+    var d_eff = 0.0;
+    if (d_img > 0.0) {
+        if (d_img < fog_offset) {
+            d_eff = (d_img * d_img) / (2.0 * fog_offset);
+        } else {
+            d_eff = d_img - 0.5 * fog_offset;
+        }
+    }
+    if (d_eff <= 0.0) {
+        return 0.0;
+    }
+    return exp2(d_eff * inv_gamma_log2_10) - 1.0;
+}
+
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
@@ -1174,12 +1190,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             -(log2(tc.y) * LOG10_2),
             -(log2(tc.z) * LOG10_2),
         );
-        let d_clamped = max(d_img - vec3<f32>(fog_offset), vec3<f32>(0.0));
-
-        var e_scene = vec3<f32>(0.0);
-        if (d_clamped.x > 0.0) { e_scene.x = exp2(d_clamped.x * inv_gamma_log2_10) - 1.0; } else { e_scene.x = slope * d_clamped.x; }
-        if (d_clamped.y > 0.0) { e_scene.y = exp2(d_clamped.y * inv_gamma_log2_10) - 1.0; } else { e_scene.y = slope * d_clamped.y; }
-        if (d_clamped.z > 0.0) { e_scene.z = exp2(d_clamped.z * inv_gamma_log2_10) - 1.0; } else { e_scene.z = slope * d_clamped.z; }
+        var e_scene = vec3<f32>(
+            fog_to_exposure(d_img.x, inv_gamma_log2_10, slope, fog_offset),
+            fog_to_exposure(d_img.y, inv_gamma_log2_10, slope, fog_offset),
+            fog_to_exposure(d_img.z, inv_gamma_log2_10, slope, fog_offset),
+        );
 
         rgb = vec3<f32>(
             g_val.x * e_scene.x,
@@ -1212,6 +1227,22 @@ fn get_norm(e: u32) -> f32 { return u.emul[e].z; }
 
 const LOG10_2: f32 = 0.3010299956639812;
 const LOG2_10: f32 = 3.3219280948873623;
+
+fn fog_to_exposure(d_img: f32, inv_gamma_log2_10: f32, slope: f32, fog_offset: f32) -> f32 {
+    // C1 quadratic toe: d^2/(2f) below fog, d - f/2 above (matches CPU invert.rs).
+    var d_eff = 0.0;
+    if (d_img > 0.0) {
+        if (d_img < fog_offset) {
+            d_eff = (d_img * d_img) / (2.0 * fog_offset);
+        } else {
+            d_eff = d_img - 0.5 * fog_offset;
+        }
+    }
+    if (d_eff <= 0.0) {
+        return 0.0;
+    }
+    return exp2(d_eff * inv_gamma_log2_10) - 1.0;
+}
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -1304,12 +1335,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             -(log2(tc.y) * LOG10_2),
             -(log2(tc.z) * LOG10_2),
         );
-        let d_clamped = max(d_img - vec3<f32>(fog_offset), vec3<f32>(0.0));
-
-        var e_scene = vec3<f32>(0.0);
-        if (d_clamped.x > 0.0) { e_scene.x = exp2(d_clamped.x * inv_gamma_log2_10) - 1.0; } else { e_scene.x = slope * d_clamped.x; }
-        if (d_clamped.y > 0.0) { e_scene.y = exp2(d_clamped.y * inv_gamma_log2_10) - 1.0; } else { e_scene.y = slope * d_clamped.y; }
-        if (d_clamped.z > 0.0) { e_scene.z = exp2(d_clamped.z * inv_gamma_log2_10) - 1.0; } else { e_scene.z = slope * d_clamped.z; }
+        var e_scene = vec3<f32>(
+            fog_to_exposure(d_img.x, inv_gamma_log2_10, slope, fog_offset),
+            fog_to_exposure(d_img.y, inv_gamma_log2_10, slope, fog_offset),
+            fog_to_exposure(d_img.z, inv_gamma_log2_10, slope, fog_offset),
+        );
 
         rgb = vec3<f32>(
             g_val.x * e_scene.x,

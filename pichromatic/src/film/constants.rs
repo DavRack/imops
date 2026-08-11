@@ -63,3 +63,9 @@ pub const HALATION_BLEED_WEIGHTS_BGR: [f32; 3] = [0.20, 0.45, 1.0];
 /// of `d_max` at undeveloped (f=0). Shared by reduction and Dmin densitometry —
 /// keep a single site so white-point calibration cannot desync from mask formation.
 pub const MASK_DENSITY_FRACTION_OF_DMAX: f32 = 0.4;
+
+/// Substrate fog optical density (OD) floor above reference Dmin (~0.005).
+/// Shared by scanner invert and chemical-fog developable fraction in reduction:
+/// random developable crystals at zero exposure yield linear particle density
+/// ≈ `FOG_OFFSET` when overwrite uses `D ≈ d_max · f`.
+pub const FOG_OFFSET: f32 = 0.005;

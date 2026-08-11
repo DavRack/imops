@@ -79,3 +79,7 @@ path = "src/bin/de-diagnose.rs"
 name = "sigma-tune"
 path = "src/bin/sigma-tune.rs"
 
+[[test]]
+name = "portra_calibration"
+path = "tests/portra_calibration.rs"
+
