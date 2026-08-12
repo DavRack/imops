@@ -96,6 +96,25 @@ following. Passing unit tests or “mean-preserving” math is **not** enough.
      (e.g. inhibitor transport) if they **multiply or otherwise modulate the
      realized population** — never if they **add** smooth scene structure back
      onto the output.
+   - **Smooth per-pixel multiplier from `D_exp` = reinjection, FAIL.** Any
+     per-pixel smooth factor derived from the reduced/expected field and
+     multiplied onto the realized or output field (e.g. a "dye yield",
+     "coupler availability", "H&D calibration" factor like
+     `D_out = d_max·f_realized·p(D_exp)^(1/γ−1)`) is the smooth scene-bearing
+     map surviving in the output, even when it is marketed as "modulating the
+     realized population". If removing the realization and leaving the smooth
+     factor would still produce the recognizable scene, it is base+noise.
+     The scene at every pitch must be carried by the realized population's own
+     expectation (its Bernoulli/developed counts), never by a separate smooth
+     map applied at pixel resolution. Nonlinear density responses (H&D toe,
+     γ) may only be applied to the realized field itself (`g(f_realized)`);
+     any resulting mean offset vs the smooth curve is the honest consequence
+     of the discrete population and must not be "corrected" with a smooth
+     factor.
+   - This check applies at **every** width, including intermediate pitches
+     (e.g. 1 mm) where cells are larger than pixels: if the scene detail
+     visible in the output is finer than the realized population can carry,
+     a smooth map is doing the work and the review must FAIL.
 
 3. **Visual / diagnostic gate (when artifacts exist)**
    - Overview looks like a normal photograph with a grain texture on top.
@@ -106,6 +125,9 @@ following. Passing unit tests or “mean-preserving” math is **not** enough.
      geometry should not be carried by a separate base layer; replace realized
      population with smooth expectation → production must not retain the scene
      merely because a base image remains.
+   - When reviewing renders at multiple widths (35 mm, 8 mm, 1 mm, 0.5 mm):
+     the scene in the 1 mm/0.5 mm outputs must emerge from the cloud/grain
+     mosaic itself, not from a smooth image with grain texture laid on top.
 
 If Agent 2 is unsure, **FAIL** and demand a source-level proof that no production
 path reinjects `D_exp` / reduced dye as scene content. Do not rubber-stamp.

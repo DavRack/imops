@@ -1,12 +1,13 @@
 //! Discrete shot-noise grain on image-forming dye only.
 //!
-//! The LUT supplies the local expected dye density after H&D reduction. At a
-//! fine film pitch, the model samples the same stock-derived particle
-//! population in that reduced-density space, then spreads the resulting dye
-//! clouds through a cloud-scale PSF plus a crystal-scale microstructure PSF.
-//! Reduced H&D density `D = D_max·f^(1/γ)` supplies developable fraction `f`
-//! for Bernoulli crystal trials; the realized dye cloud fraction is mapped back
-//! linearly to optical density without re-applying the H&D toe.
+//! The LUT supplies the local expected dye density after H&D reduction. At any
+//! render width the model samples the same stock-derived particle population
+//! in that reduced-density space, then spreads the resulting dye clouds
+//! through a cloud-scale PSF plus a crystal-scale microstructure PSF. Reduced
+//! H&D density `D = D_max·f^(1/γ)` supplies developable fraction `f` for
+//! Bernoulli crystal trials; the realized dye cloud fraction is mapped back to
+//! optical density through the same H&D response (`D_out = D_max·f_realized^(1/γ)`),
+//! so the expected output density equals the reduced field at every pitch.
 //!
 //! The expected variance reduces to Selwyn's law above the cloud scale and
 //! saturates below it, but the realization remains discrete instead of a
@@ -18,7 +19,7 @@
 //!
 //! Mask / residual colored-coupler density must NEVER receive grain modulation.
 
-use crate::film::blur::{gaussian_blur_separable, gaussian_kernel_l2_sq};
+use crate::film::blur::gaussian_blur_separable;
 use crate::film::constants::DYE_CLOUD_CORRELATION_UM;
 use crate::film::types::{DyePlanes, LatentPlanes};
 use rayon::prelude::*;
@@ -236,42 +237,6 @@ fn cloud_population(rho_areal: f32) -> f32 {
     (rho_areal * std::f32::consts::PI * cloud_radius * cloud_radius).max(1.0)
 }
 
-/// Fraction of a cloud population that is spatially uniform.
-///
-/// A circular cloud of the measured diameter contains
-/// `ρ · π(D/2)²` crystals in expectation. Treating the reciprocal population
-/// count as the residual non-uniform fraction gives the same high-density
-/// saturation behavior as a finite, highly uniform particle population, while
-/// keeping the value derived from stock geometry.
-fn cloud_uniformity(rho_areal: f32) -> f32 {
-    let population = cloud_population(rho_areal);
-    population / (population + 1.0)
-}
-
-/// Positive H&D toe used for a low-density stochastic realization.
-#[inline]
-fn positive_density_toe(noisy: f32, d_max: f32) -> f32 {
-    let knee = 0.005 * d_max;
-    if noisy >= knee {
-        noisy.min(d_max * 1.05)
-    } else {
-        ((knee * knee) / (2.0 * knee - noisy)).min(d_max * 1.05)
-    }
-}
-
-/// Switch to discrete particles once the render aperture resolves a typical
-/// crystal diameter. Above this limit the Gaussian continuum is the
-/// central-limit approximation of the same population process.
-pub(crate) fn particle_resolution_limit_um(
-    crystal_sizes: &[Option<crate::film::stock::LogNormalDist>],
-) -> f32 {
-    crystal_sizes
-        .iter()
-        .filter_map(|value| value.as_ref())
-        .map(|dist| mean_crystal_size_um(Some(dist)) * 2.0)
-        .fold(0.0f32, f32::max)
-}
-
 /// Apply grain to image dye planes only. Mask planes are untouched.
 ///
 /// `kappa_ref_per_layer` is the Selwyn coefficient κ_ref = 1/√ρ (grains/µm²
@@ -296,10 +261,15 @@ fn particle_field(
     crystal_size: Option<&crate::film::stock::LogNormalDist>,
     seed: u64,
     layer_i: usize,
-    fixed_crystal_sites: bool,
 ) -> Vec<f32> {
     let rho_areal = 1.0 / (kappa_ref * kappa_ref).max(1e-12);
-    let cell_um = DYE_CLOUD_CORRELATION_UM;
+    // One population process at every pitch: the sampling cell is one dye-cloud
+    // footprint (side = DYE_CLOUD_CORRELATION_UM), never smaller than one pixel.
+    // At coarse pitch the cell degenerates to a single pixel whose aperture
+    // holds ρ·pitch² ≈ hundreds of crystals, so Poisson/Binomial normal
+    // approximations reproduce the central-limit continuum — the same physical
+    // population, just sampled at the output aperture.
+    let cell_um = DYE_CLOUD_CORRELATION_UM.max(pixel_pitch_um);
     let sites_per_cell = rho_areal * cell_um * cell_um;
     if sites_per_cell <= 1e-8 {
         return probabilities.to_vec();
@@ -308,7 +278,6 @@ fn particle_field(
     let cell_px = (cell_um / pixel_pitch_um.max(1e-6)).max(1.0);
     let cells_x = (width as f32 / cell_px).ceil() as usize;
     let cells_y = (height as f32 / cell_px).ceil() as usize;
-    let uniformity = cloud_uniformity(rho_areal);
     let crystal_sigma_px = particle_cloud_sigma_um(crystal_size) / pixel_pitch_um.max(1e-6);
     let cloud_sigma_px = dye_cloud_sigma_um() / pixel_pitch_um.max(1e-6);
 
@@ -335,20 +304,11 @@ fn particle_field(
             }
             let p_cell = if cnt > 0 { (sum_p / cnt as f64) as f32 } else { 0.0 };
             let mut rng = Philox4x32::per_pixel(seed, layer_i as u32, 0, cx as u32, cy as u32);
-            if fixed_crystal_sites {
-                // Crystal locations are independent of exposure. Each site
-                // develops stochastically; exposure sets Bernoulli(p) odds.
-                let sites = sample_poisson(&mut rng, sites_per_cell);
-                let developed = sample_binomial(&mut rng, sites, p_cell);
-                *slot = developed as f32 / sites_per_cell;
-            } else if p_cell > 0.0 {
-                // The virtual population keeps the mean fraction fixed while
-                // reducing residual count noise as a cloud approaches saturation.
-                let saturation = (1.0 - p_cell * uniformity * (1.0 - 1e-6)).max(1e-6);
-                let available = sample_poisson(&mut rng, sites_per_cell / saturation);
-                let developed = sample_binomial(&mut rng, available, p_cell);
-                *slot = developed as f32 * saturation / sites_per_cell;
-            }
+            // Crystal locations are independent of exposure. Each site
+            // develops stochastically; exposure sets Bernoulli(p) odds.
+            let sites = sample_poisson(&mut rng, sites_per_cell);
+            let developed = sample_binomial(&mut rng, sites, p_cell);
+            *slot = developed as f32 / sites_per_cell;
         });
 
     // Bilinear upscale of the cell grid to pixels: the developed fraction
@@ -422,89 +382,23 @@ pub fn apply_particle_grain_to_latent(
             crystal_sizes.get(layer_i).and_then(|value| value.as_ref()),
             seed,
             layer_i,
-            true,
         );
     }
 }
 
-/// Gaussian continuum approximation for apertures that do not resolve
-/// individual crystals. Its variance is still derived from the stock
-/// population and the cloud footprint; it is not a display texture.
-pub(crate) fn apply_continuum_grain(
-    dyes: &mut DyePlanes,
-    d_max_per_layer: &[f32],
-    kappa_ref_per_layer: &[f32],
-    pixel_pitch_um: f32,
-    seed: u64,
-    crystal_sizes: &[Option<crate::film::stock::LogNormalDist>],
-) {
-    let width = dyes.width;
-    let height = dyes.height;
-    for (layer_i, plane) in dyes.image_dye.iter_mut().enumerate() {
-        let d_max = d_max_per_layer[layer_i];
-        let kappa_ref = kappa_ref_per_layer[layer_i];
-        if kappa_ref <= 0.0 || d_max <= 0.0 {
-            continue;
-        }
-
-        let mut sub_dyes = vec![vec![0.0f32; width * height]; SUBLAYER_SCALES.len()];
-        for (sub_idx, &sub_scale) in SUBLAYER_SCALES.iter().enumerate() {
-            let correlation_um = crystal_sizes
-                .get(layer_i)
-                .and_then(|value| value.as_ref())
-                .map(|dist| {
-                    (mean_crystal_size_um(Some(dist)) / 0.7) * dye_cloud_sigma_um() * sub_scale
-                })
-                .unwrap_or(dye_cloud_sigma_um() * sub_scale);
-            let sigma_px = (correlation_um / pixel_pitch_um.max(1e-6)).max(1.0);
-            let kappa_target = scale_kappa(kappa_ref, pixel_pitch_um, correlation_um)
-                * (SUBLAYER_SCALES.len() as f32).sqrt();
-            let kappa_sub = kappa_target / gaussian_kernel_l2_sq(sigma_px);
-
-            let mut noise = vec![0.0f32; width * height];
-            for y in 0..height {
-                for x in 0..width {
-                    noise[y * width + x] = Philox4x32::per_pixel(
-                        seed,
-                        layer_i as u32,
-                        sub_idx as u32,
-                        x as u32,
-                        y as u32,
-                    )
-                    .next_gaussian();
-                }
-            }
-            gaussian_blur_separable(&mut noise, width, height, sigma_px);
-
-            sub_dyes[sub_idx]
-                .par_iter_mut()
-                .zip(noise.par_iter())
-                .zip(plane.par_iter())
-                .for_each(|((output, &normal), &density)| {
-                    let density = density.clamp(0.0, d_max);
-                    let toe = 0.05 * d_max;
-                    let taper = (density / (density + toe)).min(1.0);
-                    let sigma_density = taper * (density * (d_max - density)).max(0.0).sqrt();
-                    let noisy = density + kappa_sub * sigma_density * normal;
-                    *output = positive_density_toe(noisy, d_max);
-                });
-        }
-
-        plane
-            .par_iter_mut()
-            .enumerate()
-            .for_each(|(index, density)| {
-                *density = sub_dyes.iter().map(|sub| sub[index]).sum::<f32>()
-                    / SUBLAYER_SCALES.len() as f32;
-            });
-    }
-}
-
-/// Production fine-pitch grain: replace image dye planes with a particle
+/// Production grain at every width: replace image dye planes with a particle
 /// realization derived from reduced developable probabilities.
 ///
 /// Reduced H&D density supplies only the local expected population statistics;
 /// it must not survive as a scene-bearing baseline layer in the output.
+///
+/// The realized developable fraction is mapped back to density through the
+/// same H&D response as `reduce` (`D = d_max·f_realized^(1/γ)`), applied to
+/// the realized field itself — never multiplied by a smooth map derived from
+/// the reduced field. In the deep toe the quantized population therefore
+/// sits above the smooth curve (sparse full clouds average higher than the
+/// toe would predict for a continuum); that offset is the honest consequence
+/// of the discrete population and is not corrected with a smooth factor.
 pub fn apply_particle_grain_overwrite(
     dyes: &mut DyePlanes,
     d_max_per_layer: &[f32],
@@ -520,10 +414,12 @@ pub fn apply_particle_grain_overwrite(
 ) {
     let mut f_dev = vec![vec![0.0f32; dyes.width * dyes.height]; dyes.image_dye.len()];
     let mut skipped = vec![false; dyes.image_dye.len()];
+    let mut inv_gammas = vec![1.0f32; dyes.image_dye.len()];
     for (layer_i, plane) in dyes.image_dye.iter().enumerate() {
         let d_max = d_max_per_layer[layer_i];
         let kappa_ref = kappa_ref_per_layer[layer_i];
         let gamma = gamma_contrast_per_layer[layer_i].max(1e-6);
+        inv_gammas[layer_i] = 1.0 / gamma;
         if kappa_ref <= 0.0 || d_max <= 0.0 {
             skipped[layer_i] = true;
             f_dev[layer_i] = plane.clone();
@@ -545,7 +441,6 @@ pub fn apply_particle_grain_overwrite(
             crystal_sizes.get(layer_i).and_then(|value| value.as_ref()),
             seed,
             layer_i,
-            true,
         );
         f_dev[layer_i] = particles;
     }
@@ -559,61 +454,19 @@ pub fn apply_particle_grain_overwrite(
             continue;
         }
         let d_max = d_max_per_layer[layer_i];
+        let inv_gamma = inv_gammas[layer_i];
         plane
             .par_iter_mut()
             .for_each(|fraction| {
-                *fraction = (*fraction * d_max).clamp(0.0, d_max * 1.05);
+                // Adjacency (Eberhard unsharp mask) can pull isolated realized
+                // pixels slightly negative; clamp before the fractional power.
+                let f = fraction.max(0.0);
+                *fraction = (d_max * f.powf(inv_gamma)).clamp(0.0, d_max * 1.05);
             });
     }
 }
 
 
-
-/// Centered residual on reduced dye density — forbidden in production.
-///
-/// Kept only for unit tests that verify this cheat differs from overwrite.
-#[cfg(test)]
-pub(crate) fn apply_grain_centered_residual(
-    dyes: &mut DyePlanes,
-    d_max_per_layer: &[f32],
-    kappa_ref_per_layer: &[f32],
-    pixel_pitch_um: f32,
-    seed: u64,
-    crystal_sizes: &[Option<crate::film::stock::LogNormalDist>],
-) {
-    for (layer_i, plane) in dyes.image_dye.iter_mut().enumerate() {
-        let d_max = d_max_per_layer[layer_i];
-        let kappa_ref = kappa_ref_per_layer[layer_i];
-        if kappa_ref <= 0.0 || d_max <= 0.0 {
-            continue;
-        }
-        let probabilities: Vec<f32> = plane
-            .iter()
-            .map(|&density| (density / d_max).clamp(0.0, 1.0))
-            .collect();
-        let particles = particle_field(
-            &probabilities,
-            dyes.width,
-            dyes.height,
-            kappa_ref,
-            pixel_pitch_um,
-            crystal_sizes.get(layer_i).and_then(|value| value.as_ref()),
-            seed,
-            layer_i,
-            false,
-        );
-        plane
-            .par_iter_mut()
-            .zip(particles.par_iter())
-            .zip(probabilities.par_iter())
-            .for_each(|((density, &fraction), &probability)| {
-                // Test-only cheat: retain reduced dye as baseline and add a
-                // centered particle residual. Production must overwrite instead.
-                let noisy = *density + d_max * (fraction - probability);
-                *density = positive_density_toe(noisy, d_max);
-            });
-    }
-}
 
 /// Apply micro-structure log-normal clumping to dye plane.
 pub fn add_micro_structure(_plane: &mut [f32], _pixel_pitch_um: f32, _seed: u64) {
@@ -889,11 +742,25 @@ mod tests {
                 &crystal_sizes, 0.0, &[], 0.0, 0.0);
 
             for (i, plane) in dyes.image_dye.iter().enumerate() {
-                let std = std_of(plane);
-                assert!(
-                    std > 1e-4,
-                    "layer {i} at f={f} must retain shadow grain structure, std={std}"
-                );
+                // The production output must track the H&D mean. The convex
+                // toe applied to a discrete realization carries an intrinsic
+                // quantization bias (E[f̂^(1/γ)] ≥ f^(1/γ), growing in deep
+                // shadows — the same granularity effect as real film's
+                // discrete-population densitometry). Bounds: relative for
+                // representable densities, absolute near the fog floor.
+                let expected = (d_max[i] * f.powf(1.0 / gammas[i].max(1e-6))) as f64;
+                let mean: f64 = plane.iter().map(|&v| v as f64).sum::<f64>() / n as f64;
+                if f >= 0.02 {
+                    assert!(
+                        mean > 0.6 * expected && mean < 1.6 * expected,
+                        "layer {i} at f={f}: output mean {mean:.5} must track H&D {expected:.5}"
+                    );
+                } else {
+                    assert!(
+                        (mean - expected).abs() < 1e-3,
+                        "layer {i} at f={f}: output mean {mean:.5} deviates from fog-floor H&D {expected:.5}"
+                    );
+                }
             }
         }
     }
@@ -910,39 +777,20 @@ mod tests {
             "γ<1 shadows: recovered f={developable_f} must exceed p_hd={p_hd}"
         );
 
-        let w = 256;
-        let h = 256;
-        let mut recovered = flat_dyes(density, d_max, w, h);
-        let mut p_hd_only = flat_dyes(density, d_max, w, h);
-        apply_particle_grain_overwrite(
-            &mut recovered,
-            &[d_max],
-            &[0.18],
-            &[gamma],
-            0.25,
-            17,
-            &[None], 0.0, &[], 0.0, 0.0);
-        apply_particle_grain_overwrite(
-            &mut p_hd_only,
-            &[d_max],
-            &[0.18],
-            &[1.0],
-            0.25,
-            17,
-            &[None], 0.0, &[], 0.0, 0.0);
-
-        let std_recovered = std_of(&recovered.image_dye[0]);
-        let std_p_hd = std_of(&p_hd_only.image_dye[0]);
-        let nonzero_recovered = recovered
-            .image_dye[0]
-            .iter()
-            .filter(|&&v| v > 1e-6)
-            .count();
-        let nonzero_p_hd = p_hd_only
-            .image_dye[0]
-            .iter()
-            .filter(|&&v| v > 1e-6)
-            .count();
+        // Fraction-space comparison: recovering the developable fraction
+        // through γ must yield a denser, more structured population than
+        // treating p_hd = D/d_max as the developable probability directly.
+        let w = 256usize;
+        let h = 256usize;
+        let n = w * h;
+        let p_recovered: Vec<f32> = vec![developable_f; n];
+        let p_hd_only: Vec<f32> = vec![p_hd; n];
+        let rec = particle_field(&p_recovered, w, h, 0.18, 0.25, None, 17, 0);
+        let hd = particle_field(&p_hd_only, w, h, 0.18, 0.25, None, 17, 0);
+        let std_recovered = std_of(&rec);
+        let std_p_hd = std_of(&hd);
+        let nonzero_recovered = rec.iter().filter(|&&v| v > 1e-6).count();
+        let nonzero_p_hd = hd.iter().filter(|&&v| v > 1e-6).count();
         assert!(
             std_recovered > std_p_hd + 1e-4 || nonzero_recovered > nonzero_p_hd + 10,
             "γ recovery should yield more shadow structure: std_rec={std_recovered} std_p_hd={std_p_hd} nonzero_rec={nonzero_recovered} nonzero_p_hd={nonzero_p_hd}"

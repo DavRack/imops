@@ -4,23 +4,20 @@ pub mod diffusion;
 pub mod grain;
 pub mod reduction;
 
-use crate::film::development::diffusion::{apply_adjacency, apply_dir_inhibition};
-use crate::film::development::grain::{
-    apply_continuum_grain, apply_particle_grain_overwrite, particle_resolution_limit_um,
-};
+use crate::film::development::grain::apply_particle_grain_overwrite;
 use crate::film::development::reduction::reduce;
 use crate::film::stock::{FilmStock, LayerKind};
 use crate::film::types::{DyePlanes, LatentPlanes};
 
 /// Develop latent planes to dye densities.
 ///
-/// Coarse pitch: continuum grain, then DIR chemical inhibition and adjacency
-/// (Eberhard) on the smooth realized field. Fine pitch: reduce (chemical fog
+/// One population process at every render width: reduce (chemical fog
 /// supplies a nonzero developable population at zero exposure), then particle
-/// overwrite — no continuum DIR/adjacency. At particle-resolving pitch,
-/// reaction–diffusion on a sparse Bernoulli cloud or on smooth-then-overwrite
-/// both fail physics checks; grain-coupled DIR is future work. Zero stock
-/// params reduce to identity.
+/// overwrite — the realized crystal population convolved with the dye-cloud
+/// PSF — followed by DIR chemical inhibition and adjacency (Eberhard) on the
+/// realized field. Width only changes the sampling pitch: at coarse pitch the
+/// population cells collapse to single pixels whose apertures hold hundreds
+/// of crystals, reproducing the central-limit continuum of the same process.
 pub fn develop(
     stock: &FilmStock,
     latent: &LatentPlanes,
@@ -37,11 +34,6 @@ pub fn develop(
         crystal_sizes.push(layer.crystal_size.clone());
     }
 
-    // Resolve individual particles only when the render aperture can sample a
-    // typical crystal. Larger apertures use the central-limit approximation of
-    // the same population process.
-    let resolves_particles =
-        pixel_pitch_um < particle_resolution_limit_um(&crystal_sizes).max(1e-6);
     let mut dyes = reduce(stock, latent);
 
     let d_max: Vec<f32> = stock
@@ -56,35 +48,19 @@ pub fn develop(
     let sigma_dir_px = stock.dir_diffusion_length.0 / pixel_pitch_um.max(1e-6);
     let sigma_px = stock.developer_diffusion_length.0 / pixel_pitch_um.max(1e-6);
 
-    if resolves_particles {
-        apply_particle_grain_overwrite(
-            &mut dyes,
-            &d_max,
-            &kappas,
-            &gammas,
-            pixel_pitch_um,
-            seed,
-            &crystal_sizes,
-            sigma_dir_px,
-            &stock.dir_inhibition_matrix,
-            sigma_px,
-            stock.adjacency_beta,
-        );
-    } else {
-        // Coarse pitch: same population in the central-limit approximation,
-        // then continuum DIR/adjacency on the smooth grain field.
-        apply_continuum_grain(
-            &mut dyes,
-            &d_max,
-            &kappas,
-            pixel_pitch_um,
-            seed,
-            &crystal_sizes,
-        );
-
-        apply_dir_inhibition(&mut dyes, sigma_dir_px, &stock.dir_inhibition_matrix);
-        apply_adjacency(&mut dyes, sigma_px, stock.adjacency_beta);
-    }
+    apply_particle_grain_overwrite(
+        &mut dyes,
+        &d_max,
+        &kappas,
+        &gammas,
+        pixel_pitch_um,
+        seed,
+        &crystal_sizes,
+        sigma_dir_px,
+        &stock.dir_inhibition_matrix,
+        sigma_px,
+        stock.adjacency_beta,
+    );
 
     dyes
 }
@@ -94,7 +70,6 @@ mod tests {
     use super::*;
     use crate::film::blur::gaussian_blur_separable;
     use crate::film::development::diffusion::{apply_adjacency, apply_dir_inhibition};
-    use crate::film::development::grain::apply_grain_centered_residual;
     use crate::film::types::DyePlanes;
     use crate::film::StockId;
 
@@ -355,55 +330,33 @@ mod tests {
     }
 
     #[test]
-    fn develop_coarse_pitch_continuum_before_diffusion() {
+    fn develop_coarse_pitch_matches_unified_particle_reference() {
         let stock = StockId::BwStub.load().unwrap();
         let latent = gradient_latent(64, 64);
-        let pitch_um = 3.0;
+        let pitch_um = 11.9; // 35mm coarse aperture
         let seed = 42u64;
 
         let produced = develop(&stock, &latent, seed, pitch_um);
 
-        let reduced = reduce(&stock, &latent);
-        let (kappas, _gammas, crystal_sizes) = stock_kappas_and_crystals(&stock);
-        let d_max: Vec<f32> = stock
-            .emulsion_layers()
-            .map(|(_, layer)| layer.coupler.as_ref().unwrap().d_max)
-            .collect();
-
-        let mut reference = reduced.clone();
-        apply_continuum_grain(
-            &mut reference,
-            &d_max,
-            &kappas,
-            pitch_um,
-            seed,
-            &crystal_sizes,
-        );
-        let sigma_dir_px = stock.dir_diffusion_length.0 / pitch_um;
-        apply_dir_inhibition(&mut reference, sigma_dir_px, &stock.dir_inhibition_matrix);
-        let sigma_px = stock.developer_diffusion_length.0 / pitch_um;
-        apply_adjacency(&mut reference, sigma_px, stock.adjacency_beta);
+        // Same population process at every pitch: develop() must equal the
+        // particle-overwrite reference (reduce -> particles -> DIR/adj), and
+        // its mean must track the reduced H&D field (no separate continuum
+        // noise layer, no base+residual).
+        let reference = fine_pitch_reference(&stock, &latent, pitch_um, seed);
         assert_eq!(produced.image_dye, reference.image_dye);
 
-        let mut old_order = reduced.clone();
-        apply_dir_inhibition(
-            &mut old_order,
-            sigma_dir_px,
-            &stock.dir_inhibition_matrix,
-        );
-        apply_adjacency(&mut old_order, sigma_px, stock.adjacency_beta);
-        apply_continuum_grain(
-            &mut old_order,
-            &d_max,
-            &kappas,
-            pitch_um,
-            seed,
-            &crystal_sizes,
-        );
-        assert!(
-            max_plane_diff(&produced, &old_order) > 1e-4,
-            "coarse develop must differ from post-diffusion continuum order"
-        );
+        let reduced = reduce(&stock, &latent);
+        for (i, (plane, red)) in produced.image_dye.iter().zip(reduced.image_dye.iter()).enumerate() {
+            let mean_p: f64 = plane.iter().map(|&v| v as f64).sum::<f64>() / plane.len() as f64;
+            let mean_r: f64 = red.iter().map(|&v| v as f64).sum::<f64>() / red.len() as f64;
+            let rel = (mean_p - mean_r).abs() / mean_r.max(1e-6);
+            assert!(
+                rel < 0.15,
+                "layer {i}: coarse develop mean {mean_p:.4} deviates {:.1}% from reduced H&D {mean_r:.4}",
+                rel * 100.0
+            );
+            assert!(plane_std(plane) > 0.0, "layer {i}: coarse develop must retain grain variation");
+        }
     }
 
     #[test]

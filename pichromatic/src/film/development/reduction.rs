@@ -10,8 +10,9 @@ use rayon::prelude::*;
 /// `D_image = D_max * f_eff^(1/γ_eff)` with `f_eff = f` (negative) or `1−f` (reversal),
 /// after chemical fog: developable fraction floor from random fog crystals at
 /// zero exposure (`f_fog = FOG_OFFSET / d_max`, then `f_eff = 1 − (1−f)(1−f_fog)`).
-/// Particle overwrite at fine pitch uses γ-recovered `f` and linear `d_max·f`, so
-/// the expected linear density floor at f=0 is ≈ `FOG_OFFSET`.
+/// The particle overwrite recovers `f_eff` via γ and maps the realized
+/// population back through this same response, so the expected density floor
+/// at f=0 is the H&D fog density `d_max·f_fog^(1/γ)` at every width.
 ///
 /// Coloured film base remains a separate, unnoised mask plane. Grain never
 /// modulates residual colored-coupler density.
