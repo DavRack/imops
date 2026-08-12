@@ -44,7 +44,7 @@ name = "Film"
 stock = "Portra400"
 film_format = "Film35mm"
 # Debug/microscope render width: the same stock chemistry sampled across 0.5 mm.
-render_width_mm = 1.0
+render_width_mm = 8.0
 seed = 1
 enable_halation = false
 output = "PositiveLinear"
@@ -60,13 +60,17 @@ output = "PositiveLinear"
 # output = "PositiveLinear"
 
 
-# [[pipeline_modules]]
-# name = "Exp"
-# ev = 0
+[[pipeline_modules]]
+name = "Exp"
+ev = 1.0
+
+[[pipeline_modules]]
+name = "Contrast"
+c = 2
 
 # [[pipeline_modules]]
-# name = "Contrast"
-# c = 1
+# name = "Gamma"
+# value = 4.0
 
 [[pipeline_modules]]
 name = "SigmoidToneMap"
