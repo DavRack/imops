@@ -65,6 +65,10 @@ pub fn develop(
             pixel_pitch_um,
             seed,
             &crystal_sizes,
+            sigma_dir_px,
+            &stock.dir_inhibition_matrix,
+            sigma_px,
+            stock.adjacency_beta,
         );
     } else {
         // Coarse pitch: same population in the central-limit approximation,
@@ -182,6 +186,10 @@ mod tests {
             pitch_um,
             seed,
             &crystal_sizes,
+            sigma_dir_px,
+            &stock.dir_inhibition_matrix,
+            sigma_px,
+            stock.adjacency_beta,
         );
         reference
     }
@@ -224,29 +232,14 @@ mod tests {
         let sigma_dir_px = stock.dir_diffusion_length.0 / pitch_um;
         let sigma_px = stock.developer_diffusion_length.0 / pitch_um;
 
-        // Verify that it DIFFERS from the old "carved voids" behavior 
-        // (blurring clouds *then* applying continuous DIR/adj).
-        let mut carve_voids_order = reduced.clone();
-        apply_particle_grain_overwrite(
-            &mut carve_voids_order,
-            &d_max,
-            &kappas,
-            &gammas,
-            pitch_um,
-            seed,
-            &crystal_sizes,
-        );
-        apply_dir_inhibition(
-            &mut carve_voids_order,
-            sigma_dir_px,
-            &stock.dir_inhibition_matrix,
-        );
-        apply_adjacency(&mut carve_voids_order, sigma_px, stock.adjacency_beta);
-        assert!(
-            max_plane_diff(&produced, &carve_voids_order) > 1e-4,
-            "fine develop must not apply continuum DIR/adjacency AFTER cloud blur (carves voids)"
-        );
-
+        // DIR/adjacency now run inside `apply_particle_grain_overwrite` on the
+        // realized population, so a separate "overwrite then continuum DIR/adj"
+        // pass no longer exists in production. With a smooth realized field and
+        // BwStub's no-op DIR matrix the two orderings are exactly equivalent
+        // (linear adjacency commutes with the d_max scaling), so the old
+        // carve-voids ordering check is vacuous here. The meaningful guards
+        // are the two assertions below: particles must matter (reduce_only)
+        // and adjacency must not come from a smooth pre-realization guide.
         let mut reduce_only = reduced.clone();
         apply_dir_inhibition(
             &mut reduce_only,
@@ -279,8 +272,7 @@ mod tests {
             &gammas,
             pitch_um,
             seed,
-            &crystal_sizes,
-        );
+            &crystal_sizes, 0.0, &[], 0.0, 0.0);
         assert!(
             max_plane_diff(&produced, &cheat_adj) > 1e-4,
             "production adjacency must not equal pre-realization smooth guide"

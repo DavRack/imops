@@ -114,7 +114,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         spectral_sensitivity: Some(blue_sensitivity_curve()),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.85_f64.ln(),
-            sigma_ln: 0.65,
+            sigma_ln: 0.88,
         }),
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
@@ -176,7 +176,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         spectral_sensitivity: Some(green_sensitivity_curve()),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.90_f64.ln(),
-            sigma_ln: 0.65,
+            sigma_ln: 0.88,
         }),
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
@@ -223,7 +223,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         spectral_sensitivity: Some(red_sensitivity_curve()),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.95_f64.ln(),
-            sigma_ln: 0.65,
+            sigma_ln: 0.88,
         }),
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {

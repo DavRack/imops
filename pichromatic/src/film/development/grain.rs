@@ -23,49 +23,100 @@ use crate::film::constants::DYE_CLOUD_CORRELATION_UM;
 use crate::film::types::{DyePlanes, LatentPlanes};
 use rayon::prelude::*;
 
-/// SplitMix64 — deterministic seeded stream RNG (no `rand` crate).
-/// Per-row streams use key derived from `(seed, layer, y)`.
+/// Philox4×32-10 — deterministic counter-based RNG (Salmon et al. 2011,
+/// "Parallel random numbers: as easy as 1, 2, 3", Random123 reference).
+///
+/// Pure u32 arithmetic (no 64-bit emulation), bit-compatible with the
+/// official Random123 test vectors. Every pixel owns an independent stream
+/// keyed by `(seed, layer, sublayer, x, y)`, so draws at one site never
+/// depend on draws at neighboring sites.
+///
+/// NOTE: the GPU shaders (`gpu/shaders.rs`) still mirror the old SplitMix64
+/// stream until the GPU milestone; they must be re-synced to this generator.
 #[derive(Clone, Debug)]
-pub struct SplitMix64 {
-    state: u64,
+pub struct Philox4x32 {
+    key: [u32; 2],
+    ctr: [u32; 4],
+    buf: [u32; 4],
+    pos: usize,
 }
 
-impl SplitMix64 {
-    pub fn new(seed: u64) -> Self {
-        Self { state: seed }
+const PHILOX_M0: u32 = 0xD2511F53;
+const PHILOX_M1: u32 = 0xCD9E8D57;
+const PHILOX_W0: u32 = 0x9E3779B9;
+const PHILOX_W1: u32 = 0xBB67AE85;
+
+/// One Philox4×32-10 round (Random123 `_philox4xWround_tpl`).
+fn philox_round(ctr: [u32; 4], key: [u32; 2]) -> [u32; 4] {
+    let p0 = (PHILOX_M0 as u64) * (ctr[0] as u64);
+    let p1 = (PHILOX_M1 as u64) * (ctr[2] as u64);
+    [
+        ((p1 >> 32) as u32) ^ ctr[1] ^ key[0],
+        p1 as u32,
+        ((p0 >> 32) as u32) ^ ctr[3] ^ key[1],
+        p0 as u32,
+    ]
+}
+
+impl Philox4x32 {
+    /// New stream with an explicit 64-bit counter and 2-word key.
+    pub fn new(key: [u32; 2], ctr: [u32; 4]) -> Self {
+        Self { key, ctr, buf: [0; 4], pos: 4 }
     }
 
-    pub fn next_u64(&mut self) -> u64 {
-        self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-        z ^ (z >> 31)
+    /// Independent per-pixel stream for `(seed, layer, sublayer)` at `(x, y)`.
+    ///
+    /// The key mixes the seed with layer/sublayer tags; the counter carries
+    /// the pixel coordinates plus a block index so each site is independent.
+    pub fn per_pixel(seed: u64, layer: u32, sublayer: u32, x: u32, y: u32) -> Self {
+        let key = [
+            (seed as u32) ^ layer.wrapping_mul(PHILOX_W0) ^ sublayer.wrapping_mul(PHILOX_W1),
+            ((seed >> 32) as u32) ^ layer.wrapping_mul(PHILOX_W1) ^ sublayer.wrapping_mul(PHILOX_W0),
+        ];
+        Self::new(key, [x, y, 0, 0])
+    }
+
+    fn refill(&mut self) {
+        // Pure function of (key, ctr): the 10-round evaluation keeps its own
+        // Weyl key schedule, so the stream is exactly counter-based and any
+        // block is independently reproducible (CPU ↔ GPU parity friendly).
+        let mut c = self.ctr;
+        let mut k = self.key;
+        for _ in 0..10 {
+            c = philox_round(c, k);
+            k = [k[0].wrapping_add(PHILOX_W0), k[1].wrapping_add(PHILOX_W1)];
+        }
+        self.buf = c;
+        self.pos = 0;
+        // Advance to the next counter block for the same site.
+        self.ctr[3] = self.ctr[3].wrapping_add(1);
+    }
+
+    #[inline]
+    pub fn next_u32(&mut self) -> u32 {
+        if self.pos >= 4 {
+            self.refill();
+        }
+        let v = self.buf[self.pos];
+        self.pos += 1;
+        v
     }
 
     /// Approximate N(0,1) via Irwin–Hall (sum of 12 uniforms).
-    ///
-    /// Mirrors the GPU `GRAIN_NOISE` shader bit-near: WGSL has no u64, so the
-    /// 64-bit state is converted to f32 as `f32(hi)·2^32 + f32(lo)` (not a
-    /// correctly-rounded u64→f32 cast), then divided by 2^64.
     pub fn next_gaussian(&mut self) -> f32 {
-        let mut acc = 0.0f32;
+        let mut acc = 0.0f64;
         for _ in 0..12 {
-            let z = self.next_u64();
-            let hi = (z >> 32) as u32;
-            let lo = z as u32;
-            let zf = (hi as f32) * 4294967296.0 + (lo as f32);
-            acc += zf / 18446744073709551616.0;
+            acc += self.next_u32() as f64 / 4294967296.0;
         }
-        acc - 6.0
+        (acc - 6.0) as f32
     }
 
-    /// Uniform variate from the same deterministic stream.
+    /// Uniform variate with f64-mantissa precision (53 bits from two words).
     #[inline]
     fn next_unit_f64(&mut self) -> f64 {
-        // Keep the top 53 bits so the result has the precision of an f64
-        // mantissa without relying on a separate RNG implementation.
-        (self.next_u64() >> 11) as f64 / 9007199254740992.0
+        let hi = self.next_u32() as u64;
+        let lo = self.next_u32() as u64;
+        (((hi << 21) | (lo >> 11)) as f64) / 9007199254740992.0
     }
 }
 
@@ -107,7 +158,7 @@ pub fn scale_kappa(kappa_ref: f32, pixel_pitch_um: f32, correlation_um: f32) -> 
 }
 
 /// Draw a Poisson count without adding another dependency.
-fn sample_poisson(rng: &mut SplitMix64, lambda: f32) -> usize {
+fn sample_poisson(rng: &mut Philox4x32, lambda: f32) -> usize {
     if !(lambda > 0.0) {
         return 0;
     }
@@ -127,7 +178,7 @@ fn sample_poisson(rng: &mut SplitMix64, lambda: f32) -> usize {
 }
 
 /// Draw a binomial count, using direct trials only where that is cheap.
-fn sample_binomial(rng: &mut SplitMix64, trials: usize, probability: f32) -> usize {
+fn sample_binomial(rng: &mut Philox4x32, trials: usize, probability: f32) -> usize {
     if trials == 0 || probability <= 0.0 {
         return 0;
     }
@@ -225,8 +276,17 @@ pub(crate) fn particle_resolution_limit_um(
 ///
 /// `kappa_ref_per_layer` is the Selwyn coefficient κ_ref = 1/√ρ (grains/µm²
 /// derived from the stock geometry). It supplies the expected crystal count
-/// `ρ·p²` in each pixel aperture; the sampled particle field then acquires its
+/// per cloud footprint; the sampled particle field then acquires its
 /// pitch-dependent variance naturally through the cloud convolution.
+///
+/// The population is sampled per cloud-footprint cell (side =
+/// `DYE_CLOUD_CORRELATION_UM`), not per pixel. At microscope pitch a pixel
+/// aperture holds far less than one crystal (λ ≈ 0.06 for fast layers at
+/// 0.165 µm/px), so per-pixel Poisson sampling quantizes the realization into
+/// sparse full-brightness dots and leaves voids between them. Sampling per
+/// footprint (λ ≈ ρ·3µm² ≈ 20 crystals) keeps the developed fraction
+/// continuous: dark regions resolve as overlapping dim clouds, not
+/// salt-and-pepper.
 fn particle_field(
     probabilities: &[f32],
     width: usize,
@@ -239,40 +299,84 @@ fn particle_field(
     fixed_crystal_sites: bool,
 ) -> Vec<f32> {
     let rho_areal = 1.0 / (kappa_ref * kappa_ref).max(1e-12);
-    let particles_per_pixel = rho_areal * pixel_pitch_um * pixel_pitch_um;
-    if particles_per_pixel <= 1e-8 {
+    let cell_um = DYE_CLOUD_CORRELATION_UM;
+    let sites_per_cell = rho_areal * cell_um * cell_um;
+    if sites_per_cell <= 1e-8 {
         return probabilities.to_vec();
     }
 
+    let cell_px = (cell_um / pixel_pitch_um.max(1e-6)).max(1.0);
+    let cells_x = (width as f32 / cell_px).ceil() as usize;
+    let cells_y = (height as f32 / cell_px).ceil() as usize;
+    let uniformity = cloud_uniformity(rho_areal);
     let crystal_sigma_px = particle_cloud_sigma_um(crystal_size) / pixel_pitch_um.max(1e-6);
     let cloud_sigma_px = dye_cloud_sigma_um() / pixel_pitch_um.max(1e-6);
-    let uniformity = cloud_uniformity(rho_areal);
-    let mut particles = vec![0.0f32; width * height];
-    for y in 0..height {
-        let mut rng = SplitMix64::new(
-            seed.wrapping_mul(0xD1B54A32D192ED03)
-                .wrapping_add((layer_i as u64).wrapping_mul(0x9E3779B97F4A7C15))
-                .wrapping_add(y as u64),
-        );
-        for x in 0..width {
-            let index = y * width + x;
-            let probability = probabilities[index].clamp(0.0, 1.0);
+
+    // Cell-level realized developable fraction. Cells are independent
+    // (per-cell Philox stream), so the grid builds in parallel.
+    let mut grid = vec![0.0f32; cells_x * cells_y];
+    grid.par_iter_mut()
+        .enumerate()
+        .for_each(|(cell_idx, slot)| {
+            let cx = cell_idx % cells_x;
+            let cy = cell_idx / cells_x;
+            let x0 = (cx as f32 * cell_px) as usize;
+            let y0 = (cy as f32 * cell_px) as usize;
+            let x1 = (((cx as f32 + 1.0) * cell_px).ceil() as usize).min(width);
+            let y1 = (((cy as f32 + 1.0) * cell_px).ceil() as usize).min(height);
+            // Cell-mean developable probability from the reduced H&D field.
+            let mut sum_p = 0.0f64;
+            let mut cnt = 0usize;
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    sum_p += probabilities[y * width + x] as f64;
+                    cnt += 1;
+                }
+            }
+            let p_cell = if cnt > 0 { (sum_p / cnt as f64) as f32 } else { 0.0 };
+            let mut rng = Philox4x32::per_pixel(seed, layer_i as u32, 0, cx as u32, cy as u32);
             if fixed_crystal_sites {
                 // Crystal locations are independent of exposure. Each site
                 // develops stochastically; exposure sets Bernoulli(p) odds.
-                let sites = sample_poisson(&mut rng, particles_per_pixel);
-                let developed = sample_binomial(&mut rng, sites, probability);
-                particles[index] = developed as f32 / particles_per_pixel;
-            } else if probability > 0.0 {
+                let sites = sample_poisson(&mut rng, sites_per_cell);
+                let developed = sample_binomial(&mut rng, sites, p_cell);
+                *slot = developed as f32 / sites_per_cell;
+            } else if p_cell > 0.0 {
                 // The virtual population keeps the mean fraction fixed while
                 // reducing residual count noise as a cloud approaches saturation.
-                let saturation = (1.0 - probability * uniformity * (1.0 - 1e-6)).max(1e-6);
-                let available = sample_poisson(&mut rng, particles_per_pixel / saturation);
-                let developed = sample_binomial(&mut rng, available, probability);
-                particles[index] = developed as f32 * saturation / particles_per_pixel;
+                let saturation = (1.0 - p_cell * uniformity * (1.0 - 1e-6)).max(1e-6);
+                let available = sample_poisson(&mut rng, sites_per_cell / saturation);
+                let developed = sample_binomial(&mut rng, available, p_cell);
+                *slot = developed as f32 * saturation / sites_per_cell;
             }
-        }
-    }
+        });
+
+    // Bilinear upscale of the cell grid to pixels: the developed fraction
+    // varies continuously across cell boundaries instead of stepping in
+    // blocks, matching the continuous crystal population it represents.
+    let mut particles = vec![0.0f32; width * height];
+    particles
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(index, slot)| {
+            let x = index % width;
+            let y = index / width;
+            let gx = x as f32 / cell_px;
+            let gy = y as f32 / cell_px;
+            let gx0 = (gx as usize).min(cells_x - 1);
+            let gy0 = (gy as usize).min(cells_y - 1);
+            let gx1 = (gx0 + 1).min(cells_x - 1);
+            let gy1 = (gy0 + 1).min(cells_y - 1);
+            let fx = (gx - gx0 as f32).min(1.0);
+            let fy = (gy - gy0 as f32).min(1.0);
+            let v00 = grid[gy0 * cells_x + gx0];
+            let v10 = grid[gy0 * cells_x + gx1];
+            let v01 = grid[gy1 * cells_x + gx0];
+            let v11 = grid[gy1 * cells_x + gx1];
+            let top = v00 + (v10 - v00) * fx;
+            let bottom = v01 + (v11 - v01) * fx;
+            *slot = top + (bottom - top) * fy;
+        });
     // The cloud field carries the image-forming fraction. A second blur of the
     // same particles exposes crystal-scale structure without making a separate
     // texture field. Its weight follows the number of crystals in one cloud.
@@ -359,14 +463,15 @@ pub(crate) fn apply_continuum_grain(
 
             let mut noise = vec![0.0f32; width * height];
             for y in 0..height {
-                let mut rng = SplitMix64::new(
-                    seed.wrapping_mul(0xD1B54A32D192ED03)
-                        .wrapping_add((layer_i as u64).wrapping_mul(0x9E3779B97F4A7C15))
-                        .wrapping_add((sub_idx as u64).wrapping_mul(0x123456789))
-                        .wrapping_add(y as u64),
-                );
                 for x in 0..width {
-                    noise[y * width + x] = rng.next_gaussian();
+                    noise[y * width + x] = Philox4x32::per_pixel(
+                        seed,
+                        layer_i as u32,
+                        sub_idx as u32,
+                        x as u32,
+                        y as u32,
+                    )
+                    .next_gaussian();
                 }
             }
             gaussian_blur_separable(&mut noise, width, height, sigma_px);
@@ -408,12 +513,20 @@ pub fn apply_particle_grain_overwrite(
     pixel_pitch_um: f32,
     seed: u64,
     crystal_sizes: &[Option<crate::film::stock::LogNormalDist>],
+    sigma_dir_px: f32,
+    dir_inhibition_matrix: &[Vec<f32>],
+    sigma_px: f32,
+    adjacency_beta: f32,
 ) {
-    for (layer_i, plane) in dyes.image_dye.iter_mut().enumerate() {
+    let mut f_dev = vec![vec![0.0f32; dyes.width * dyes.height]; dyes.image_dye.len()];
+    let mut skipped = vec![false; dyes.image_dye.len()];
+    for (layer_i, plane) in dyes.image_dye.iter().enumerate() {
         let d_max = d_max_per_layer[layer_i];
         let kappa_ref = kappa_ref_per_layer[layer_i];
         let gamma = gamma_contrast_per_layer[layer_i].max(1e-6);
         if kappa_ref <= 0.0 || d_max <= 0.0 {
+            skipped[layer_i] = true;
+            f_dev[layer_i] = plane.clone();
             continue;
         }
         let probabilities: Vec<f32> = plane
@@ -434,11 +547,22 @@ pub fn apply_particle_grain_overwrite(
             layer_i,
             true,
         );
+        f_dev[layer_i] = particles;
+    }
+
+    dyes.image_dye = f_dev;
+    crate::film::development::diffusion::apply_dir_inhibition(dyes, sigma_dir_px, dir_inhibition_matrix);
+    crate::film::development::diffusion::apply_adjacency(dyes, sigma_px, adjacency_beta);
+
+    for (layer_i, plane) in dyes.image_dye.iter_mut().enumerate() {
+        if skipped[layer_i] {
+            continue;
+        }
+        let d_max = d_max_per_layer[layer_i];
         plane
             .par_iter_mut()
-            .zip(particles.par_iter())
-            .for_each(|(density, &fraction)| {
-                *density = (fraction * d_max).clamp(0.0, d_max * 1.05);
+            .for_each(|fraction| {
+                *fraction = (*fraction * d_max).clamp(0.0, d_max * 1.05);
             });
     }
 }
@@ -501,6 +625,47 @@ pub fn add_micro_structure(_plane: &mut [f32], _pixel_pitch_um: f32, _seed: u64)
 mod tests {
     use super::*;
 
+    /// Official Random123 known-answer tests for philox4x32-10
+    /// (DEShawResearch/Random123 `tests/kat_vectors`).
+    #[test]
+    fn philox4x32_10_matches_random123_vectors() {
+        let cases = [
+            (
+                [0u32, 0, 0, 0],
+                [0u32, 0],
+                [0x6627e8d5, 0xe169c58d, 0xbc57ac4c, 0x9b00dbd8],
+            ),
+            (
+                [0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff],
+                [0xffffffff, 0xffffffff],
+                [0x408f276d, 0x41c83b0e, 0xa20bc7c6, 0x6d5451fd],
+            ),
+            (
+                [0x243f6a88, 0x85a308d3, 0x13198a2e, 0x03707344],
+                [0xa4093822, 0x299f31d0],
+                [0xd16cfe09, 0x94fdcceb, 0x5001e420, 0x24126ea1],
+            ),
+        ];
+        for (ctr, key, expected) in cases {
+            let mut rng = Philox4x32::new(key, ctr);
+            let got = [rng.next_u32(), rng.next_u32(), rng.next_u32(), rng.next_u32()];
+            assert_eq!(got, expected, "ctr={ctr:?} key={key:?}");
+        }
+    }
+
+    /// Same counter block must be bit-identical across independent instances
+    /// (counter-based reproducibility), and blocks must differ per pixel.
+    #[test]
+    fn philox_streams_are_per_pixel_and_reproducible() {
+        let mut a = Philox4x32::per_pixel(1, 2, 0, 10, 20);
+        let mut b = Philox4x32::per_pixel(1, 2, 0, 10, 20);
+        assert_eq!(a.next_u32(), b.next_u32());
+        assert_eq!(a.next_u32(), b.next_u32());
+
+        let mut other = Philox4x32::per_pixel(1, 2, 0, 11, 20);
+        assert_ne!(a.next_u32(), other.next_u32());
+    }
+
     fn flat_dyes(d: f32, d_max: f32, w: usize, h: usize) -> DyePlanes {
         let n = w * h;
         DyePlanes {
@@ -538,7 +703,7 @@ mod tests {
         let h = 256;
         let mut dyes = flat_dyes(d, d_max, w, h);
         let mask_before = dyes.mask_dye[0].clone();
-        apply_particle_grain_overwrite(&mut dyes, &[d_max], &[kappa], &[1.0], 3.0, 123, &[None]);
+        apply_particle_grain_overwrite(&mut dyes, &[d_max], &[kappa], &[1.0], 3.0, 123, &[None], 0.0, &[], 0.0, 0.0);
         let std = std_of(&dyes.image_dye[0]);
         assert!(std > 0.0, "overwrite grain should vary at mid density, std={std}");
         assert_eq!(dyes.mask_dye[0], mask_before);
@@ -550,8 +715,8 @@ mod tests {
         let mut a = flat_dyes(1.0, d_max, 64, 64);
         let mut b = flat_dyes(1.0, d_max, 64, 64);
         let mask_a = a.mask_dye[0].clone();
-        apply_particle_grain_overwrite(&mut a, &[d_max], &[0.2], &[1.0], 3.0, 1, &[None]);
-        apply_particle_grain_overwrite(&mut b, &[d_max], &[0.0], &[1.0], 3.0, 1, &[None]);
+        apply_particle_grain_overwrite(&mut a, &[d_max], &[0.2], &[1.0], 3.0, 1, &[None], 0.0, &[], 0.0, 0.0);
+        apply_particle_grain_overwrite(&mut b, &[d_max], &[0.0], &[1.0], 3.0, 1, &[None], 0.0, &[], 0.0, 0.0);
         assert_eq!(a.mask_dye[0], mask_a);
         assert_eq!(a.mask_dye[0], b.mask_dye[0]);
     }
@@ -561,7 +726,7 @@ mod tests {
         let d_max = 2.0f32;
         let mut a = flat_dyes(1.0, d_max, 32, 32);
         let b = a.clone();
-        apply_particle_grain_overwrite(&mut a, &[d_max], &[0.0], &[1.0], 3.0, 99, &[None]);
+        apply_particle_grain_overwrite(&mut a, &[d_max], &[0.0], &[1.0], 3.0, 99, &[None], 0.0, &[], 0.0, 0.0);
         assert_eq!(a.image_dye, b.image_dye);
     }
 
@@ -721,8 +886,7 @@ mod tests {
                 &gammas,
                 pitch,
                 42,
-                &crystal_sizes,
-            );
+                &crystal_sizes, 0.0, &[], 0.0, 0.0);
 
             for (i, plane) in dyes.image_dye.iter().enumerate() {
                 let std = std_of(plane);
@@ -757,8 +921,7 @@ mod tests {
             &[gamma],
             0.25,
             17,
-            &[None],
-        );
+            &[None], 0.0, &[], 0.0, 0.0);
         apply_particle_grain_overwrite(
             &mut p_hd_only,
             &[d_max],
@@ -766,8 +929,7 @@ mod tests {
             &[1.0],
             0.25,
             17,
-            &[None],
-        );
+            &[None], 0.0, &[], 0.0, 0.0);
 
         let std_recovered = std_of(&recovered.image_dye[0]);
         let std_p_hd = std_of(&p_hd_only.image_dye[0]);
@@ -802,8 +964,7 @@ mod tests {
             &[gamma],
             0.25,
             17,
-            &[None],
-        );
+            &[None], 0.0, &[], 0.0, 0.0);
 
         let plane = &dyes.image_dye[0];
         let min = plane.iter().copied().fold(f32::INFINITY, f32::min);

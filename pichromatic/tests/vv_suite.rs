@@ -107,7 +107,7 @@ fn vv_dye_cloud_grain_variance_scaling() {
             &[1.0],
             pitch_um,
             seed,
-            &[None],
+            &[None], 0.0, &[], 0.0, 0.0,
         );
     };
 
