@@ -674,33 +674,9 @@ mod roi_workspace_tests {
         assert!(layout.latent_workspace_offset(num_emul).is_err());
     }
 
-    #[test]
-    fn grain_variance_norm_pure_reduction_helper() {
-        use crate::film::gpu::calculate_variance_norms_from_partials;
-
-        // Test reduction of partial sum-of-squares with known values.
-        // Emulsion 0: 4 partials of value 1.0 -> sum_sq = 4.0, n = 4 -> var = 1.0 -> norm = 1.0
-        // Emulsion 1: 4 partials of value 4.0 -> sum_sq = 16.0, n = 4 -> var = 4.0 -> norm = 0.5
-        let parts = vec![1.0f32, 1.0, 1.0, 1.0, 4.0, 4.0, 4.0, 4.0];
-        let active_indices = vec![0, 1];
-        let norms = calculate_variance_norms_from_partials(&parts, 4, 4, &active_indices).unwrap();
-
-        assert_eq!(norms.len(), 2);
-        assert_eq!(norms[0], (0, 1.0f32));
-        assert_eq!(norms[1], (1, 1.0f32));
-    }
-
-    #[test]
-    fn grain_variance_reduction_layout_test() {
-        use crate::film::gpu::grain_var_reduction_layout;
-
-        let layout = grain_var_reduction_layout(10000).unwrap();
-        assert_eq!(layout.n, 10000);
-        assert_eq!(layout.stride, 5);
-        assert_eq!(layout.out_n, 2000);
-        assert_eq!(layout.workgroups, 8);
-
-        // Check zero dimension error
-        assert!(grain_var_reduction_layout(0).is_err());
-    }
+    // The legacy `grain_variance_norm_pure_reduction_helper` and
+    // `grain_variance_reduction_layout_test` tests were removed alongside the
+    // grain variance prepass: the new particle-overwrite grain has no variance
+    // diagonal to normalize (the realization is the production image, no
+    // base+residual), so those helpers are gone.
 }

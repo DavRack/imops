@@ -113,7 +113,7 @@ pub fn assert_images_equal_abs_tol_with(cpu_image: &Image, gpu_image: &Image, to
                 g_pixel[ch],
                 gpu_bits,
                 diff,
-                tolerance
+                tol
             );
         }
     }

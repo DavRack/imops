@@ -95,7 +95,11 @@ pub fn integrated_absorbed(absorbed: &[f32; 16]) -> f32 {
 
 /// Mean spectral absorbed fluence: `∫ Φ_abs(λ) dλ / 300.0`.
 pub fn mean_absorbed_fluence(absorbed: &[f32; 16]) -> f32 {
-    total_absorbed_fluence(absorbed) / 300.0
+    let mut acc = 0.0f32;
+    for i in 0..15 {
+        acc += (absorbed[i] + absorbed[i + 1]) * (1.0 / 30.0);
+    }
+    acc
 }
 
 /// True trapezoidal integral `∫ Φ_abs(λ) dλ` over 400–700 nm (photons · nm / µm²).

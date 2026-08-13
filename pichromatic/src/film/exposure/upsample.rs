@@ -263,11 +263,9 @@ fn scan_basis_f32() -> &'static ScanBasisF32 {
 /// `shaders::SCAN` (trapezoidal CMF integrals and `rgb = M·XYZ` in f32).
 pub fn spectrum_to_acescg_rgb_f32(spectrum: &[f32; 16]) -> [f32; 3] {
     fn integrate_cmf32(spectrum: &[f32; 16], cmf: &[f32; 16]) -> f32 {
-        let dlambda = 20.0f32;
         let mut acc = 0.0f32;
         for i in 0..15 {
-            let inner = spectrum[i] * cmf[i] + spectrum[i + 1] * cmf[i + 1];
-            acc += 0.5 * inner * dlambda;
+            acc += (spectrum[i] * cmf[i] + spectrum[i + 1] * cmf[i + 1]) * 10.0;
         }
         acc
     }
@@ -279,9 +277,9 @@ pub fn spectrum_to_acescg_rgb_f32(spectrum: &[f32; 16]) -> [f32; 3] {
     ];
     let m = &c.to_acescg;
     [
-        m[0][0] * xyz[0] + m[0][1] * xyz[1] + m[0][2] * xyz[2],
-        m[1][0] * xyz[0] + m[1][1] * xyz[1] + m[1][2] * xyz[2],
-        m[2][0] * xyz[0] + m[2][1] * xyz[1] + m[2][2] * xyz[2],
+        m[0][0].mul_add(xyz[0], m[0][1].mul_add(xyz[1], m[0][2] * xyz[2])),
+        m[1][0].mul_add(xyz[0], m[1][1].mul_add(xyz[1], m[1][2] * xyz[2])),
+        m[2][0].mul_add(xyz[0], m[2][1].mul_add(xyz[1], m[2][2] * xyz[2])),
     ]
 }
 

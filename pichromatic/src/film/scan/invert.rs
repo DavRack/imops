@@ -1,17 +1,20 @@
 //! Analytical scanner invert: negative → positive (linear ACEScg).
 //!
 //! Linear scanner pass without stylistic looks or artificial S-curves:
-//! 1. Substrate Color Correction: D_img = −log10(clamp(T_neg / Dmin, ε, ∞))
-//! 2. Film Dynamic Range (Gamma) Reconstruction: E_scene = 10^(D_img / γ_eff) − 1.0
+//! 1. Substrate Color Correction: D_2 = −log2(clamp(T_neg / Dmin, ε, ∞))
+//! 2. Film Dynamic Range (Gamma) Reconstruction: E_scene = 2^(D_eff2 / γ_eff) − 1.0
 //! 3. Mid-Gray Anchor: Scale factor g_c = MIDDLE_GRAY / E_scene(mid_c) per channel.
+//!
+//! Formulated entirely in native base-2 arithmetic (log2 / exp2) to eliminate
+//! f32 transcendental base-conversion roundtrip errors and optimize ALU throughput.
 
 use crate::film::constants::FOG_OFFSET;
 use crate::pixel::{ImageBuffer, MIDDLE_GRAY};
 use rayon::prelude::*;
 
-/// log2(10), shared with the GPU `SCAN` shader.
+/// log2(10), used for converting base-10 constants to native base-2.
 const LOG2_10: f32 = 3.3219280948873623;
-/// log10(2), shared with the GPU `SCAN` shader.
+/// log10(2), algebraic inverse of LOG2_10.
 const LOG10_2: f32 = 0.3010299956639812;
 
 /// Target effective contrast gamma of developed color negative film (~0.6).
@@ -28,32 +31,65 @@ pub struct InvertConstants {
     pub gamma_eff: f32,
     /// Precomputed `1/gamma_eff`.
     pub inv_gamma: f32,
-    /// `1/gamma_eff · log2(10)` precombined so both sides use one rounded constant.
+    /// `1/gamma_eff · log2(10)` precombined so GPU scan shader can use one rounded constant.
     pub inv_gamma_log2_10: f32,
     pub eps: f32,
     pub fog_offset: f32,
+    /// Precomputed base-2 fog offset: `fog_offset * LOG2_10`.
+    pub fog2: f32,
 }
 
-/// Effective density after fog toe, fed into the gamma `exp2` transfer.
+/// Effective density in base-2 after fog toe, fed directly into the gamma `exp2` transfer.
 ///
-/// C¹ quadratic toe (same shape as a filmistic shoulder/toe join):
-/// - `d_img ≤ 0` (Dmin) → `0`
-/// - `0 < d_img < fog` → `d_img² / (2·fog)` (preserves sub-fog dye-cloud structure)
-/// - `d_img ≥ fog` → `d_img − fog/2`
+/// C¹ quadratic toe in base-2 density space ($D_2 = D_{10} \cdot \log_2(10)$, $\mathrm{fog}_2 = \mathrm{fog}_{10} \cdot \log_2(10)$):
+/// - `d2 ≤ 0` (Dmin) → `0`
+/// - `0 < d2 < fog2` → `d2² / (2·fog2)` (preserves sub-fog dye-cloud structure)
+/// - `d2 ≥ fog2` → `d2 − fog2/2`
 ///
-/// At `d_img = fog`, both pieces equal `fog/2` with matching slope 1 — no cliff.
+/// At `d2 = fog2`, both pieces equal `fog2/2` with matching slope 1 — continuous first derivative (C¹).
+/// Because $\log_2(10)$ factors out quadratically in the numerator and linearly in the denominator,
+/// $\frac{(d_{10}\log_2 10)^2}{2(\mathrm{fog}_{10}\log_2 10)} = \frac{d_{10}^2}{2\mathrm{fog}_{10}} \log_2 10$,
+/// making the base-2 formulation algebraically exact.
 #[inline]
-fn fog_effective_density(d_img: f32, fog_offset: f32) -> f32 {
-    if d_img <= 0.0 {
+pub fn fog_effective_density_base2(d2: f32, fog2: f32) -> f32 {
+    if d2 <= 0.0 {
         0.0
-    } else if d_img < fog_offset {
-        (d_img * d_img) / (2.0 * fog_offset)
+    } else if d2 < fog2 {
+        (d2 * d2) / (2.0 * fog2)
     } else {
-        d_img - 0.5 * fog_offset
+        d2 - 0.5 * fog2
     }
 }
 
-/// Map image density `d_img = −log10(T/Dmin)` to linear scene exposure.
+/// Map base-2 image density `d2 = −log2(T/Dmin)` directly to linear scene exposure.
+///
+/// Reconstructs scene exposure using native base-2 arithmetic:
+/// `E_scene = 2^(d_eff2 / γ) − 1.0 = exp2(d_eff2 * inv_gamma) − 1.0`.
+///
+/// ### Mathematical Identity & Precision Rationale
+/// Conventional optical density is decadic ($D_{10} = -\log_{10} T$). Inverting $D_{10}$ requires
+/// computing $10^{D_{10}/\gamma} = 2^{(D_{10}/\gamma)\log_2 10}$.
+/// On hardware ALUs lacking native base-10 transcendentals, evaluating decadic density requires:
+/// 1. $D_{10} = -\log_2(T) \cdot \log_{10}(2)$
+/// 2. $E = \exp_2(D_{10} \cdot \frac{1}{\gamma} \cdot \log_2(10)) - 1.0$
+///
+/// Since $\log_{10}(2) \cdot \log_2(10) \equiv 1.0$, the conversion factors cancel algebraically.
+/// Performing the intermediate multiplication by `LOG10_2` followed by `LOG2_10` in IEEE 754 `f32`
+/// introduces intermediate rounding and truncation errors. Furthermore, because $dE/dD \propto 2^{D/\gamma}$,
+/// any float precision loss at high negative densities (bright scene highlights) is exponentially amplified.
+/// Working directly with base-2 density $D_2 = -\log_2 T$ executes exclusively in native hardware
+/// transcendentals (`log2` and `exp2`) with zero intermediate conversion error and optimal ALU throughput.
+#[inline]
+pub fn density2_to_exposure(d2: f32, inv_gamma: f32, fog2: f32) -> f32 {
+    let d_eff2 = fog_effective_density_base2(d2, fog2);
+    if d_eff2 <= 0.0 {
+        0.0
+    } else {
+        (d_eff2 * inv_gamma).exp2() - 1.0
+    }
+}
+
+/// Legacy base-10 image density mapper (delegates to native base-2 formulation).
 #[inline]
 pub fn density_img_to_exposure(
     d_img: f32,
@@ -61,12 +97,10 @@ pub fn density_img_to_exposure(
     _slope: f32,
     fog_offset: f32,
 ) -> f32 {
-    let d_eff = fog_effective_density(d_img, fog_offset);
-    if d_eff <= 0.0 {
-        0.0
-    } else {
-        (d_eff * inv_gamma_log2_10).exp2() - 1.0
-    }
+    let d2 = d_img * LOG2_10;
+    let fog2 = fog_offset * LOG2_10;
+    let inv_gamma = inv_gamma_log2_10 * LOG10_2;
+    density2_to_exposure(d2, inv_gamma, fog2)
 }
 
 pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> InvertConstants {
@@ -81,27 +115,33 @@ pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> Inve
     let inv_gamma = 1.0 / GAMMA_EFF;
     let slope = 10.0f32.ln() / GAMMA_EFF;
     let inv_gamma_log2_10 = inv_gamma * LOG2_10;
-    let d_mid = mid_t.map(|v| (-v.log10()).max(eps));
-    let e_mid = d_mid.map(|d_img| {
-        density_img_to_exposure(d_img, inv_gamma_log2_10, slope, FOG_OFFSET).max(0.005)
+    let fog2 = FOG_OFFSET * LOG2_10;
+    let d_mid2 = mid_t.map(|v| (-v.log2()).max(eps));
+    let e_mid = d_mid2.map(|d2| {
+        density2_to_exposure(d2, inv_gamma, fog2).max(0.005)
     });
     InvertConstants {
         dmin,
         inv_dmin,
         gain: e_mid.map(|v| (MIDDLE_GRAY / v).min(25.0)),
-        slope: 10.0f32.ln() / GAMMA_EFF,
+        slope,
         gamma_eff: GAMMA_EFF,
         inv_gamma,
-        inv_gamma_log2_10: inv_gamma * LOG2_10,
+        inv_gamma_log2_10,
         eps,
         fog_offset: FOG_OFFSET,
+        fog2,
     }
 }
 
 /// Linear scanner invert for PositiveLinear.
 ///
-/// Mirrors the GPU `SCAN` shader invert block (log10 via `log2·LOG10_2`,
-/// `10^(d/γ)` via `exp2(d·inv_gamma_log2_10)`).
+/// Reconstructs linear ACEScg positive scene exposure directly from negative transmittance
+/// using native base-2 optical density:
+/// 1. Substrate Color Correction: $T_c = \mathrm{clamp}(T_{\mathrm{neg}, c} \cdot \mathrm{inv\_dmin}_c, \varepsilon, 1.0)$
+/// 2. Base-2 Optical Density: $D_{2, c} = -\log_2(T_c)$
+/// 3. C¹ Fog Toe & Gamma Reversal: $E_c = \exp_2(D_{\mathrm{eff}2, c} \cdot \mathrm{inv\_gamma}) - 1.0$
+/// 4. Mid-Gray Anchor: $\mathrm{RGB}_c = g_c \cdot E_c$
 pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_negative: [f32; 3]) {
     let constants = invert_constants(mid_negative, dmin_negative);
 
@@ -112,31 +152,16 @@ pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_ne
             (px[2] * constants.inv_dmin[2]).max(constants.eps),
         ];
 
-        let d_img = [
-            -(t[0].log2() * LOG10_2),
-            -(t[1].log2() * LOG10_2),
-            -(t[2].log2() * LOG10_2),
+        let d2 = [
+            -t[0].log2(),
+            -t[1].log2(),
+            -t[2].log2(),
         ];
 
         let e_scene = [
-            density_img_to_exposure(
-                d_img[0],
-                constants.inv_gamma_log2_10,
-                constants.slope,
-                constants.fog_offset,
-            ),
-            density_img_to_exposure(
-                d_img[1],
-                constants.inv_gamma_log2_10,
-                constants.slope,
-                constants.fog_offset,
-            ),
-            density_img_to_exposure(
-                d_img[2],
-                constants.inv_gamma_log2_10,
-                constants.slope,
-                constants.fog_offset,
-            ),
+            density2_to_exposure(d2[0], constants.inv_gamma, constants.fog2),
+            density2_to_exposure(d2[1], constants.inv_gamma, constants.fog2),
+            density2_to_exposure(d2[2], constants.inv_gamma, constants.fog2),
         ];
 
         *px = [
@@ -298,29 +323,51 @@ mod tests {
 
     #[test]
     fn fog_toe_maps_dmin_to_zero_and_preserves_subfog_slope() {
-        let inv_gamma_log2_10 = (1.0 / GAMMA_EFF) * LOG2_10;
-        let slope = 10.0f32.ln() / GAMMA_EFF;
+        let inv_gamma = 1.0 / GAMMA_EFF;
+        let fog2 = FOG_OFFSET * LOG2_10;
         assert!(
-            density_img_to_exposure(0.0, inv_gamma_log2_10, slope, FOG_OFFSET).abs() < 1e-7,
+            density2_to_exposure(0.0, inv_gamma, fog2).abs() < 1e-7,
             "Dmin density maps to zero exposure"
         );
-        let low = density_img_to_exposure(0.001, inv_gamma_log2_10, slope, FOG_OFFSET);
-        let high = density_img_to_exposure(0.002, inv_gamma_log2_10, slope, FOG_OFFSET);
+        let low = density2_to_exposure(0.001 * LOG2_10, inv_gamma, fog2);
+        let high = density2_to_exposure(0.002 * LOG2_10, inv_gamma, fog2);
         assert!(low > 0.0 && high > low, "sub-fog densities rise monotonically");
-        let below = fog_effective_density(FOG_OFFSET - 1e-6, FOG_OFFSET);
-        let at = fog_effective_density(FOG_OFFSET, FOG_OFFSET);
-        let above_d = fog_effective_density(FOG_OFFSET + 1e-6, FOG_OFFSET);
+        let below = fog_effective_density_base2(fog2 - 1e-6, fog2);
+        let at = fog_effective_density_base2(fog2, fog2);
+        let above_d = fog_effective_density_base2(fog2 + 1e-6, fog2);
         assert!(
-            (at - 0.5 * FOG_OFFSET).abs() < 1e-6,
-            "knee density must be fog/2, got {at}"
+            (at - 0.5 * fog2).abs() < 1e-6,
+            "knee density must be fog2/2, got {at}"
         );
         assert!(
             (below - at).abs() < 1e-5 && (above_d - at).abs() < 1e-5,
             "C1 toe must be continuous at fog knee"
         );
-        let knee = density_img_to_exposure(FOG_OFFSET, inv_gamma_log2_10, slope, FOG_OFFSET);
-        let above = density_img_to_exposure(FOG_OFFSET + 0.001, inv_gamma_log2_10, slope, FOG_OFFSET);
+        let knee = density2_to_exposure(fog2, inv_gamma, fog2);
+        let above = density2_to_exposure(fog2 + 0.001, inv_gamma, fog2);
         assert!(above >= knee, "exposure continues above fog knee");
+    }
+
+    #[test]
+    fn base2_and_base10_algebraic_equivalence() {
+        let inv_gamma = 1.0 / GAMMA_EFF;
+        let inv_gamma_log2_10 = inv_gamma * LOG2_10;
+        let slope = 10.0f32.ln() / GAMMA_EFF;
+        let fog2 = FOG_OFFSET * LOG2_10;
+
+        for d10_int in 0..500 {
+            let d10 = d10_int as f32 * 0.01;
+            let d2 = d10 * LOG2_10;
+
+            let exp_base2 = density2_to_exposure(d2, inv_gamma, fog2);
+            let exp_base10 = density_img_to_exposure(d10, inv_gamma_log2_10, slope, FOG_OFFSET);
+
+            let rel_diff = (exp_base2 - exp_base10).abs() / (exp_base2.max(exp_base10) + 1e-5);
+            assert!(
+                rel_diff < 1e-4,
+                "base2 vs base10 divergence at d10={d10}: base2={exp_base2}, base10={exp_base10}, rel_diff={rel_diff}"
+            );
+        }
     }
 
     #[test]

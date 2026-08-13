@@ -7,10 +7,11 @@
 //!
 //! Stock calibration scalars/LUTs/spectra (which are functions of the *stock*,
 //! not the image) are precomputed on the CPU at load — exactly as the CPU path
-//! does — and uploaded as constant storage buffers. Grain variance uses a GPU
-//! partial sum-of-squares (`GRAIN_VAR_PARTIAL`) then a tiny download; the CPU
-//! finishes the `f64` reduction for `norm` so it matches the CPU path bit-near.
-//! All spatial grain work stays on GPU.
+//! does — and uploaded as constant storage buffers. The film grain path mirrors
+//! the CPU `apply_particle_grain_overwrite` (Philox4x32-10 per-pixel
+//! Poisson+Binomial draw, cloud/crystal/micro-cloud blur mix, then DIR,
+//! adjacency, and the H&D toe on the realized population). No base+residual,
+//! no variance diagonal — all spatial grain work stays on GPU.
 //!
 
 mod roi;
@@ -23,12 +24,10 @@ pub(crate) use workspace::acquire_film_resources;
 use bytemuck::{Pod, Zeroable};
 use wgpu::Buffer;
 
-use crate::film::blur::gaussian_kernel_l2_sq;
 use crate::film::constants::{
-    ABSORPTION_SIGMA_SCALE_PER_UM, DYE_CLOUD_CORRELATION_UM, LOCAL_SCATTER_MIX,
+    ABSORPTION_SIGMA_SCALE_PER_UM, DYE_CLOUD_CORRELATION_UM, FOG_OFFSET, LOCAL_SCATTER_MIX,
     MASK_DENSITY_FRACTION_OF_DMAX,
 };
-use crate::film::development::grain::{scale_kappa, SUBLAYER_SCALES};
 use crate::film::exposure::halation::{
     bleed_weights_for_layers, effective_reflectance, reflectance_at, sigma_px_from_um,
 };
@@ -107,63 +106,61 @@ struct AdjU {
     _p0: u32,
 }
 
+// ── Particle-field grain uniforms (CPU `apply_particle_grain_overwrite`) ──
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct NoiseU {
+struct ParticleFieldU {
+    n: u32,
     width: u32,
     height: u32,
-    n: u32,
-    base_lo: u32,
-    base_hi: u32,
-    _p0: u32,
-    _p1: u32,
-    _p2: u32,
+    layer_idx: u32,
+    d_max: f32,
+    gamma: f32,
+    sites_per_cell: f32,
+    d_off: u32,
+    seed_lo: u32,
+    seed_hi: u32,
+    sqrt_sites: f32,
+    knuth_threshold: f32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct GrainApplySubU {
-    n: u32,
-    off: u32,
-    kappa0: f32,
-    kappa1: f32,
-    dmax: f32,
-    norm: f32,
-    noise0_off: u32,
-    noise1_off: u32,
-    _p0: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct GrainApplySubRoiU {
-    n: u32,
-    dye_off: u32,
-    noise0_off: u32,
-    noise1_off: u32,
-    kappa0: f32,
-    kappa1: f32,
-    dmax: f32,
-    norm: f32,
+struct ParticleFieldRoiU {
+    root_x: i32,
+    root_y: i32,
     root_w: u32,
     root_h: u32,
-    radius0: u32,
-    radius1: u32,
-    _p0: u32,
+    root_n: u32,
+    img_w: u32,
+    img_h: u32,
+    layer_idx: u32,
+    d_max: f32,
+    gamma: f32,
+    sites_per_cell: f32,
+    d_off: u32,
+    seed_lo: u32,
+    seed_hi: u32,
+    sqrt_sites: f32,
+    knuth_threshold: f32,
 }
 
+/// Uniform for both `MICRO_MIX` (multi-binding full-frame) and `MICRO_MIX_ROI`
+/// (single-arena ROI). Same field layout as the WGSL `struct MMU`.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct VarPartialU {
+struct MicroMixU {
     n: u32,
-    stride: u32,
-    out_n: u32,
-    src_off: u32,
-    out_off: u32,
+    off: u32,
+    cloud_off: u32,
+    crystal_off: u32,
+    micro_off: u32,
+    micro_weight: f32,
     _p0: u32,
     _p1: u32,
-    _p2: u32,
 }
+
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -268,41 +265,7 @@ struct AdjacencyRoiU {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct NoiseRoiU {
-    root_x: i32,
-    root_y: i32,
-    root_w: u32,
-    root_h: u32,
-    root_n: u32,
-    img_w: u32,
-    img_h: u32,
-    base_lo: u32,
-    base_hi: u32,
-    dst_off: u32,
-    _p0: u32,
-    _p1: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct CopyScalarCoreRoiU {
-    core_x: u32,
-    core_y: u32,
-    core_w: u32,
-    core_h: u32,
-    core_n: u32,
-    root_w: u32,
-    root_off_x: u32,
-    root_off_y: u32,
-    img_w: u32,
-    src_off: u32,
-    _p0: u32,
-    _p1: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct GrainScanRoiU {
+struct ScanRoiU {
     core_x: u32,
     core_y: u32,
     core_w: u32,
@@ -317,9 +280,8 @@ struct GrainScanRoiU {
     mask_base: u32,
     num_emul: u32,
     scale: f32,
-    noise_base: u32,
     flags: u32,
-    emul: [[f32; 4]; 16],
+    _p0: u32,
 }
 
 // ─── CPU-side spectral/upsample helpers (f64), mirroring exposure::upsample ──
@@ -418,11 +380,9 @@ pub(crate) struct StockConsts {
     num_emul: u32,
     scan_scale: f32,
     do_invert: bool,
-    // Per-emulsion runtime scalars.
-    // `kappa` is the CPU per-sublayer κ = scale_kappa(...)·√2 / L2² for the two
-    // dye-cloud sublayers (scales 1.3 / 0.7).
-    kappa: Vec<[f32; 2]>,
+    // Per-emulsion H&D scalars.
     dmax: Vec<f32>,
+    gamma: Vec<f32>,
     // Blur sigmas (px) for spatial stages.
     sigma_local: f32,
     sigma_wide: f32,
@@ -435,15 +395,21 @@ pub(crate) struct StockConsts {
     halation_weights: Vec<f32>,
     dir_kernel: Option<(std::sync::Arc<Buffer>, u32)>,
     adj_kernel: Option<(std::sync::Arc<Buffer>, u32)>,
-    // Two dye-cloud sublayer kernels per emulsion (σ × 1.3 and × 0.7, matching
-    // CPU `apply_grain` sublayer_scales), plus per-sublayer SplitMix64 row seeds.
-    grain_kernels: Vec<[(std::sync::Arc<Buffer>, u32); 2]>,
+    // Particle grain (CPU `apply_particle_grain_overwrite`).
+    // On the GPU every supported film format has `pitch ≥ 3 µm/px`, so
+    // `cell_um = max(DYE_CLOUD_CORRELATION_UM, pitch) = pitch`, `cell_px = 1`,
+    // and cells == pixels: `sites_per_cell = ρ * pitch²` is the per-pixel draw
+    // parameter directly. `cloud_kernel` is shared across emulsions because
+    // `σ_cloud = DYE_CLOUD_CORRELATION_UM/2 / pitch` is layer-independent;
+    // `crystal_kernels` is per emulsion (`σ_crystal = mean_crystal·0.25 / pitch`).
+    sites_per_cell: Vec<f32>,
+    micro_weights: Vec<f32>,
+    cloud_kernel: Option<(std::sync::Arc<Buffer>, u32)>,
+    crystal_kernels: Vec<Option<(std::sync::Arc<Buffer>, u32)>>,
+    philox_key_lo: Vec<u32>,
+    philox_key_hi: Vec<u32>,
     adjacency_beta: f32,
-    grain_seed_base: Vec<[(u32, u32); 2]>, // per emulsion (lo, hi) per sublayer
 }
-
-const GOLDEN: u64 = 0x9E3779B97F4A7C15;
-const SM_STATE_MIX: u64 = 0xD1B54A32D192ED03;
 
 /// Multi-bounce backing-reflection count and decay (mirrors `halation.rs`).
 const HALATION_BOUNCES: usize = 3;
@@ -589,6 +555,15 @@ pub(crate) fn bake_consts(
     reduce.extend_from_slice(&mask_scale_v);
     reduce.extend_from_slice(&reversal_v);
     reduce.extend_from_slice(&has_mask_v);
+    // Chemical fog floor per layer: f_fog = (FOG_OFFSET / d_max).clamp(0,1).
+    // Mirrors `development::reduction::reduce` so the GPU reduce writes the same
+    // D floor at zero exposure as the CPU does — the particle-field draws `prob`
+    // from this floor so dark samples remain populated instead of going empty.
+    let mut fog_v: Vec<f32> = Vec::with_capacity(num_emul);
+    for &d in &dmax_v {
+        fog_v.push((FOG_OFFSET / d).clamp(0.0, 1.0));
+    }
+    reduce.extend_from_slice(&fog_v);
 
     // ── DIR matrix (E*E row-major matrix[i][j]) ──
     let mut dir_matrix: Vec<f32> = vec![0.0; num_emul * num_emul];
@@ -641,6 +616,18 @@ pub(crate) fn bake_consts(
         }
     }
 
+    // Fused toe constants: per-emulsion d_max (active/overwritten only) + inv_gamma.
+    for &(li, layer) in &emuls {
+        let coupler = layer.coupler.as_ref().unwrap();
+        let kappa_ref = stock.grain_kappa[li].unwrap_or(0.0);
+        if kappa_ref > 0.0 && coupler.d_max > 0.0 {
+            scan.push(coupler.d_max);
+        } else {
+            scan.push(0.0);
+        }
+    }
+    scan.extend_from_slice(&inv_gamma_v);
+
     // Dmin normalization scale (matches scan_to_acescg; f32 as the scan runs in f32).
     let dmin_rgb = dmin_reference_acescg(stock);
     let peak = dmin_rgb[0].max(dmin_rgb[1]).max(dmin_rgb[2]).max(1e-12);
@@ -672,7 +659,7 @@ pub(crate) fn bake_consts(
             invert.inv_dmin[2],
             invert.inv_gamma,
             invert.inv_gamma_log2_10,
-            0.0,
+            invert.fog2,
         ]);
     }
 
@@ -765,57 +752,67 @@ pub(crate) fn bake_consts(
         None
     };
 
-    // Grain scalars and per-layer crystal-aware dye-cloud sublayer kernels.
-    // Mirrors CPU `apply_continuum_grain`: two sublayers (scales 1.3 / 0.7) with
-    // independent SplitMix64 streams; per-sublayer κ =
-    // scale_kappa(kappa_ref, pitch, correlation_um)·√2 / L2²(kernel).
-    let mut kappa = Vec::with_capacity(num_emul);
-    let mut dmax_grain = Vec::with_capacity(num_emul);
-    let mut grain_seed_base = Vec::with_capacity(num_emul);
-    let mut grain_kernels = Vec::with_capacity(num_emul);
-
-    const SUBLAYER_STREAM_MIX: u64 = 0x123456789;
-
+    // Particle-grain consts. Mirrors CPU `apply_particle_grain_overwrite`:
+    //   rho_areal   = 1 / κ_ref²       (per layer)
+    //   sites/cell  = rho_areal * pitch² (per layer; on GPU cells == pixels)
+    //   σ_cloud_px  = (DYE_CLOUD_CORRELATION_UM * 0.5) / pitch    (layer-independent)
+    //   σ_crystal_px= mean_crystal_size_um * 0.25 / pitch         (per layer)
+    //   micro_weight= 1 / sqrt(max(ρ·π·1.5², 1.0) + 1)            (per layer)
+    //   Philox key : per-layer mix of `params.seed` with the Random123 Weyl
+    //                constants — `key_lo = seed_lo ^ layer_idx·W0`,
+    //                `key_hi = seed_hi ^ layer_idx·W1`, matching CPU's
+    //                `Philox4x32::per_pixel(seed, layer, sublayer=0, x, y)`.
+    let mut sites_per_cell = Vec::with_capacity(num_emul);
+    let mut micro_weights = Vec::with_capacity(num_emul);
+    let mut philox_key_lo = Vec::with_capacity(num_emul);
+    let mut philox_key_hi = Vec::with_capacity(num_emul);
+    let mut crystal_kernels: Vec<Option<(std::sync::Arc<Buffer>, u32)>> = Vec::with_capacity(num_emul);
+    let cloud_sigma_px = ((DYE_CLOUD_CORRELATION_UM * 0.5) / pitch.max(1e-6)).max(1e-3);
+    let cloud_k = make_gaussian_kernel(cloud_sigma_px);
+    let cloud_rad = crate::film::blur::gaussian_radius(cloud_sigma_px) as u32;
+    let cloud_kernel = std::sync::Arc::new(ctx.create_f32_buffer_init(&cloud_k, "stock_k_grain_cloud"));
+    let cloud_kernel = Some((cloud_kernel, cloud_rad));
+    let cloud_radius_um = DYE_CLOUD_CORRELATION_UM * 0.5;
+    let seed_lo = params.seed as u32;
+    let seed_hi = (params.seed >> 32) as u32;
     for (e, &(li, layer)) in emuls.iter().enumerate() {
         let coupler = layer.coupler.as_ref().unwrap();
+        let d_max = coupler.d_max;
         let kappa_ref = stock.grain_kappa[li].unwrap_or(0.0);
-        dmax_grain.push(coupler.d_max);
-        let base = params
-            .seed
-            .wrapping_mul(SM_STATE_MIX)
-            .wrapping_add((e as u64).wrapping_mul(GOLDEN));
-        let mut bases = [(0u32, 0u32); 2];
-        for sl in 0..2 {
-            let b = base.wrapping_add((sl as u64).wrapping_mul(SUBLAYER_STREAM_MIX));
-            bases[sl] = (b as u32, (b >> 32) as u32);
+        if kappa_ref <= 0.0 || d_max <= 0.0 {
+            sites_per_cell.push(0.0);
+            micro_weights.push(0.0);
+            crystal_kernels.push(None);
+            philox_key_lo.push(0);
+            philox_key_hi.push(0);
+            continue;
         }
-        grain_seed_base.push(bases);
+        let rho_areal = 1.0 / (kappa_ref * kappa_ref).max(1e-12);
+        sites_per_cell.push(rho_areal * pitch * pitch);
+        // micro_weight = 1 / sqrt(max(ρ·π·1.5², 1) + 1) — same cloud population
+        // term as CPU `cloud_population`.
+        let cloud_pop = (rho_areal * std::f32::consts::PI * cloud_radius_um * cloud_radius_um).max(1.0);
+        micro_weights.push(1.0 / (cloud_pop + 1.0).sqrt());
 
-        let dye_cloud_sigma = DYE_CLOUD_CORRELATION_UM * 0.25;
-        let base_correlation_um = if let Some(dist) = &layer.crystal_size {
-            let mean_s = (dist.mu_ln + 0.5 * dist.sigma_ln * dist.sigma_ln).exp() as f32;
-            (mean_s / 0.7) * dye_cloud_sigma
-        } else {
-            dye_cloud_sigma
-        };
-        let mut kappas = [0.0f32; 2];
-        let mut kernels: Vec<(std::sync::Arc<Buffer>, u32)> = Vec::with_capacity(2);
-        for (sl, &sl_scale) in SUBLAYER_SCALES.iter().enumerate() {
-            let correlation_um = base_correlation_um * sl_scale;
-            let grain_sigma = (correlation_um / pitch.max(1e-6)).max(1.0);
-            let kappa_target =
-                scale_kappa(kappa_ref, pitch, correlation_um) * (SUBLAYER_SCALES.len() as f32).sqrt();
-            kappas[sl] = kappa_target / gaussian_kernel_l2_sq(grain_sigma);
-            let k_grain = make_gaussian_kernel(grain_sigma);
-            let rad_grain = crate::film::blur::gaussian_radius(grain_sigma) as u32;
-            let buf_grain = std::sync::Arc::new(ctx.create_f32_buffer_init(
-                &k_grain,
-                &format!("stock_k_grain_{e}_{}", kernels.len()),
-            ));
-            kernels.push((buf_grain, rad_grain));
-        }
-        kappa.push(kappas);
-        grain_kernels.push(kernels.try_into().unwrap());
+        let mean_crystal_um = layer
+            .crystal_size
+            .as_ref()
+            .map(|d| (d.mu_ln + 0.5 * d.sigma_ln * d.sigma_ln).exp() as f32)
+            .unwrap_or(0.7);
+        let crystal_sigma_px = (mean_crystal_um * 0.25 / pitch.max(1e-6)).max(1e-3);
+        let k = make_gaussian_kernel(crystal_sigma_px);
+        let r = crate::film::blur::gaussian_radius(crystal_sigma_px) as u32;
+        let buf = std::sync::Arc::new(ctx.create_f32_buffer_init(&k, &format!("stock_k_grain_crystal_{e}")));
+        crystal_kernels.push(Some((buf, r)));
+
+        // The Philox key per pixel is built in-shader exactly like the CPU's
+        // `Philox4x32::per_pixel(seed, layer, sublayer=0, x, y)`:
+        //   key[0] = seed_lo ^ layer·W0,  key[1] = seed_hi ^ layer·W1
+        // (sublayer=0 drops the second Weyl term). The host ships the RAW seed
+        // words — mixing here too would XOR the layer term twice and cancel it,
+        // desyncing every pixel's stream from the CPU.
+        philox_key_lo.push(seed_lo);
+        philox_key_hi.push(seed_hi);
     }
 
     StockConsts {
@@ -829,8 +826,11 @@ pub(crate) fn bake_consts(
         num_emul: num_emul as u32,
         scan_scale,
         do_invert,
-        kappa,
-        dmax: dmax_grain,
+        dmax: dmax_v.clone(),
+        gamma: emuls
+            .iter()
+            .map(|(_, l)| l.gamma_contrast.max(1e-6))
+            .collect(),
         sigma_local,
         sigma_wide,
         sigma_dir,
@@ -840,9 +840,13 @@ pub(crate) fn bake_consts(
         halation_weights,
         dir_kernel,
         adj_kernel,
-        grain_kernels,
+        sites_per_cell,
+        micro_weights,
+        cloud_kernel,
+        crystal_kernels,
+        philox_key_lo,
+        philox_key_hi,
         adjacency_beta: stock.adjacency_beta,
-        grain_seed_base,
     }
 }
 
@@ -1050,137 +1054,6 @@ fn blur_plane_in_arena(
             },
         ],
     )
-}
-
-/// Parameters for grain variance sum-of-squares partial reduction pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct GrainVarReductionLayout {
-    pub(super) n: usize,
-    pub(super) stride: u32,
-    pub(super) out_n: u32,
-    pub(super) workgroups: u32,
-}
-
-/// Compute checked grain variance reduction parameters for sample count `n`.
-pub(super) fn grain_var_reduction_layout(n: usize) -> Result<GrainVarReductionLayout, FilmError> {
-    if n == 0 {
-        return Err(FilmError::InvalidDimensions);
-    }
-    let n_u32 = u32::try_from(n).map_err(|_| FilmError::InvalidDimensions)?;
-    let target_out = GRAIN_VAR_PARTIALS_PER.min(n).max(1);
-    let target_out_u32 = u32::try_from(target_out).map_err(|_| FilmError::InvalidDimensions)?;
-
-    let stride = n_u32
-        .checked_add(target_out_u32)
-        .and_then(|sum| sum.checked_sub(1))
-        .map(|num| num / target_out_u32)
-        .ok_or(FilmError::InvalidDimensions)?;
-
-    let out_n = n_u32
-        .checked_add(stride)
-        .and_then(|sum| sum.checked_sub(1))
-        .map(|num| num / stride)
-        .ok_or(FilmError::InvalidDimensions)?;
-
-    let wg = workgroups(out_n as usize);
-
-    Ok(GrainVarReductionLayout {
-        n,
-        stride,
-        out_n,
-        workgroups: wg,
-    })
-}
-
-/// Enqueue one GRAIN_VAR_PARTIAL pass reading `src_off = 0` from single scalar spill
-/// and writing into `out_off = slot * out_n` in `var_partial`.
-pub(super) fn enqueue_grain_variance_from_spill(
-    ctx: &GpuContext,
-    encoder: &mut wgpu::CommandEncoder,
-    spill: &Buffer,
-    var_partial: &Buffer,
-    n: usize,
-    slot: usize,
-    num_emul: usize,
-) -> Result<(u32, (wgpu::BindGroup, Option<wgpu::Buffer>)), FilmError> {
-    if slot >= num_emul {
-        return Err(FilmError::InvalidDimensions);
-    }
-    let layout = grain_var_reduction_layout(n)?;
-    let slot_u32 = u32::try_from(slot).map_err(|_| FilmError::InvalidDimensions)?;
-
-    let out_off = slot_u32
-        .checked_mul(layout.out_n)
-        .ok_or(FilmError::InvalidDimensions)?;
-
-    let u = VarPartialU {
-        n: u32::try_from(n).map_err(|_| FilmError::InvalidDimensions)?,
-        stride: layout.stride,
-        out_n: layout.out_n,
-        src_off: 0,
-        out_off,
-        _p0: 0,
-        _p1: 0,
-        _p2: 0,
-    };
-
-    let bufs = [spill, var_partial];
-    let keep = ctx.encode_compute_shader_multi(
-        encoder,
-        "film_grain_var_partial_spill",
-        shaders::GRAIN_VAR_PARTIAL,
-        &[&bufs[0], &bufs[1]],
-        bytemuck::bytes_of(&u),
-        layout.workgroups,
-    );
-
-    Ok((layout.out_n, keep))
-}
-
-/// Pure CPU reduction of partial sum-of-squares slices into per-emulsion variance norms.
-/// Validates slice bounds and preserves exact CPU `f64` summation order and thresholds.
-pub(super) fn calculate_variance_norms_from_partials(
-    parts: &[f32],
-    n: usize,
-    out_n: usize,
-    active_plane_indices: &[usize],
-) -> Result<Vec<(usize, f32)>, FilmError> {
-    if active_plane_indices.is_empty() || out_n == 0 || n == 0 {
-        return Ok(Vec::new());
-    }
-    let required_len = active_plane_indices
-        .len()
-        .checked_mul(out_n)
-        .ok_or(FilmError::InvalidDimensions)?;
-    if parts.len() < required_len {
-        return Err(FilmError::InvalidDimensions);
-    }
-
-    let mut norms = Vec::with_capacity(active_plane_indices.len());
-    for &plane_e in active_plane_indices.iter() {
-        norms.push((plane_e, 1.0f32));
-    }
-    Ok(norms)
-}
-
-/// Download `slot_count * out_n` elements from `var_partial` and finish f64 reduction.
-pub(super) async fn finish_grain_variance_from_partials(
-    ctx: &GpuContext,
-    var_partial: &Buffer,
-    n: usize,
-    out_n: usize,
-    active_plane_indices: &[usize],
-) -> Result<Vec<(usize, f32)>, FilmError> {
-    if active_plane_indices.is_empty() || out_n == 0 || n == 0 {
-        return Ok(Vec::new());
-    }
-    let total_elements = active_plane_indices
-        .len()
-        .checked_mul(out_n)
-        .ok_or(FilmError::InvalidDimensions)?;
-
-    let parts = ctx.download_f32_async(var_partial, total_elements).await;
-    calculate_variance_norms_from_partials(&parts, n, out_n, active_plane_indices)
 }
 
 /// Stable public entry point for the GPU film simulation.
@@ -1454,7 +1327,116 @@ async fn process_gpu_full_frame(
     }
     dbg_dump("after_reduce_dye", ctx, dye, n, e);
 
-    // ── Stage 5: DIR interlayer inhibition ──
+    // ── Stage 5: particle overwrite — `apply_particle_grain_overwrite` per layer ──
+    // For each emulsion: read D density at dye[e*n..e*n+n], draw a Poisson
+    // count for sites and a Binomial count for developed crystals with
+    // `prob = (D/d_max)^γ = f_eff`, overwrite the plane with the realized
+    // developable fraction `developed / sites_per_cell` (NO base+residual).
+    // Cloud / crystal / micro-cloud blurs compose the micro-structure mix
+    // (CPU `particle_field`) back into the dye plane; the dye plane then holds
+    // a realized fraction in [0, ~1.05].
+    if let Some((ref cloud_kbuf, cloud_radius)) = consts.cloud_kernel {
+        for plane_e in 0..e {
+            let sites = consts.sites_per_cell[plane_e];
+            let dmax = consts.dmax[plane_e];
+            if sites <= 0.0 || dmax <= 0.0 {
+                continue;
+            }
+            let (ref crystal_kbuf, crystal_radius) = match consts.crystal_kernels[plane_e].as_ref() {
+                Some(entry) => entry,
+                None => continue,
+            };
+            let crystal_radius = *crystal_radius;
+            let dst_off = (plane_e * n) as u32;
+
+            // Overwrite D density with the realized fraction.
+            let pfu = ParticleFieldU {
+                n: n as u32,
+                width: width as u32,
+                height: height as u32,
+                layer_idx: plane_e as u32,
+                d_max: dmax,
+                gamma: consts.gamma[plane_e],
+                sites_per_cell: sites,
+                d_off: dst_off,
+                seed_lo: consts.philox_key_lo[plane_e],
+                seed_hi: consts.philox_key_hi[plane_e],
+                // Baked host-side so the Poisson draw matches the CPU's
+                // `lambda.sqrt()` / `(-(lambda as f64)).exp()` bit-for-bit
+                // (no WGSL sqrt/exp in the sites draw at all).
+                sqrt_sites: sites.sqrt(),
+                knuth_threshold: (-(sites as f64)).exp() as f32,
+            };
+            ctx.dispatch_compute_shader_multi(
+                "film_particle_field",
+                shaders::PARTICLE_FIELD,
+                &[&dye],
+                bytemuck::bytes_of(&pfu),
+                workgroups(n),
+            );
+
+            // cloud = blur(particles, σ_cloud) -> work[0..n]
+            blur_plane(
+                ctx,
+                width,
+                height,
+                &dye,
+                dst_off,
+                &work,
+                0,
+                &btmp,
+                cloud_kbuf.as_ref(),
+                cloud_radius,
+            );
+            // crystal = blur(particles, σ_crystal) -> bout[0..n]
+            blur_plane(
+                ctx,
+                width,
+                height,
+                &dye,
+                dst_off,
+                &bout,
+                0,
+                &btmp,
+                crystal_kbuf.as_ref(),
+                crystal_radius,
+            );
+            // micro_cloud = blur(crystal, σ_cloud) -> noise[0..n]
+            blur_plane(
+                ctx,
+                width,
+                height,
+                &bout,
+                0,
+                &noise,
+                0,
+                &btmp,
+                cloud_kbuf.as_ref(),
+                cloud_radius,
+            );
+
+            // Realized fraction = clouds + micro_weight·(crystal − micro_cloud).
+            let mmu = MicroMixU {
+                n: n as u32,
+                off: dst_off,
+                cloud_off: 0,
+                crystal_off: 0,
+                micro_off: 0,
+                micro_weight: consts.micro_weights[plane_e],
+                _p0: 0,
+                _p1: 0,
+            };
+            ctx.dispatch_compute_shader_multi(
+                "film_micro_mix",
+                shaders::MICRO_MIX,
+                &[&dye, &work, &bout, &noise],
+                bytemuck::bytes_of(&mmu),
+                workgroups(n),
+            );
+        }
+    }
+
+    // ── Stage 6: DIR interlayer inhibition on the realized fraction planes ──
     if !stock.dir_inhibition_matrix.is_empty() {
         if let Some((ref kbuf, radius)) = consts.dir_kernel {
             let radius = radius;
@@ -1488,7 +1470,7 @@ async fn process_gpu_full_frame(
         }
     }
 
-    // ── Stage 6: adjacency (Eberhard) ──
+    // ── Stage 7: adjacency (Eberhard) on the realized fraction planes ──
     if consts.adjacency_beta.abs() >= 1e-8 {
         if let Some((ref kbuf, radius)) = consts.adj_kernel {
             let radius = radius;
@@ -1557,122 +1539,6 @@ async fn process_gpu_full_frame(
                     ],
                 );
             }
-        }
-    }
-
-    // ── Stage 7: grain (image dye only) ──
-    // CPU `apply_grain` two-sublayer model: sublayer 0 blurred into `work` plane e,
-    // sublayer 1 blurred into `noise` (in place); one apply pass averages both.
-    // The apply runs per plane right after its noise generation, because `noise`
-    // is a single-plane scratch: deferring the apply would overwrite plane e's
-    // sublayer 1 with the next plane's noise. (Norm is always 1.0.)
-    {
-        for plane_e in 0..e {
-            let kappa = consts.kappa[plane_e];
-            let dmax = consts.dmax[plane_e];
-            if (kappa[0] <= 0.0 && kappa[1] <= 0.0) || dmax <= 0.0 {
-                continue;
-            }
-            let (ref k0, r0) = consts.grain_kernels[plane_e][0];
-            let (ref k1, r1) = consts.grain_kernels[plane_e][1];
-            let dst_off = (plane_e * n) as u32;
-
-            for sl in 0..2 {
-                let (ref kbuf, radius) = if sl == 0 {
-                    (k0, r0)
-                } else {
-                    (k1, r1)
-                };
-                let (base_lo, base_hi) = consts.grain_seed_base[plane_e][sl];
-                let nu = NoiseU {
-                    width: width as u32,
-                    height: height as u32,
-                    n: n as u32,
-                    base_lo,
-                    base_hi,
-                    _p0: 0,
-                    _p1: 0,
-                    _p2: 0,
-                };
-                // sl0: noise -> btmp -> work@dst_off; sl1: noise -> btmp -> noise (in place).
-                let dst_buf = if sl == 0 { work } else { noise };
-                let blur_u_h = BlurU {
-                    width: width as u32,
-                    height: height as u32,
-                    n: n as u32,
-                    radius,
-                    src_off: 0,
-                    dst_off: 0,
-                    _p0: 0,
-                    _p1: 0,
-                };
-                let blur_u_v = BlurU {
-                    width: width as u32,
-                    height: height as u32,
-                    n: n as u32,
-                    radius,
-                    src_off: 0,
-                    dst_off: if sl == 0 { dst_off } else { 0 },
-                    _p0: 0,
-                    _p1: 0,
-                };
-                let noise_ub = bytemuck::bytes_of(&nu);
-                let blur_ub_h = bytemuck::bytes_of(&blur_u_h);
-                let blur_ub_v = bytemuck::bytes_of(&blur_u_v);
-                let noise_bufs = [noise];
-                let h_bufs = [noise, btmp, kbuf.as_ref()];
-                let v_bufs = [btmp, dst_buf, kbuf.as_ref()];
-                let noise_wg = workgroups(n);
-                let d = blur_dispatch(width, height, radius);
-                ctx.dispatch_compute_passes(
-                    "film_grain_noise_blur",
-                    &[
-                        ComputePassDesc {
-                            label: "film_grain_noise",
-                            wgsl_source: shaders::GRAIN_NOISE,
-                            storage_buffers: &noise_bufs,
-                            uniform_bytes: noise_ub,
-                            workgroups_x: noise_wg,
-                            workgroups_y: 0,
-                        },
-                        ComputePassDesc {
-                            label: d.h_label,
-                            wgsl_source: d.h_wgsl,
-                            storage_buffers: &h_bufs,
-                            uniform_bytes: blur_ub_h,
-                            workgroups_x: d.h_gx,
-                            workgroups_y: d.h_gy,
-                        },
-                        ComputePassDesc {
-                            label: d.v_label,
-                            wgsl_source: d.v_wgsl,
-                            storage_buffers: &v_bufs,
-                            uniform_bytes: blur_ub_v,
-                            workgroups_x: d.v_gx,
-                            workgroups_y: d.v_gy,
-                        },
-                    ],
-                );
-            }
-
-            let gu = GrainApplySubU {
-                n: n as u32,
-                off: dst_off,
-                kappa0: kappa[0],
-                kappa1: kappa[1],
-                dmax,
-                norm: 1.0,
-                noise0_off: dst_off,
-                noise1_off: 0,
-                _p0: 0,
-            };
-            ctx.dispatch_compute_shader_multi(
-                "film_grain_apply_sub",
-                shaders::GRAIN_APPLY_SUB,
-                &[&dye, &work, &noise],
-                bytemuck::bytes_of(&gu),
-                workgroups(n),
-            );
         }
     }
 
@@ -1775,141 +1641,11 @@ async fn process_gpu_roi(
     let blur_tmp_off = scratch.blur_tmp_offset()?;
     let blur_out_off = scratch.blur_out_offset()?;
 
-    // 3. Grain norm prepass across all active emulsions.
-    let mut active_grain_emuls = Vec::new();
-    for e in 0..num_emul {
-        let kappa = consts.kappa[e];
-        let dmax = consts.dmax[e];
-        if (kappa[0] > 0.0 || kappa[1] > 0.0) && dmax > 0.0 {
-            active_grain_emuls.push(e);
-        }
-    }
-
-    let mut grain_norms = vec![1.0f32; num_emul];
-
-    if !active_grain_emuls.is_empty() {
-        for (slot, &e) in active_grain_emuls.iter().enumerate() {
-            let (ref kbuf_grain, grain_radius) = consts.grain_kernels[e][0];
-            let (base_lo, base_hi) = consts.grain_seed_base[e][0];
-            let mut dst_off = 0u32;
-
-            for plan in &plans {
-                let mut encoder = ctx.create_command_encoder("film_roi_grain_prepass_tile");
-                let mut keep = Vec::new();
-
-                let root_n = plan.root.width * plan.root.height;
-                let nu = NoiseRoiU {
-                    root_x: plan.root.x,
-                    root_y: plan.root.y,
-                    root_w: plan.root.width,
-                    root_h: plan.root.height,
-                    root_n,
-                    img_w,
-                    img_h,
-                    base_lo,
-                    base_hi,
-                    dst_off: 0,
-                    _p0: 0,
-                    _p1: 0,
-                };
-                let noise_ub = bytemuck::bytes_of(&nu);
-
-                // Noise generation into arena offset 0
-                keep.push(ctx.encode_compute_shader_multi(
-                    &mut encoder,
-                    "film_grain_noise_roi",
-                    shaders::GRAIN_NOISE_ROI,
-                    &[&scratch.arena],
-                    noise_ub,
-                    workgroups(root_n as usize),
-                ));
-
-                // Separable blur H & V into arena (from 0 to noise_off=latent_base using blur_tmp_off)
-                let noise_off = scratch.latent_workspace_offset(0)?;
-                keep.extend(blur_plane_in_arena(
-                    ctx,
-                    &mut encoder,
-                    plan.root.width as usize,
-                    plan.root.height as usize,
-                    &scratch.arena,
-                    0,
-                    noise_off,
-                    blur_tmp_off,
-                    &kbuf_grain,
-                    grain_radius,
-                ));
-
-                // Copy scalar core into full grain spill
-                let root_off_x = (plan.core.x - plan.root.x) as u32;
-                let root_off_y = (plan.core.y - plan.root.y) as u32;
-
-                let copy_u = CopyScalarCoreRoiU {
-                    core_x: plan.core.x as u32,
-                    core_y: plan.core.y as u32,
-                    core_w: plan.core.width,
-                    core_h: plan.core.height,
-                    core_n: plan.core.width * plan.core.height,
-                    root_w: plan.root.width,
-                    root_off_x,
-                    root_off_y,
-                    img_w,
-                    src_off: noise_off,
-                    _p0: 0,
-                    _p1: 0,
-                };
-                keep.push(ctx.encode_compute_shader_multi(
-                    &mut encoder,
-                    "film_copy_scalar_core_roi",
-                    shaders::COPY_SCALAR_CORE_ROI,
-                    &[&scratch.grain_spill, &scratch.arena],
-                    bytemuck::bytes_of(&copy_u),
-                    workgroups((plan.core.width * plan.core.height) as usize),
-                ));
-                ctx.queue.submit(Some(encoder.finish()));
-                #[cfg(not(target_arch = "wasm32"))]
-                ctx.device.poll(wgpu::Maintain::Poll);
-                drop(keep);
-                dst_off += plan.core.width * plan.core.height;
-            }
-
-            // Enqueue variance partial reduction for this emulsion's slot
-            let total_core_n: usize = plans
-                .iter()
-                .map(|p| (p.core.width * p.core.height) as usize)
-                .sum();
-            let mut encoder = ctx.create_command_encoder("film_roi_grain_var");
-            let (_, keep_var) = enqueue_grain_variance_from_spill(
-                ctx,
-                &mut encoder,
-                &scratch.grain_spill,
-                &scratch.var_partial,
-                total_core_n,
-                slot,
-                num_emul,
-            )?;
-            ctx.queue.submit(Some(encoder.finish()));
-            #[cfg(not(target_arch = "wasm32"))]
-            ctx.device.poll(wgpu::Maintain::Poll);
-            drop(keep_var);
-        }
-
-        // Finish variance norms reduction on CPU after tiny download
-        let layout = grain_var_reduction_layout(img_n)?;
-        let norms = finish_grain_variance_from_partials(
-            ctx,
-            &scratch.var_partial,
-            img_n,
-            layout.out_n as usize,
-            &active_grain_emuls,
-        )
-        .await?;
-
-        for &(e, norm) in &norms {
-            grain_norms[e] = norm;
-        }
-    }
-
-    // 4. Main per-core execution sequence (batched into a single command encoder submission)
+    // 3. Main per-core execution sequence (batched into a single command encoder submission).
+    // The legacy grain variance-norm prepass is gone: the new particle-overwrite
+    // grain has no variance diagonal to normalize (the realization is the
+    // production image, nof base+residual), so the pre-pass `grain_norms`,
+    // `active_grain_emuls`, `grain_spill`, and `var_partial` are not used.
 
     for plan in &plans {
         let mut encoder = ctx.create_command_encoder("film_roi_main_sequence_tile");
@@ -2085,7 +1821,123 @@ async fn process_gpu_roi(
             ));
         }
 
-        // Stage 5: DIR_APPLY_ROI
+        // Stage 5: PARTICLE_FIELD_ROI per layer (overwrite D at dye_base+e*root_n with
+        // realized fraction). Reads D density, draws Poisson+Binomial with
+        // prob=(D/d_max)^γ, writes fraction in place. Uses reflected global
+        // coordinates so the root-halo pixels mirror the realization of the
+        // corresponding in-image pixel (matches the full-frame pass).
+        if let Some((ref cloud_kbuf, cloud_radius)) = consts.cloud_kernel {
+            for e in 0..num_emul {
+                let sites = consts.sites_per_cell[e];
+                let dmax = consts.dmax[e];
+                if sites <= 0.0 || dmax <= 0.0 {
+                    continue;
+                }
+                let (ref crystal_kbuf, crystal_radius) = match consts.crystal_kernels[e].as_ref() {
+                    Some(entry) => entry,
+                    None => continue,
+                };
+                let crystal_radius = *crystal_radius;
+                let dye_off = emul_off(dye_base, e)?;
+
+                let pfu = ParticleFieldRoiU {
+                    root_x: plan.root.x,
+                    root_y: plan.root.y,
+                    root_w: plan.root.width,
+                    root_h: plan.root.height,
+                    root_n,
+                    img_w,
+                    img_h,
+                    layer_idx: e as u32,
+                    d_max: dmax,
+                    gamma: consts.gamma[e],
+                    sites_per_cell: sites,
+                    d_off: dye_off,
+                    seed_lo: consts.philox_key_lo[e],
+                    seed_hi: consts.philox_key_hi[e],
+                    sqrt_sites: sites.sqrt(),
+                    knuth_threshold: (-(sites as f64)).exp() as f32,
+                };
+                keep.push(ctx.encode_compute_shader_multi(
+                    &mut encoder,
+                    "film_particle_field_roi",
+                    shaders::PARTICLE_FIELD_ROI,
+                    &[&scratch.arena],
+                    bytemuck::bytes_of(&pfu),
+                    workgroups(root_n as usize),
+                ));
+
+                // Scratch slots for cloud/crystal/micro blurs (reuse latent
+                // workspace planes, which are free after LUT_REDUCE_ROI):
+                //   cloud_off  = latent_workspace[0]   (work_base + 0·root_n)
+                //   crystal_off = blur_out
+                //   micro_off   = latent_workspace[1]   (work_base + 1·root_n)
+                //   H-intermediate = blur_tmp
+                let cloud_off = work_base;
+                let micro_off = emul_off(work_base, 1)?;
+
+                // cloud = blur(particles, σ_cloud) -> cloud_off
+                keep.extend(blur_plane_in_arena(
+                    ctx,
+                    &mut encoder,
+                    plan.root.width as usize,
+                    plan.root.height as usize,
+                    &scratch.arena,
+                    dye_off,
+                    cloud_off,
+                    blur_tmp_off,
+                    cloud_kbuf.as_ref(),
+                    cloud_radius,
+                ));
+                // crystal = blur(particles, σ_crystal) -> blur_out_off
+                keep.extend(blur_plane_in_arena(
+                    ctx,
+                    &mut encoder,
+                    plan.root.width as usize,
+                    plan.root.height as usize,
+                    &scratch.arena,
+                    dye_off,
+                    blur_out_off,
+                    blur_tmp_off,
+                    crystal_kbuf.as_ref(),
+                    crystal_radius,
+                ));
+                // micro_cloud = blur(crystal, σ_cloud) -> micro_off
+                keep.extend(blur_plane_in_arena(
+                    ctx,
+                    &mut encoder,
+                    plan.root.width as usize,
+                    plan.root.height as usize,
+                    &scratch.arena,
+                    blur_out_off,
+                    micro_off,
+                    blur_tmp_off,
+                    cloud_kbuf.as_ref(),
+                    cloud_radius,
+                ));
+
+                let mmu = MicroMixU {
+                    n: root_n,
+                    off: dye_off,
+                    cloud_off,
+                    crystal_off: blur_out_off,
+                    micro_off,
+                    micro_weight: consts.micro_weights[e],
+                    _p0: 0,
+                    _p1: 0,
+                };
+                keep.push(ctx.encode_compute_shader_multi(
+                    &mut encoder,
+                    "film_micro_mix_roi",
+                    shaders::MICRO_MIX_ROI,
+                    &[&scratch.arena],
+                    bytemuck::bytes_of(&mmu),
+                    workgroups(root_n as usize),
+                ));
+            }
+        }
+
+        // Stage 6: DIR_APPLY_ROI on the realized fraction planes.
         if let Some((ref kbuf, radius)) = dir_kernel_buf {
             for src_e in 0..num_emul {
                 let src_off = emul_off(dye_base, src_e)?;
@@ -2121,7 +1973,7 @@ async fn process_gpu_roi(
             ));
         }
 
-        // Stage 6: ADJACENCY_ROI
+        // Stage 7: ADJACENCY_ROI on the realized fraction planes.
         if let Some((ref kbuf, radius)) = adj_kernel_buf {
             for e in 0..num_emul {
                 let dye_off = emul_off(dye_base, e)?;
@@ -2157,87 +2009,9 @@ async fn process_gpu_roi(
             }
         }
 
-        // Stage 7: two-sublayer grain (image dye only). Raw sublayer noises are
-        // generated at blur_tmp / blur_out, blurred inline inside the apply pass
-        // (separable, root-edge reflection — same order as standalone blurs), and
-        // the two sublayer results averaged. Grain is no longer fused into scan.
-        if !active_grain_emuls.is_empty() {
-            for &e in &active_grain_emuls {
-                let (ref k0, r0) = consts.grain_kernels[e][0];
-                let (ref k1, r1) = consts.grain_kernels[e][1];
-                let (b0_lo, b0_hi) = consts.grain_seed_base[e][0];
-                let (b1_lo, b1_hi) = consts.grain_seed_base[e][1];
-                let dye_off = emul_off(dye_base, e)?;
-
-                for sl in 0..2 {
-                    let (base_lo, base_hi) = if sl == 0 {
-                        (b0_lo, b0_hi)
-                    } else {
-                        (b1_lo, b1_hi)
-                    };
-                    let nu = NoiseRoiU {
-                        root_x: plan.root.x,
-                        root_y: plan.root.y,
-                        root_w: plan.root.width,
-                        root_h: plan.root.height,
-                        root_n,
-                        img_w,
-                        img_h,
-                        base_lo,
-                        base_hi,
-                        dst_off: if sl == 0 { blur_tmp_off } else { blur_out_off },
-                        _p0: 0,
-                        _p1: 0,
-                    };
-
-                    keep.push(ctx.encode_compute_shader_multi(
-                        &mut encoder,
-                        "film_grain_noise_roi",
-                        shaders::GRAIN_NOISE_ROI,
-                        &[&scratch.arena],
-                        bytemuck::bytes_of(&nu),
-                        workgroups(root_n as usize),
-                    ));
-                }
-
-                let gu = GrainApplySubRoiU {
-                    n: root_n,
-                    dye_off,
-                    noise0_off: blur_tmp_off,
-                    noise1_off: blur_out_off,
-                    kappa0: consts.kappa[e][0],
-                    kappa1: consts.kappa[e][1],
-                    dmax: consts.dmax[e],
-                    norm: grain_norms[e],
-                    root_w: plan.root.width,
-                    root_h: plan.root.height,
-                    radius0: r0,
-                    radius1: r1,
-                    _p0: 0,
-                };
-
-                keep.push(ctx.encode_compute_shader_multi(
-                    &mut encoder,
-                    "film_grain_apply_sub_roi",
-                    shaders::GRAIN_APPLY_SUB_RAW_ROI,
-                    &[&scratch.arena, k0.as_ref(), k1.as_ref()],
-                    bytemuck::bytes_of(&gu),
-                    workgroups(root_n as usize),
-                ));
-            }
-        }
-
-        let mut emul = [[0.0f32; 4]; 16];
-        for e in 0..consts.num_emul as usize {
-            if e < 16 {
-                // Grain already applied in Stage 7; disable fused scan grain.
-                emul[e] = [0.0, consts.dmax[e], grain_norms[e], 0.0];
-            }
-        }
-
-        // Stage 8: SCAN_ROI core into scratch.output (Fused with Grain Apply & Invert)
+        // Stage 8: SCAN_ROI core into scratch.output (densitometric + invert).
         {
-            let u = GrainScanRoiU {
+            let u = ScanRoiU {
                 core_x: plan.core.x as u32,
                 core_y: plan.core.y as u32,
                 core_w: plan.core.width,
@@ -2252,15 +2026,14 @@ async fn process_gpu_roi(
                 mask_base,
                 num_emul: consts.num_emul,
                 scale: consts.scan_scale,
-                noise_base: work_base,
                 flags: if consts.do_invert { 1 } else { 0 },
-                emul,
+                _p0: 0,
             };
 
             keep.push(ctx.encode_compute_shader_multi(
                 &mut encoder,
-                "film_grain_scan_roi",
-                shaders::GRAIN_SCAN_ROI,
+                "film_scan_roi",
+                shaders::SCAN_ROI,
                 &[&scratch.output, &scratch.arena, &consts.scan],
                 bytemuck::bytes_of(&u),
                 workgroups(core_n as usize),
@@ -2297,9 +2070,12 @@ mod roi_uniform_struct_tests {
         assert_eq!(std::mem::size_of::<ReduceRoiU>(), 32);
         assert_eq!(std::mem::size_of::<DirApplyRoiU>(), 16);
         assert_eq!(std::mem::size_of::<AdjacencyRoiU>(), 16);
-        assert_eq!(std::mem::size_of::<NoiseRoiU>(), 48);
-        assert_eq!(std::mem::size_of::<CopyScalarCoreRoiU>(), 48);
-        assert_eq!(std::mem::size_of::<GrainScanRoiU>(), 320);
+
+        // New particle-grain / micro-mix / toe / scan uniforms.
+        assert_eq!(std::mem::size_of::<ParticleFieldU>(), 48);
+        assert_eq!(std::mem::size_of::<ParticleFieldRoiU>(), 64);
+        assert_eq!(std::mem::size_of::<MicroMixU>(), 32);
+        assert_eq!(std::mem::size_of::<ScanRoiU>(), 64);
     }
 }
 
