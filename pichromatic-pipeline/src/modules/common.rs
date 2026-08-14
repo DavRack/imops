@@ -63,10 +63,15 @@ pub fn test_pipeline_module_cpu_vs_gpu(module: &dyn PipelineModule, seed: u64) {
     let gpu_out = gpu_pipeline_img.to_cpu(Some(&ctx));
 
     // Compare every output subpixel using the shared threshold.
-    assert_images_equal_abs_tol(&cpu_out, &gpu_out);
+    assert_images_equal_abs_tol(&cpu_out, &gpu_out, CPU_GPU_ABS_TOLERANCE, 0);
 }
 
-pub fn assert_images_equal_abs_tol(cpu_image: &Image, gpu_image: &Image) {
+pub fn assert_images_equal_abs_tol(
+    cpu_image: &Image,
+    gpu_image: &Image,
+    tolerance: f32,
+    max_out_of_spec: usize,
+) {
     assert_eq!(
         cpu_image.rgb_data.len(),
         gpu_image.rgb_data.len(),
@@ -77,37 +82,58 @@ pub fn assert_images_equal_abs_tol(cpu_image: &Image, gpu_image: &Image) {
 
     let mut max_diff = 0.0f32;
     let mut max_location = (0usize, 0usize);
+    let mut worst_failure_diff = 0.0f32;
+    let mut worst_failure_msg = String::new();
+    let mut out_of_spec_pixels = 0usize;
+
     for (idx, (c_pixel, g_pixel)) in cpu_image
         .rgb_data
         .iter()
         .zip(gpu_image.rgb_data.iter())
         .enumerate()
     {
+        let mut pixel_out_of_spec = false;
         for ch in 0..3 {
-            let cpu_bits = c_pixel[ch].to_bits();
-            let gpu_bits = g_pixel[ch].to_bits();
             let diff = (c_pixel[ch] - g_pixel[ch]).abs();
             if diff > max_diff {
                 max_diff = diff;
                 max_location = (idx, ch);
             }
-            let tol = CPU_GPU_ABS_TOLERANCE * c_pixel[ch].abs().max(g_pixel[ch].abs()).max(1.0);
-            assert!(
-                diff.is_finite() && diff <= tol,
-                "RGB mismatch at index {} (x={}, y={}), channel {}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x}), diff={}, tolerance={}",
-                idx,
-                idx % cpu_image.metadata.width,
-                idx / cpu_image.metadata.width,
-                ch,
-                c_pixel[ch],
-                cpu_bits,
-                g_pixel[ch],
-                gpu_bits,
-                diff,
-                tol
-            );
+            let tol = tolerance * c_pixel[ch].abs().max(g_pixel[ch].abs()).max(1.0);
+            if !diff.is_finite() || diff > tol {
+                pixel_out_of_spec = true;
+                if worst_failure_msg.is_empty() || diff > worst_failure_diff || !diff.is_finite() {
+                    worst_failure_diff = diff;
+                    let cpu_bits = c_pixel[ch].to_bits();
+                    let gpu_bits = g_pixel[ch].to_bits();
+                    worst_failure_msg = format!(
+                        "RGB mismatch at index {} (x={}, y={}), channel {}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x}), diff={}, tolerance={}",
+                        idx,
+                        idx % cpu_image.metadata.width,
+                        idx / cpu_image.metadata.width,
+                        ch,
+                        c_pixel[ch],
+                        cpu_bits,
+                        g_pixel[ch],
+                        gpu_bits,
+                        diff,
+                        tol
+                    );
+                }
+            }
+        }
+        if pixel_out_of_spec {
+            out_of_spec_pixels += 1;
         }
     }
+
+    assert!(
+        out_of_spec_pixels <= max_out_of_spec,
+        "Found {} out-of-spec pixels (allowed max {}). Worst failure:\n{}",
+        out_of_spec_pixels,
+        max_out_of_spec,
+        worst_failure_msg
+    );
 
     assert_eq!(
         cpu_image.raw_data.len(),

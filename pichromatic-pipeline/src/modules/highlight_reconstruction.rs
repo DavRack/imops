@@ -47,7 +47,9 @@ impl PipelineModule for Module<HighlightReconstruction> {
 mod tests {
     use super::*;
     use crate::backend::{Backend, PipelineImage};
-    use crate::modules::common::{assert_images_equal_abs_tol, generate_test_image_512x512};
+    use crate::modules::common::{
+        assert_images_equal_abs_tol, generate_test_image_512x512, CPU_GPU_ABS_TOLERANCE,
+    };
     use pichromatic::gpu::GpuContext;
 
     #[test]
@@ -70,6 +72,6 @@ mod tests {
         highlight_reconstruction_module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_img);
         let gpu_out = gpu_img.to_cpu(Some(&ctx));
 
-        assert_images_equal_abs_tol(&cpu_out, &gpu_out);
+        assert_images_equal_abs_tol(&cpu_out, &gpu_out, CPU_GPU_ABS_TOLERANCE, 0);
     }
 }
