@@ -1,4 +1,4 @@
-use color::ColorSpaceTag;
+use crate::color::ColorSpaceTag;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};

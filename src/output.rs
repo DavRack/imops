@@ -1,6 +1,6 @@
 //! Image export helpers (OpenEXR archival + JPEG preview + PNG lossless).
 
-use color::ColorSpaceTag;
+use pichromatic::color::ColorSpaceTag;
 use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::Image;
 use std::borrow::Cow;
@@ -80,14 +80,13 @@ fn color_space_name(cs: Option<ColorSpaceTag>) -> &'static str {
         Some(ColorSpaceTag::Srgb) => "sRGB",
         Some(ColorSpaceTag::LinearSrgb) => "Linear sRGB",
         Some(ColorSpaceTag::DisplayP3) => "Display P3",
+        Some(ColorSpaceTag::LinearP3) => "Linear P3",
         Some(ColorSpaceTag::AcesCg) => "ACEScg",
-        Some(ColorSpaceTag::Aces2065_1) => "ACES2065-1",
         Some(ColorSpaceTag::Rec2020) => "Rec.2020",
+        Some(ColorSpaceTag::LinearRec2020) => "Linear Rec.2020",
         Some(ColorSpaceTag::XyzD65) => "XYZ D65",
-        Some(ColorSpaceTag::XyzD50) => "XYZ D50",
         Some(ColorSpaceTag::Oklab) => "Oklab",
         Some(ColorSpaceTag::Oklch) => "Oklch",
-        Some(_) => "Unknown",
         None => "Unspecified",
     }
 }
@@ -97,7 +96,7 @@ fn chromaticities_for(cs: Option<ColorSpaceTag>) -> exr::meta::attribute::Chroma
     use exr::prelude::Vec2;
     match cs {
         // ACES AP1 (ACEScg) + ACES white (~D60)
-        Some(ColorSpaceTag::AcesCg) | Some(ColorSpaceTag::Aces2065_1) => {
+        Some(ColorSpaceTag::AcesCg) => {
             exr::meta::attribute::Chromaticities {
                 red: Vec2(0.713, 0.293),
                 green: Vec2(0.165, 0.830),
@@ -105,15 +104,15 @@ fn chromaticities_for(cs: Option<ColorSpaceTag>) -> exr::meta::attribute::Chroma
                 white: Vec2(0.32168, 0.33767),
             }
         }
-        // Display P3
-        Some(ColorSpaceTag::DisplayP3) => exr::meta::attribute::Chromaticities {
+        // Display P3 / Linear P3
+        Some(ColorSpaceTag::DisplayP3) | Some(ColorSpaceTag::LinearP3) => exr::meta::attribute::Chromaticities {
             red: Vec2(0.680, 0.320),
             green: Vec2(0.265, 0.690),
             blue: Vec2(0.150, 0.060),
             white: Vec2(0.3127, 0.3290),
         },
-        // Rec.2020
-        Some(ColorSpaceTag::Rec2020) => exr::meta::attribute::Chromaticities {
+        // Rec.2020 / Linear Rec.2020
+        Some(ColorSpaceTag::Rec2020) | Some(ColorSpaceTag::LinearRec2020) => exr::meta::attribute::Chromaticities {
             red: Vec2(0.708, 0.292),
             green: Vec2(0.170, 0.797),
             blue: Vec2(0.131, 0.046),
@@ -177,18 +176,18 @@ pub fn save_exr(
         AttributeValue::Text(Text::from(color_space_name(meta.color_space))),
     );
     // Explicit transfer / encoding hint for viewers (tev, Nuke, etc.).
-    // `ColorSpaceTag::Srgb` from the `color` crate is *encoded* sRGB (OETF
-    // applied by CST). `LinearSrgb` is scene/display-linear — do not claim OETF.
+    // `ColorSpaceTag::Srgb` is *encoded* sRGB (OETF applied by CST).
+    // `LinearSrgb` is scene/display-linear.
     let transfer = match meta.color_space {
         Some(ColorSpaceTag::Srgb) | Some(ColorSpaceTag::DisplayP3) => {
             "sRGB-OETF / display-referred"
         }
+        Some(ColorSpaceTag::Rec2020) => "BT.2020-OETF / display-referred",
         Some(ColorSpaceTag::AcesCg)
-        | Some(ColorSpaceTag::Aces2065_1)
         | Some(ColorSpaceTag::LinearSrgb)
-        | Some(ColorSpaceTag::Rec2020)
-        | Some(ColorSpaceTag::XyzD65)
-        | Some(ColorSpaceTag::XyzD50) => "linear",
+        | Some(ColorSpaceTag::LinearP3)
+        | Some(ColorSpaceTag::LinearRec2020)
+        | Some(ColorSpaceTag::XyzD65) => "linear",
         _ => "unspecified",
     };
     layer_attributes.other.insert(

@@ -7,7 +7,7 @@
 //! **These patches feed both the synthetic scene and the ΔE reference**.
 //! PositiveLinear is a mid/Dmin densitometric invert (no print-paper curve).
 //! There is no independent densitometric characterization of a commercial stock.
-use color::ColorSpaceTag;
+use crate::color::ColorSpaceTag;
 use crate::image::ImageMetadata;
 use crate::pixel::Image;
 

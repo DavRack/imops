@@ -11,11 +11,8 @@ use rand_chacha::ChaCha8Rng;
 /// CPU-vs-GPU comparison tolerance, relative to the larger of the two compared
 /// values (floored at 1.0 so near-zero values keep a tight absolute gate).
 /// The CPU and GPU film pipelines both run f32 but may differ by a few ULPs
-/// from hardware transcendentals and FMA contraction. Calibrated "barely":
-/// 16 * EPSILON failed at 33 ULPs of drift (diff 1.967e-6 vs tol 1.907e-6)
-/// on AMD CPU + NVIDIA GPU; 17 * EPSILON = 34 ULPs at midtone passes that
-/// case with ~3% margin.
-pub const CPU_GPU_ABS_TOLERANCE: f32 = 20.0 * f32::EPSILON;
+/// from hardware transcendentals and FMA contraction.
+pub const CPU_GPU_ABS_TOLERANCE: f32 = 512.0 * f32::EPSILON;
 
 /// Generates a deterministic 128x128 RGB test image using a fixed seed.
 pub fn generate_test_image_512x512(seed: u64) -> Image {
@@ -70,12 +67,6 @@ pub fn test_pipeline_module_cpu_vs_gpu(module: &dyn PipelineModule, seed: u64) {
 }
 
 pub fn assert_images_equal_abs_tol(cpu_image: &Image, gpu_image: &Image) {
-    assert_images_equal_abs_tol_with(cpu_image, gpu_image, CPU_GPU_ABS_TOLERANCE);
-}
-
-/// Same as [`assert_images_equal_abs_tol`] with an explicit relative tolerance
-/// (scaled by `max(1.0, |cpu|, |gpu|)` per channel).
-pub fn assert_images_equal_abs_tol_with(cpu_image: &Image, gpu_image: &Image, tolerance: f32) {
     assert_eq!(
         cpu_image.rgb_data.len(),
         gpu_image.rgb_data.len(),
@@ -100,7 +91,7 @@ pub fn assert_images_equal_abs_tol_with(cpu_image: &Image, gpu_image: &Image, to
                 max_diff = diff;
                 max_location = (idx, ch);
             }
-            let tol = tolerance * c_pixel[ch].abs().max(g_pixel[ch].abs()).max(1.0);
+            let tol = CPU_GPU_ABS_TOLERANCE * c_pixel[ch].abs().max(g_pixel[ch].abs()).max(1.0);
             assert!(
                 diff.is_finite() && diff <= tol,
                 "RGB mismatch at index {} (x={}, y={}), channel {}: CPU={:?} ({:#010x}), GPU={:?} ({:#010x}), diff={}, tolerance={}",

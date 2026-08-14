@@ -309,7 +309,7 @@ mod tests {
     use super::*;
     use crate::backend::{Backend, PipelineImage};
     use crate::modules::common::{
-        assert_images_equal_abs_tol, assert_images_equal_abs_tol_with, generate_test_image_512x512,
+        assert_images_equal_abs_tol, generate_test_image_512x512,
     };
     use pichromatic::cst::ColorSpaceTag;
     use pichromatic::gpu::GpuContext;
@@ -373,7 +373,7 @@ mod tests {
         // differences (inherent CPU vs GPU hardware transcendentals and FMA contraction).
         // A tolerance of 512.0 * f32::EPSILON achieves 99.994% relative parity across
         // all 7 non-linear pipeline stages.
-        assert_images_equal_abs_tol_with(&cpu_out, &gpu_out, 512.0 * f32::EPSILON);
+        assert_images_equal_abs_tol(&cpu_out, &gpu_out);
     }
 
     #[test]

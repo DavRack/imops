@@ -1,3 +1,4 @@
+pub mod color;
 pub mod cfa;
 pub mod cfa_coeffs;
 pub mod chroma_denoise;
@@ -15,4 +16,7 @@ pub mod bm3d;
 pub mod vignette;
 pub mod rotation;
 pub mod gpu;
+
+pub use color::ColorSpaceTag;
+
 

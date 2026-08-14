@@ -80,13 +80,12 @@ pub fn apply_vignette_radial_correction(
                     let r = d / d_max;
 
                     let r2 = r * r;
-                    let r4 = r2 * r2;
-                    let r6 = r4 * r2;
-                    let r8 = r4 * r4;
-                    let r10 = r8 * r2;
-
-                    let correction = k0 * r2 + k1 * r4 + k2 * r6 + k3 * r8 + k4 * r10;
-                    let gain = 1.0 + strength * correction;
+                    let poly = r2.mul_add(k4, k3);
+                    let poly = r2.mul_add(poly, k2);
+                    let poly = r2.mul_add(poly, k1);
+                    let poly = r2.mul_add(poly, k0);
+                    let correction = r2 * poly;
+                    let gain = strength.mul_add(correction, 1.0);
                     let gain_clamped = gain.max(0.0);
 
                     pixel[0] *= gain_clamped;
@@ -215,13 +214,8 @@ pub fn apply_vignette_radial_correction_gpu(
                         let r = d / params.d_max;
 
                         let r2 = r * r;
-                        let r4 = r2 * r2;
-                        let r6 = r4 * r2;
-                        let r8 = r4 * r4;
-                        let r10 = r8 * r2;
-
-                        let correction = params.k0 * r2 + params.k1 * r4 + params.k2 * r6 + params.k3 * r8 + params.k4 * r10;
-                        let gain = max(0.0, 1.0 + params.strength * correction);
+                        let poly = r2 * (params.k0 + r2 * (params.k1 + r2 * (params.k2 + r2 * (params.k3 + r2 * params.k4))));
+                        let gain = max(0.0, 1.0 + params.strength * poly);
 
                         let p = pixels[index];
                         pixels[index] = vec4<f32>(p.rgb * gain, p.a);

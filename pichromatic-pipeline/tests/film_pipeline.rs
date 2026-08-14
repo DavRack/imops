@@ -2,8 +2,8 @@ use pichromatic::gpu::GpuContext;
 use pichromatic::pixel::Image;
 use pichromatic_pipeline::backend::Backend;
 use pichromatic_pipeline::config::parse_config;
-use pichromatic_pipeline::drift::ordered_ulp;
 use pichromatic_pipeline::extern_pipeline::get_raw_img_internal;
+use pichromatic_pipeline::modules::common::assert_images_equal_abs_tol;
 use pichromatic_pipeline::pipeline::run_pixel_pipeline_with_backend;
 
 const FILM_PIPELINE_TOML: &str = r#"
@@ -63,16 +63,6 @@ angle = "auto"
 const H_PIN: i64 = 10030164;
 const H_TOL: i64 = 1;
 
-/// Per-channel CPU-vs-GPU tolerance, relative to the larger of the two
-/// compared values (floored at 1.0 so near-zero values keep a tight absolute
-/// gate): `tol = K * EPSILON * max(|cpu|, |gpu|, 1.0)` = K ULPs at the
-/// value's own magnitude (same rule as `CPU_GPU_ABS_TOLERANCE`).
-/// K = 512 (6.10e-5): covers the shadow-jitter floor on both platforms
-/// (measured 2.264e-5 on Mac/Metal, 3.628e-5 on AMD CPU + NVIDIA GPU)
-/// with comfortable margin, without chasing bit-exact GPU math across
-/// backends (CPU reference itself differs per platform, see image_drift).
-const GPU_VS_CPU_TOLERANCE: f32 = 512.0 * f32::EPSILON;
-
 fn load_source() -> Image {
     let dng_path = concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/20260713_104012-16EV.DNG");
     let dng_bytes = std::fs::read(dng_path).expect("read 20260713_104012-16EV.DNG");
@@ -131,9 +121,8 @@ fn image_drift() {
     );
 }
 
-/// CPU vs GPU parity: float jitter between the backends (~1e-5 abs) is
-/// tolerated; any channel that differs by more than `GPU_VS_CPU_TOLERANCE`
-/// (a single rogue pixel included) fails.
+/// CPU vs GPU parity: float jitter between the backends is tolerated;
+/// any channel that differs by more than `CPU_GPU_ABS_TOLERANCE` fails.
 #[test]
 fn film_pipeline_cpu_and_wgpu_agree_within_tolerance() {
     let source = load_source();
@@ -151,30 +140,5 @@ fn film_pipeline_cpu_and_wgpu_agree_within_tolerance() {
         &Backend::Wgpu(gpu_context),
     );
 
-    let n = cpu_image.rgb_data.len().min(wgpu_image.rgb_data.len());
-    let mut max_abs = 0.0f32;
-    let mut max_rel = 0.0f32;
-    let mut max_ulp = 0u32;
-    let mut violations = 0usize;
-    for (cp, gp) in cpu_image.rgb_data[..n].iter().zip(&wgpu_image.rgb_data[..n]) {
-        for (ca, ga) in cp.iter().zip(gp) {
-            let d = (ca - ga).abs();
-            let peak = ca.abs().max(ga.abs());
-            max_abs = max_abs.max(d);
-            max_rel = max_rel.max(if peak > 0.0 { d / peak } else { d });
-            max_ulp = max_ulp.max(ordered_ulp(*ca).abs_diff(ordered_ulp(*ga)));
-            let tol = GPU_VS_CPU_TOLERANCE * peak.max(1.0);
-            if d > tol {
-                violations += 1;
-            }
-        }
-    }
-    println!(
-        "CPU vs WGPU max diff: abs {max_abs:.3e}, rel {max_rel:.3e}, {max_ulp} ULPs (tolerance {GPU_VS_CPU_TOLERANCE:.1e})"
-    );
-
-    assert_eq!(
-        violations, 0,
-        "CPU and WGPU images differ beyond tolerance: {violations} channels exceed {GPU_VS_CPU_TOLERANCE:.1e} (max abs diff {max_abs:.3e}, max rel {max_rel:.3e}, max {max_ulp} ULPs)"
-    );
+    assert_images_equal_abs_tol(&cpu_image, &wgpu_image);
 }

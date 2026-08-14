@@ -38,7 +38,7 @@ use crate::film::scan::densitometry::dmin_reference_acescg;
 use crate::film::stock::{EmulsionLayer, FilmStock, LayerKind};
 use crate::film::{FilmError, FilmOutput, FilmParams};
 use crate::gpu::{ComputePassDesc, GpuContext, GpuImageBuffer};
-use color::ColorSpaceTag;
+use crate::color::ColorSpaceTag;
 
 /// Max FIR radius for tiled blur shaders (`tile[512]` = 256 + 2×128).
 /// Larger radii fall back to untiled [`shaders::BLUR_H`] / [`shaders::BLUR_V`].

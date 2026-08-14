@@ -1,0 +1,17 @@
+--- src/film/development/mod.rs
++++ src/film/development/mod.rs
+@@ -58,6 +58,10 @@
+         apply_particle_grain_overwrite(
+             &mut dyes,
+             &d_max,
+             &kappas,
+             &gammas,
+             pixel_pitch_um,
+             seed,
+             &crystal_sizes,
++            sigma_dir_px,
++            &stock.dir_inhibition_matrix,
++            sigma_px,
++            stock.adjacency_beta,
+         );
+     } else {

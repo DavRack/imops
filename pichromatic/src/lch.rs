@@ -1,4 +1,4 @@
-use color::ColorSpaceTag::{self, LinearSrgb, Oklch};
+use crate::color::ColorSpaceTag::{self, LinearSrgb, Oklch};
 use crate::gpu::{GpuContext, GpuImageBuffer};
 use crate::pixel::{ImageBuffer, SubPixel};
 use rayon::prelude::*;
@@ -119,9 +119,9 @@ pub fn lch_gpu(
         // Linear sRGB → Oklab (color crate OKLAB_SRGB_TO_LMS + cbrt + OKLAB_LMS_TO_LAB)
         fn linear_srgb_to_oklab(rgb: vec3<f32>) -> vec3<f32> {
             let lms = mat3_mul_rows(
-                vec3<f32>(0.41222146, 0.53633255, 0.051445995),
-                vec3<f32>(0.2119035, 0.6806995, 0.10739696),
-                vec3<f32>(0.08830246, 0.28171885, 0.6299787),
+                vec3<f32>(0.41222147, 0.53633254, 0.051445993),
+                vec3<f32>(0.2119035, 0.68069955, 0.10739696),
+                vec3<f32>(0.08830246, 0.28171884, 0.6299787),
                 rgb
             );
             let lms_c = vec3<f32>(cbrt_signed(lms.x), cbrt_signed(lms.y), cbrt_signed(lms.z));
@@ -137,14 +137,14 @@ pub fn lch_gpu(
         fn oklab_to_linear_srgb(lab: vec3<f32>) -> vec3<f32> {
             let lms = mat3_mul_rows(
                 vec3<f32>(1.0, 0.39633778, 0.21580376),
-                vec3<f32>(1.0, -0.105561346, -0.06385417),
+                vec3<f32>(1.0, -0.10556135, -0.06385417),
                 vec3<f32>(1.0, -0.08948418, -1.2914855),
                 lab
             );
             let lms3 = lms * lms * lms;
             return mat3_mul_rows(
-                vec3<f32>(4.0767417, -3.3077116, 0.23096994),
-                vec3<f32>(-1.268438, 2.6097574, -0.34131938),
+                vec3<f32>(4.0767417, -3.3077116, 0.23096993),
+                vec3<f32>(-1.268438, 2.6097574, -0.3413194),
                 vec3<f32>(-0.0041960863, -0.7034186, 1.7076147),
                 lms3
             );

@@ -36,7 +36,7 @@ use crate::film::development::develop;
 use crate::film::exposure::{expose_with_pitch_and_shutter, expose_with_pitch_shutter_and_scale};
 use crate::film::scan::{scan, ScanMode};
 use crate::pixel::Image;
-use color::ColorSpaceTag;
+use crate::color::ColorSpaceTag;
 
 /// Module version string for linkage / checkpoint tracking.
 pub fn film_version() -> &'static str {
@@ -258,7 +258,7 @@ mod tests {
     use super::*;
     use crate::image::ImageMetadata;
     use crate::pixel::{PixelOps, MIDDLE_GRAY};
-    use color::ColorSpaceTag;
+    use crate::color::ColorSpaceTag;
 
     fn to_absolute_rgb(rgb: [f32; 3], box_iso: f32) -> [f32; 3] {
         let g = relative_to_absolute_y(1.0, box_iso);

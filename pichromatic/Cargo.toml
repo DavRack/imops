@@ -14,7 +14,6 @@ path = "src/lib.rs"
 
 
 [dependencies]
-color = { version = "0.3.2", features = ["serde"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_with = "*"
 rayon = "1.10.0"

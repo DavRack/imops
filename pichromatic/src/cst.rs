@@ -1,11 +1,13 @@
-pub use color::ColorSpaceTag;
+pub use crate::color::{srgb_eotf_f32, srgb_oetf_f32, ColorSpaceTag};
 use crate::gpu::{GpuContext, GpuImageBuffer};
 use crate::pixel::{ImageBuffer, Pixel};
 use rayon::prelude::*;
 
-
-pub fn cst(image_buffer: &mut ImageBuffer, source_cs: ColorSpaceTag, target_cs: ColorSpaceTag){
-    image_buffer.par_iter_mut().for_each(|pixel|{
+pub fn cst(image_buffer: &mut ImageBuffer, source_cs: ColorSpaceTag, target_cs: ColorSpaceTag) {
+    if source_cs == target_cs {
+        return;
+    }
+    image_buffer.par_iter_mut().for_each(|pixel| {
         *pixel = source_cs.convert(target_cs, *pixel);
     });
 }
@@ -13,8 +15,6 @@ pub fn cst(image_buffer: &mut ImageBuffer, source_cs: ColorSpaceTag, target_cs: 
 pub fn camera_cst(image_buffer: &mut ImageBuffer, target_cs: ColorSpaceTag, calibration_matrix_d65: &[f32]){
     let components = calibration_matrix_d65.len() / 3;
     let mut xyz2cam: [Pixel; 3] = [[0.0; 3]; 3];
-    
-    // Compute the reference camera response under D65: [0.95042, 1.0, 1.08890]
     let xyz_d65 = [0.95042, 1.0, 1.08890];
     let mut rgb_d65 = [0.0; 3];
     for i in 0..3 {
@@ -22,29 +22,41 @@ pub fn camera_cst(image_buffer: &mut ImageBuffer, target_cs: ColorSpaceTag, cali
                    + calibration_matrix_d65[i * 3 + 1] * xyz_d65[1]
                    + calibration_matrix_d65[i * 3 + 2] * xyz_d65[2];
     }
-    
     let mut multipliers = [1.0; 3];
     for i in 0..3 {
         if rgb_d65[i] > 0.0 {
             multipliers[i] = 1.0 / rgb_d65[i];
         }
     }
-    
     for i in 0..components {
         for j in 0..3 {
             xyz2cam[i][j] = calibration_matrix_d65[i * 3 + j] * multipliers[i];
         }
     }
-    let foward_matrix = pseudo_inverse_matrix(xyz2cam);
-    image_buffer.par_iter_mut().for_each(|pixel|{
-        let [r, g, b] = *pixel;
-        let xyzd65_pixel = [
-            foward_matrix[0][0] * r + foward_matrix[0][1] * g + foward_matrix[0][2] * b,
-            foward_matrix[1][0] * r + foward_matrix[1][1] * g + foward_matrix[1][2] * b,
-            foward_matrix[2][0] * r + foward_matrix[2][1] * g + foward_matrix[2][2] * b,
-        ];
-        *pixel = ColorSpaceTag::XyzD65.convert(target_cs, xyzd65_pixel)
+    let forward_matrix = pseudo_inverse_matrix(xyz2cam);
 
+    let convert_cam_to_target = |cam_pixel: [f32; 3]| -> [f32; 3] {
+        let [r, g, b] = cam_pixel;
+        let xyz_pixel = [
+            forward_matrix[0][0].mul_add(r, forward_matrix[0][1].mul_add(g, forward_matrix[0][2] * b)),
+            forward_matrix[1][0].mul_add(r, forward_matrix[1][1].mul_add(g, forward_matrix[1][2] * b)),
+            forward_matrix[2][0].mul_add(r, forward_matrix[2][1].mul_add(g, forward_matrix[2][2] * b)),
+        ];
+        ColorSpaceTag::XyzD65.convert(target_cs, xyz_pixel)
+    };
+
+    let c0 = convert_cam_to_target([1.0, 0.0, 0.0]);
+    let c1 = convert_cam_to_target([0.0, 1.0, 0.0]);
+    let c2 = convert_cam_to_target([0.0, 0.0, 1.0]);
+
+    let combined_mat = [
+        [c0[0], c1[0], c2[0]],
+        [c0[1], c1[1], c2[1]],
+        [c0[2], c1[2], c2[2]],
+    ];
+
+    image_buffer.par_iter_mut().for_each(|pixel|{
+        *pixel = crate::color::mat3_mul(&combined_mat, *pixel);
     });
 }
 
@@ -314,6 +326,15 @@ mod tests {
     assert!(diff_r < 1e-4, "r diff is {}", diff_r);
     assert!(diff_g < 1e-4, "g diff is {}", diff_g);
     assert!(diff_b < 1e-4, "b diff is {}", diff_b);
+  }
+
+  #[test]
+  fn test_srgb_transfer_roundtrip() {
+    for &v in &[0.0, 0.001, 0.0031308, 0.01, 0.04045, 0.18, 0.5, 1.0, -0.5] {
+      let encoded = srgb_oetf_f32(v);
+      let decoded = srgb_eotf_f32(encoded);
+      assert!((decoded - v).abs() < 1e-5, "roundtrip failed for {}: got {}", v, decoded);
+    }
   }
 
   #[test]

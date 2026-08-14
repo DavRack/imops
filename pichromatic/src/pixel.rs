@@ -1,4 +1,4 @@
-use color::{ColorSpaceTag};
+use crate::color::ColorSpaceTag;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 

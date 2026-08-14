@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use pichromatic::pixel::Image;
 use pichromatic::cst::ColorSpaceTag;
 
-#[cfg(test)]
 pub mod common;
 pub mod exp;
 pub mod gamma;

@@ -176,6 +176,41 @@ mod tests {
     }
 
     #[test]
+    fn test_cst_module_cpu_vs_gpu_srgb() {
+        let cst_module = Module::<CST> {
+            name: "CST".to_string(),
+            cache: None,
+            config: CST {
+                target_color_space: Parameter::new("Srgb".to_string(), "Target CS"),
+            },
+        };
+
+        let mut seed_image = generate_test_image_512x512(224);
+        seed_image.metadata.color_space = Some(ColorSpaceTag::AcesCg);
+        let ctx = GpuContext::new_sync();
+
+        let mut cpu_img = PipelineImage::Cpu(seed_image.clone());
+        cst_module.process(&Backend::Cpu, &mut cpu_img);
+        let cpu_out = cpu_img.to_cpu(None);
+
+        let mut gpu_img = PipelineImage::new_gpu(&ctx, &seed_image);
+        cst_module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_img);
+        let gpu_out = gpu_img.to_cpu(Some(&ctx));
+
+        assert_images_equal_abs_tol(&cpu_out, &gpu_out);
+        assert_eq!(
+            cpu_out.metadata.color_space,
+            Some(ColorSpaceTag::Srgb),
+            "CPU CST must update metadata.color_space"
+        );
+        assert_eq!(
+            gpu_out.metadata.color_space,
+            Some(ColorSpaceTag::Srgb),
+            "GPU CST must update metadata.color_space"
+        );
+    }
+
+    #[test]
     fn test_cst_gpu_updates_color_space_for_camera_rgb() {
         // After demosaic, color_space is None and camera_cst is used.
         // GPU must still tag the buffer as the target space — otherwise the next

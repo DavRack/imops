@@ -1,4 +1,4 @@
-use color::ColorSpaceTag;
+use pichromatic::color::ColorSpaceTag;
 use pichromatic::film::exposure::radiance::{absolute_luminance_gain, sunny16_exposure};
 use pichromatic::film::scan::mean_rgb;
 use pichromatic::film::stock::StockId;

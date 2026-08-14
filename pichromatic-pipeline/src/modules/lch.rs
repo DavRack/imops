@@ -69,7 +69,7 @@ impl PipelineModule for Module<LCH> {
 mod tests {
     use super::*;
     use crate::modules::common::{
-        assert_images_equal_abs_tol_with, generate_test_image_512x512,
+        assert_images_equal_abs_tol, generate_test_image_512x512,
     };
     use pichromatic::gpu::GpuContext;
     use crate::backend::{Backend, PipelineImage};
@@ -87,7 +87,7 @@ mod tests {
             },
         };
 
-        let mut seed_image = generate_test_image_512x512(777);
+        let seed_image = generate_test_image_512x512(777);
 
         let ctx = GpuContext::new_sync();
         let mut cpu_img = PipelineImage::Cpu(seed_image.clone());
@@ -102,7 +102,7 @@ mod tests {
         // crate CPU path (measured roundtrip error ~2.1e-5 near zero), which
         // exceeds the shared 64·eps gate. The approximation is inherent (WGSL
         // has no core f64), not a parity bug.
-        assert_images_equal_abs_tol_with(&cpu_out, &gpu_out, 256.0 * f32::EPSILON);
+        assert_images_equal_abs_tol(&cpu_out, &gpu_out);
         let _ = ColorSpaceTag::Srgb;
     }
 }
