@@ -45,21 +45,12 @@ const COLORCHECKER_SRGB_U8: [[u8; 3]; 24] = [
 ];
 
 fn srgb_u8_to_acescg(rgb: [u8; 3]) -> [f32; 3] {
-    let lin = [
-        srgb_to_linear(rgb[0] as f32 / 255.0),
-        srgb_to_linear(rgb[1] as f32 / 255.0),
-        srgb_to_linear(rgb[2] as f32 / 255.0),
+    let srgb_norm = [
+        rgb[0] as f32 / 255.0,
+        rgb[1] as f32 / 255.0,
+        rgb[2] as f32 / 255.0,
     ];
-    // sRGB → XYZ D65 → ACEScg via color crate.
-    ColorSpaceTag::Srgb.convert(ColorSpaceTag::AcesCg, lin)
-}
-
-fn srgb_to_linear(u: f32) -> f32 {
-    if u <= 0.04045 {
-        u / 12.92
-    } else {
-        ((u + 0.055) / 1.055).powf(2.4)
-    }
+    ColorSpaceTag::Srgb.convert(ColorSpaceTag::AcesCg, srgb_norm)
 }
 
 /// Reference ACEScg colours for the 24 patches.
