@@ -79,6 +79,70 @@ pub fn absorb_stack(
     (out, phi)
 }
 
+/// Upward Beer–Lambert absorption walk through the emulsion stack (bottom → top).
+///
+/// Light reflected from the backing travels upward through the layers in reverse
+/// order. For each layer, $\Phi_{\text{upward}}$ is attenuated as it passes through,
+/// and absorbed fluence is recorded.
+/// Returns per-layer upward absorption in the original layer order.
+pub fn absorb_stack_upward(
+    layers: &[EmulsionLayer],
+    incident_upward: &[f32; 16],
+    sigma_scale: f64,
+) -> Vec<LayerAbsorption> {
+    let mut phi = *incident_upward;
+    let mut out = vec![
+        LayerAbsorption {
+            absorbed: [0.0; 16],
+            produces_latent: false,
+        };
+        layers.len()
+    ];
+
+    for (idx, layer) in layers.iter().enumerate().rev() {
+        let mut absorbed = [0.0f32; 16];
+        let produces_latent = layer.kind == LayerKind::Emulsion;
+
+        match layer.kind {
+            LayerKind::Emulsion => {
+                let sens = layer
+                    .spectral_sensitivity
+                    .as_ref()
+                    .expect("emulsion has sensitivity");
+                let rho = layer.silver_halide_fraction as f64;
+                let thickness = layer.thickness.0 as f64;
+                for i in 0..16 {
+                    let od = sens.samples[i] * sigma_scale * rho * thickness;
+                    let trans = (-od).exp() as f32;
+                    let phi_t = phi[i] * trans;
+                    absorbed[i] = phi[i] - phi_t;
+                    phi[i] = phi_t;
+                }
+            }
+            LayerKind::Filter | LayerKind::Overcoat | LayerKind::Antihalation => {
+                if let Some(curve) = layer.spectral_sensitivity.as_ref() {
+                    let thickness = layer.thickness.0 as f64;
+                    for i in 0..16 {
+                        let od = curve.samples[i] * thickness;
+                        let trans = (-od).exp() as f32;
+                        let phi_t = phi[i] * trans;
+                        absorbed[i] = phi[i] - phi_t;
+                        phi[i] = phi_t;
+                    }
+                }
+            }
+            LayerKind::Support => {}
+        }
+
+        out[idx] = LayerAbsorption {
+            absorbed,
+            produces_latent,
+        };
+    }
+
+    out
+}
+
 /// Mean spectral absorbed fluence for an emulsion layer over visible spectrum (400–700 nm, photons/µm² proxy).
 ///
 /// Computes the trapezoidal integral `∫ Φ_abs(λ) dλ` over the MVP grid
@@ -183,13 +247,7 @@ mod tests {
         let samples: Vec<f64> = grid
             .wavelengths_nm
             .iter()
-            .map(|&l| {
-                if l < 500.0 {
-                    1.0
-                } else {
-                    0.01
-                }
-            })
+            .map(|&l| if l < 500.0 { 1.0 } else { 0.01 })
             .collect();
         let filter = EmulsionLayer {
             name: "yellow_filter",
@@ -259,5 +317,46 @@ mod tests {
             (mean - 2.0).abs() < 1e-6,
             "expected band average 2.0, got {mean} (would be ~600 if left as raw integral)"
         );
+    }
+
+    #[test]
+    fn upward_absorption_energy_conservation_and_order() {
+        let top = EmulsionLayer {
+            name: "top_blue",
+            depth_from_surface: Microns(0.0),
+            thickness: Microns(5.0),
+            kind: LayerKind::Emulsion,
+            spectral_sensitivity: Some(SpectralCurve::constant(0.1)),
+            crystal_size: None,
+            silver_halide_fraction: 0.2,
+            coupler: None,
+            gamma_contrast: 1.0,
+            capture_k: 1.0,
+            reciprocity_p: 1.0,
+            is_reversal: false,
+        };
+        let bottom = EmulsionLayer {
+            name: "bottom_red",
+            depth_from_surface: Microns(5.0),
+            thickness: Microns(5.0),
+            kind: LayerKind::Emulsion,
+            spectral_sensitivity: Some(SpectralCurve::constant(0.1)),
+            crystal_size: None,
+            silver_halide_fraction: 0.2,
+            coupler: None,
+            gamma_contrast: 1.0,
+            capture_k: 1.0,
+            reciprocity_p: 1.0,
+            is_reversal: false,
+        };
+        let incident_upward = flat_incident(1.0);
+        let upward = absorb_stack_upward(&[top, bottom], &incident_upward, 1.0);
+        assert_eq!(upward.len(), 2);
+        // Bottom layer receives upward light first, so its absorption must exceed top layer's
+        let abs_top = upward[0].absorbed[0];
+        let abs_bottom = upward[1].absorbed[0];
+        assert!(abs_bottom > abs_top, "bottom={abs_bottom} top={abs_top}");
+        assert!(abs_top + abs_bottom < 1.0);
+        assert!(abs_top > 0.0 && abs_bottom > 0.0);
     }
 }

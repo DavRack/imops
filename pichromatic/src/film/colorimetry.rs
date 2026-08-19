@@ -40,11 +40,7 @@ pub fn xyz_to_lab(xyz: [f64; 3]) -> [f64; 3] {
     let fx = lab_f(xyz[0] / xn);
     let fy = lab_f(xyz[1] / yn);
     let fz = lab_f(xyz[2] / zn);
-    [
-        116.0 * fy - 16.0,
-        500.0 * (fx - fy),
-        200.0 * (fy - fz),
-    ]
+    [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
 }
 
 pub fn acescg_to_lab(rgb: [f32; 3]) -> [f64; 3] {

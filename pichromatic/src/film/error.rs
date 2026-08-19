@@ -12,6 +12,7 @@ pub enum FilmError {
     InvalidRenderWidth,
     /// Custom physical render width is not implemented on the GPU path yet.
     UnsupportedRenderWidth,
+    ScannerCalibrationDidNotConverge,
     InvalidStock(&'static str),
 }
 
@@ -23,12 +24,21 @@ impl fmt::Display for FilmError {
             }
             FilmError::InvalidDimensions => write!(f, "invalid image dimensions"),
             FilmError::InvalidRenderWidth => {
-                write!(f, "invalid render width: expected a finite value greater than zero mm")
+                write!(
+                    f,
+                    "invalid render width: expected a finite value greater than zero mm"
+                )
             }
             FilmError::UnsupportedRenderWidth => {
                 write!(
                     f,
                     "custom render_width_mm is not supported on the GPU film path; use CPU"
+                )
+            }
+            FilmError::ScannerCalibrationDidNotConverge => {
+                write!(
+                    f,
+                    "scanner calibration did not converge within its sample cap"
                 )
             }
             FilmError::InvalidStock(msg) => write!(f, "invalid film stock: {msg}"),

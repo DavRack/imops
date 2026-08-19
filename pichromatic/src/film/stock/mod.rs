@@ -1,11 +1,13 @@
 //! Film stock definitions and validation.
 
 pub mod bw_stub;
+pub mod cinestill_50d;
 pub mod color_neg_200;
 pub mod ektachrome_e100;
 pub mod ektar_100;
 pub mod fuji_pro_400h;
 pub mod fujichrome_velvia_100;
+pub mod kit;
 pub mod portra_400;
 pub mod trix_400;
 
@@ -92,9 +94,25 @@ impl EmulsionLayer {
 
 #[derive(Clone, Debug)]
 pub struct AntihalationModel {
+    /// Support / air-interface reflectance `R(λ)`. CPU bounce is `T_AH² · R`.
     pub reflectance: SpectralCurve,
-    pub psf_local_um: f32,
+    /// Gaussian σ (µm) of the wide backing-bounce PSF.
     pub psf_halation_um: f32,
+}
+
+/// Effective stock-specific component of a joint record-response fit.
+///
+/// Its decomposition from cloud formation and adjacency is not independently
+/// identified irradiation physics, nor an exact Status-M calibration.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IrradiationResponse {
+    /// Gaussian core sigma in microns.
+    pub core_sigma_um: f32,
+    /// Exponential-tail decay length in microns.
+    pub tail_decay_um: f32,
+    /// Tail mixture weights for the blue, green, and red records. Each weight
+    /// is shared by that record's fast and slow emulsion layers.
+    pub tail_weight_bgr: [f32; 3],
 }
 
 #[derive(Clone, Debug)]
@@ -104,17 +122,13 @@ pub struct FilmStock {
     /// Layers ordered top (light-incident) → bottom (support).
     pub layers: Vec<EmulsionLayer>,
     pub antihalation: AntihalationModel,
+    /// Optional pre-capture component of an effective joint record-response
+    /// fit; cloud formation and adjacency remain separate model components.
+    pub irradiation_response: Option<IrradiationResponse>,
     pub developer_diffusion_length: Microns,
     pub adjacency_beta: f32,
-    /// DIR (Development Inhibitor Releasing) coupler diffusion length.
-    pub dir_diffusion_length: Microns,
-    /// Interlayer DIR inhibition weights, `matrix[source][target]`.
-    ///
-    /// Emulsion indices follow top→bottom order among emulsion layers only
-    /// (same order as [`FilmStock::emulsion_layers`] / dye planes). Entry
-    /// `matrix[i][j]` scales inhibitor released by source emulsion `i` onto target `j`.
-    /// May be non-symmetric (see Fuji Pro 400H).
-    pub dir_inhibition_matrix: Vec<Vec<f32>>,
+    pub adjacency_beta_record: f32,
+    pub adjacency_beta_cross: f32,
     pub scanner_light: SpectralCurve,
     /// Precomputed at load: per-layer capture LUT (None for non-emulsion).
     pub capture_luts: Vec<Option<DevelopableFractionLut>>,
@@ -139,6 +153,7 @@ pub enum StockId {
     FujichromeVelvia100,
     EktachromeE100,
     TriX400,
+    CineStill50D,
 }
 
 impl StockId {
@@ -152,6 +167,7 @@ impl StockId {
             StockId::FujichromeVelvia100 => fujichrome_velvia_100::load(),
             StockId::EktachromeE100 => ektachrome_e100::load(),
             StockId::TriX400 => trix_400::load(),
+            StockId::CineStill50D => cinestill_50d::load(),
         }
     }
 }
@@ -188,6 +204,33 @@ impl FilmStock {
             }
         }
 
+        if let Some(response) = self.irradiation_response {
+            if !response.core_sigma_um.is_finite() || response.core_sigma_um <= 0.0 {
+                return Err(FilmError::InvalidStock(
+                    "irradiation core sigma must be finite and > 0",
+                ));
+            }
+            if !response.tail_decay_um.is_finite() || response.tail_decay_um <= 0.0 {
+                return Err(FilmError::InvalidStock(
+                    "irradiation tail decay must be finite and > 0",
+                ));
+            }
+            if response
+                .tail_weight_bgr
+                .iter()
+                .any(|weight| !weight.is_finite() || !(0.0..=1.0).contains(weight))
+            {
+                return Err(FilmError::InvalidStock(
+                    "irradiation tail weights must be finite and in [0, 1]",
+                ));
+            }
+            if self.emulsion_layers().count() != 6 {
+                return Err(FilmError::InvalidStock(
+                    "B/G/R irradiation response requires six fast/slow emulsion layers",
+                ));
+            }
+        }
+
         self.capture_luts = self
             .layers
             .iter()
@@ -203,8 +246,9 @@ impl FilmStock {
 
         // Areal grain density ρ [µm⁻²] = (packing · thickness) / ⟨crystal volume⟩.
         // packing is volumetric AgX fraction; thickness is layer depth (µm);
-        // ⟨V⟩ = π(d/2)²t for tabular (thin circular plate) grains, or
-        // (4/3)πr³ for equivalent-sphere diameter s=2r from the lognormal.
+        // For lognormal diameter d, E[d^k] = exp(kμ + k²σ²/2).
+        // ⟨V⟩ = (π/4)E[d²]t for tabular grains, or (π/6)E[d³]
+        // for equivalent spheres. Powers of E[d] are not these moments.
         let tabular_t = self.tabular_grain_thickness_um.map(|t| t as f64);
         self.grain_kappa = self
             .layers
@@ -212,15 +256,15 @@ impl FilmStock {
             .map(|layer| {
                 if layer.kind == LayerKind::Emulsion {
                     let dist = layer.crystal_size.unwrap();
-                    let mean_s = (dist.mu_ln + 0.5 * dist.sigma_ln * dist.sigma_ln).exp();
                     let volume = match tabular_t {
                         Some(t) => {
-                            let r = (mean_s * 0.5).max(1e-6);
-                            std::f64::consts::PI * r * r * t
+                            std::f64::consts::FRAC_PI_4
+                                * (2.0 * dist.mu_ln + 2.0 * dist.sigma_ln.powi(2)).exp()
+                                * t
                         }
                         None => {
-                            let r = (mean_s * 0.5).max(1e-6);
-                            std::f64::consts::FRAC_PI_3 * 4.0 * r * r * r // (4/3)π r³
+                            std::f64::consts::PI / 6.0
+                                * (3.0 * dist.mu_ln + 4.5 * dist.sigma_ln.powi(2)).exp()
                         }
                     };
                     let packing = layer.silver_halide_fraction as f64;
@@ -245,6 +289,30 @@ impl FilmStock {
             .iter()
             .enumerate()
             .filter(|(_, l)| l.kind == LayerKind::Emulsion)
+    }
+
+    /// Build the NxN cross-layer adjacency coupling matrix M for the emulsion layers.
+    ///
+    /// - Diagonal M_ii = adjacency_beta (beta_self)
+    /// - Same color record off-diagonal M_ij = adjacency_beta_record (e.g. fast/slow of same coupler)
+    /// - Cross color record off-diagonal M_ij = adjacency_beta_cross (e.g. Y <-> M <-> C)
+    pub fn adjacency_matrix(&self) -> Vec<Vec<f32>> {
+        let emulsions: Vec<_> = self.emulsion_layers().map(|(_, l)| l).collect();
+        let n = emulsions.len();
+        let mut m = vec![vec![0.0f32; n]; n];
+        for i in 0..n {
+            let coupler_i = emulsions[i].coupler.as_ref().map(|c| c.name);
+            for j in 0..n {
+                if i == j {
+                    m[i][j] = self.adjacency_beta;
+                } else if coupler_i.is_some() && coupler_i == emulsions[j].coupler.as_ref().map(|c| c.name) {
+                    m[i][j] = self.adjacency_beta_record;
+                } else {
+                    m[i][j] = self.adjacency_beta_cross;
+                }
+            }
+        }
+        m
     }
 }
 
@@ -276,7 +344,47 @@ mod tests {
     }
 
     #[test]
+    fn spherical_grain_kappa_uses_third_lognormal_moment() {
+        let stock = StockId::BwStub.load().unwrap();
+        let (layer_idx, layer) = stock.emulsion_layers().next().unwrap();
+        let dist = layer.crystal_size.unwrap();
+        assert!(dist.sigma_ln > 0.0);
+        let mean_d3 = (3.0 * dist.mu_ln + 4.5 * dist.sigma_ln.powi(2)).exp();
+        let volume = std::f64::consts::PI / 6.0 * mean_d3;
+        let expected = (volume / (layer.silver_halide_fraction as f64 * layer.thickness.0 as f64))
+            .sqrt() as f32;
+        let actual = stock.grain_kappa[layer_idx].unwrap();
+        assert!((actual - expected).abs() <= expected * 1e-6);
 
+        let mean_d = (dist.mu_ln + 0.5 * dist.sigma_ln.powi(2)).exp();
+        let wrong = (std::f64::consts::PI / 6.0 * mean_d.powi(3)
+            / (layer.silver_halide_fraction as f64 * layer.thickness.0 as f64))
+            .sqrt() as f32;
+        assert!((actual - wrong).abs() > expected * 1e-3);
+    }
+
+    #[test]
+    fn tabular_grain_kappa_uses_second_lognormal_moment() {
+        let stock = StockId::Portra400.load().unwrap();
+        let (layer_idx, layer) = stock.emulsion_layers().next().unwrap();
+        let dist = layer.crystal_size.unwrap();
+        let plate_t = stock.tabular_grain_thickness_um.unwrap() as f64;
+        assert!(dist.sigma_ln > 0.0);
+        let mean_d2 = (2.0 * dist.mu_ln + 2.0 * dist.sigma_ln.powi(2)).exp();
+        let volume = std::f64::consts::FRAC_PI_4 * mean_d2 * plate_t;
+        let expected = (volume / (layer.silver_halide_fraction as f64 * layer.thickness.0 as f64))
+            .sqrt() as f32;
+        let actual = stock.grain_kappa[layer_idx].unwrap();
+        assert!((actual - expected).abs() <= expected * 1e-6);
+
+        let mean_d = (dist.mu_ln + 0.5 * dist.sigma_ln.powi(2)).exp();
+        let wrong = (std::f64::consts::FRAC_PI_4 * mean_d.powi(2) * plate_t
+            / (layer.silver_halide_fraction as f64 * layer.thickness.0 as f64))
+            .sqrt() as f32;
+        assert!((actual - wrong).abs() > expected * 1e-3);
+    }
+
+    #[test]
     fn stock_rejects_empty_layers() {
         let stock = FilmStock {
             name: "empty",
@@ -284,13 +392,13 @@ mod tests {
             layers: vec![],
             antihalation: AntihalationModel {
                 reflectance: SpectralCurve::constant(0.0),
-                psf_local_um: 1.0,
                 psf_halation_um: 50.0,
             },
+            irradiation_response: None,
             developer_diffusion_length: Microns(5.0),
             adjacency_beta: 0.0,
-            dir_diffusion_length: Microns(5.0),
-            dir_inhibition_matrix: vec![],
+            adjacency_beta_record: 0.0,
+            adjacency_beta_cross: 0.0,
             scanner_light: SpectralCurve::constant(1.0),
             capture_luts: vec![],
             grain_kappa: vec![],

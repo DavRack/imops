@@ -30,9 +30,8 @@
 //!   authored (same physical coating in reality; not linked yet).
 use crate::film::error::FilmError;
 use crate::film::spectrum::{SpectralCurve, WavelengthGrid};
-use crate::film::stock::{
-    AntihalationModel, DyeCoupler, EmulsionLayer, FilmStock, LayerKind, LogNormalDist,
-};
+use crate::film::stock::kit;
+use crate::film::stock::{DyeCoupler, EmulsionLayer, FilmStock, LayerKind, LogNormalDist};
 use crate::film::units::{IsoSpeed, Microns};
 
 fn gaussian_curve(peak_nm: f64, sigma_nm: f64, amplitude: f64) -> SpectralCurve {
@@ -65,28 +64,17 @@ fn orange_mask_epsilon() -> SpectralCurve {
 }
 
 pub fn load() -> Result<FilmStock, FilmError> {
-    let overcoat = EmulsionLayer {
-        name: "overcoat",
-        depth_from_surface: Microns(0.0),
-        thickness: Microns(1.0),
-        kind: LayerKind::Overcoat,
-        spectral_sensitivity: Some(SpectralCurve::constant(0.01)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
-        reciprocity_p: 1.0,
-        is_reversal: false,
-    };
+    let overcoat = kit::overcoat(0.0);
 
+    // Kodak E-6037: "no compensation required 1/10,000 s to 1 s"; digitized peaks B=470, R=655 nm.
+    // Beyond 1 s: LIRF rolloff not modeled (single-exponent limit).
     // Blue-sensitive → forms yellow dye.
     let blue = EmulsionLayer {
         name: "blue_sensitive",
         depth_from_surface: Microns(1.0),
         thickness: Microns(4.0),
         kind: LayerKind::Emulsion,
-        spectral_sensitivity: Some(gaussian_curve(450.0, 35.0, 1.0)),
+        spectral_sensitivity: Some(gaussian_curve(470.0, 35.0, 1.0)),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.55_f64.ln(), // ~0.55 µm mean
             sigma_ln: 0.30,
@@ -100,25 +88,11 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.65,
         capture_k: 4.2,
-        reciprocity_p: 0.88,
-        is_reversal: false,
-    };
-
-    // Yellow filter between blue and green/red groups.
-    let yellow_filter = EmulsionLayer {
-        name: "yellow_filter",
-        depth_from_surface: Microns(5.0),
-        thickness: Microns(2.0),
-        kind: LayerKind::Filter,
-        spectral_sensitivity: Some(gaussian_curve(430.0, 40.0, 1.2)), // strong blue absorption
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
         reciprocity_p: 1.0,
         is_reversal: false,
     };
+
+    let yellow_filter = kit::yellow_filter(5.0, 2.0, gaussian_curve(430.0, 40.0, 1.2));
 
     // Green-sensitive → forms magenta dye.
     let green = EmulsionLayer {
@@ -140,7 +114,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.65,
         capture_k: 2.1,
-        reciprocity_p: 0.90,
+        reciprocity_p: 1.0,
         is_reversal: false,
     };
 
@@ -150,7 +124,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         depth_from_surface: Microns(12.0),
         thickness: Microns(6.0),
         kind: LayerKind::Emulsion,
-        spectral_sensitivity: Some(gaussian_curve(650.0, 45.0, 1.0)),
+        spectral_sensitivity: Some(gaussian_curve(655.0, 45.0, 1.0)),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.70_f64.ln(),
             sigma_ln: 0.35,
@@ -164,42 +138,22 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.65,
         capture_k: 1.35,
-        reciprocity_p: 0.92,
-        is_reversal: false,
-    };
-
-    let antihalation = EmulsionLayer {
-        name: "antihalation",
-        depth_from_surface: Microns(18.0),
-        thickness: Microns(2.0),
-        kind: LayerKind::Antihalation,
-        spectral_sensitivity: Some(gaussian_curve(650.0, 80.0, 0.3)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
         reciprocity_p: 1.0,
         is_reversal: false,
     };
+
+    let antihalation = kit::antihalation_layer(18.0);
 
     let stock = FilmStock {
         name: "ColorNeg200",
         box_iso: IsoSpeed(200.0),
         layers: vec![overcoat, blue, yellow_filter, green, red, antihalation],
-        antihalation: AntihalationModel {
-            reflectance: gaussian_curve(680.0, 60.0, 0.08),
-            psf_local_um: 3.0,
-            psf_halation_um: 80.0,
-        },
+        antihalation: kit::backing(80.0),
+        irradiation_response: None,
         developer_diffusion_length: Microns(8.0),
         adjacency_beta: 0.35,
-        dir_diffusion_length: Microns(15.0),
-        dir_inhibition_matrix: vec![
-            vec![0.02, 0.05, 0.03],
-            vec![0.05, 0.02, 0.06],
-            vec![0.03, 0.06, 0.02],
-        ],
+        adjacency_beta_record: 0.0,
+        adjacency_beta_cross: 0.0,
         scanner_light: SpectralCurve::constant(1.0),
         capture_luts: vec![],
         grain_kappa: vec![],

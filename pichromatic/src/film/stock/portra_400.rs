@@ -1,14 +1,14 @@
 //! Kodak Portra 400 class color-negative stock definition.
 //!
-//! Features:
-//! - Multi-layer fast/slow emulsion sub-groups (fast/slow Blue, Green, Red)
-//! - DIR coupler interlayer chemical inhibition
-//! - Natural warm skin tones, fine grain, soft portrait contrast curve (γ ≈ 0.54)
+//! Fitted (datasheet / H&D): ISO, layer S, dyes, `γ` / `d_max` / `capture_k`.
+//! Frozen kit ([`crate::film::stock::kit`]): acetate Fresnel `R`, grey AH,
+//! T-grain plate thickness. DIR is off (no published matrix).
 
 use crate::film::error::FilmError;
 use crate::film::spectrum::{SpectralCurve, WavelengthGrid};
+use crate::film::stock::kit;
 use crate::film::stock::{
-    AntihalationModel, DyeCoupler, EmulsionLayer, FilmStock, LayerKind, LogNormalDist,
+    DyeCoupler, EmulsionLayer, FilmStock, IrradiationResponse, LayerKind, LogNormalDist,
 };
 use crate::film::units::{IsoSpeed, Microns};
 
@@ -23,6 +23,70 @@ fn gaussian_curve(peak_nm: f64, sigma_nm: f64, amplitude: f64) -> SpectralCurve 
         })
         .collect();
     SpectralCurve::new(grid, samples)
+}
+
+// Kodak Professional Portra 400 E-4050 (2016), page 4,
+// "Spectral-Dye-Density Curves". Values are the spektrafilm digitization of
+// that official plot (`kodak_portra_400.json`, `data.channel_density`), sampled
+// at 400:20:700 nm. Small negative unmixing artifacts are clamped to zero and
+// each C/M/Y channel is peak-normalized so the existing d_max scale is unchanged.
+const E4050_CYAN: [f64; 16] = [
+    0.2141127157,
+    0.0884377415,
+    0.0,
+    0.0,
+    0.0197136348,
+    0.0306758452,
+    0.0208735698,
+    0.0,
+    0.0,
+    0.0827627683,
+    0.2798804987,
+    0.4792663278,
+    0.6673921402,
+    0.8427773324,
+    0.9717129804,
+    1.0,
+];
+const E4050_MAGENTA: [f64; 16] = [
+    0.0380242729,
+    0.0277833813,
+    0.0,
+    0.0,
+    0.1277816801,
+    0.4917706665,
+    0.8566500335,
+    1.0,
+    0.8212038935,
+    0.4623861007,
+    0.1949634497,
+    0.0725356569,
+    0.0179332136,
+    0.0,
+    0.0,
+    0.0,
+];
+const E4050_YELLOW: [f64; 16] = [
+    0.3447954370,
+    0.6782965700,
+    0.9685343243,
+    1.0,
+    0.6972344725,
+    0.2561503345,
+    0.0,
+    0.0,
+    0.0150007151,
+    0.0181651297,
+    0.0153555546,
+    0.0074602746,
+    0.0019047223,
+    0.0005695983,
+    0.0,
+    0.0,
+];
+
+fn e4050_image_dye(samples: [f64; 16]) -> SpectralCurve {
+    SpectralCurve::new(WavelengthGrid::mvp(), samples.to_vec())
 }
 
 fn orange_mask_epsilon() -> SpectralCurve {
@@ -89,20 +153,12 @@ fn red_sensitivity_curve() -> SpectralCurve {
 }
 
 pub fn load() -> Result<FilmStock, FilmError> {
-    let overcoat = EmulsionLayer {
-        name: "overcoat",
-        depth_from_surface: Microns(0.0),
-        thickness: Microns(1.0),
-        kind: LayerKind::Overcoat,
-        spectral_sensitivity: Some(SpectralCurve::constant(0.01)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
-        reciprocity_p: 1.0,
-        is_reversal: false,
-    };
+    // Kodak E-4050 (Portra 400, Feb 2016): no reciprocity compensation from
+    // 1/10 000 s to 1 s. p = 1 also disables the invented HIRF branch below 1 ms,
+    // which contradicted the sheet (no compensation down to 0.1 ms).
+    const RECIPROCITY_P: f32 = 1.0;
+
+    let overcoat = kit::overcoat(0.0);
 
     // --- BLUE FAST & SLOW ---
     // Empirical Blue H&D Gamma ~ 0.691, Dmax = 2.82
@@ -119,13 +175,13 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "yellow",
-            epsilon: gaussian_curve(445.0, 35.0, 1.0),
+            epsilon: e4050_image_dye(E4050_YELLOW),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.575, // total 1.15 split fast/slow
         }),
         gamma_contrast: 0.691,
         capture_k: 3.74,
-        reciprocity_p: 0.85,
+        reciprocity_p: RECIPROCITY_P,
         is_reversal: false,
     };
     let blue_slow = EmulsionLayer {
@@ -141,30 +197,20 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.20,
         coupler: Some(DyeCoupler {
             name: "yellow",
-            epsilon: gaussian_curve(445.0, 35.0, 1.0),
+            epsilon: e4050_image_dye(E4050_YELLOW),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.575, // yellow slow
         }),
         gamma_contrast: 0.691,
         capture_k: 2.2,
-        reciprocity_p: 0.89,
+        reciprocity_p: RECIPROCITY_P,
         is_reversal: false,
     };
 
-    let yellow_filter = EmulsionLayer {
-        name: "yellow_filter",
-        depth_from_surface: Microns(6.0),
-        thickness: Microns(2.0),
-        kind: LayerKind::Filter,
-        spectral_sensitivity: Some(gaussian_curve(430.0, 40.0, 1.3)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
-        reciprocity_p: 1.0,
-        is_reversal: false,
-    };
+    // Physical interlayer (Carey Lea class). Green/red sensitivity curves are
+    // *layer* S with a native AgX blue shoulder, not pack S — keeping the filter
+    // is not double-counting until a digitized pack-S curve is ingested.
+    let yellow_filter = kit::yellow_filter(6.0, 2.0, gaussian_curve(430.0, 40.0, 1.3));
 
     // --- GREEN FAST & SLOW ---
     // Empirical Green H&D Gamma ~ 0.618, Dmax = 2.38
@@ -181,13 +227,13 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "magenta",
-            epsilon: gaussian_curve(550.0, 35.0, 1.0),
+            epsilon: e4050_image_dye(E4050_MAGENTA),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.666,
         }),
         gamma_contrast: 0.618,
         capture_k: 1.87,
-        reciprocity_p: 0.87,
+        reciprocity_p: RECIPROCITY_P,
         is_reversal: false,
     };
     let green_slow = EmulsionLayer {
@@ -203,13 +249,13 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.20,
         coupler: Some(DyeCoupler {
             name: "magenta",
-            epsilon: gaussian_curve(550.0, 35.0, 1.0),
+            epsilon: e4050_image_dye(E4050_MAGENTA),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.666, // magenta slow
         }),
         gamma_contrast: 0.618,
         capture_k: 1.1,
-        reciprocity_p: 0.91,
+        reciprocity_p: RECIPROCITY_P,
         is_reversal: false,
     };
 
@@ -228,13 +274,13 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "cyan",
-            epsilon: gaussian_curve(680.0, 40.0, 1.0),
+            epsilon: e4050_image_dye(E4050_CYAN),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.704,
         }),
         gamma_contrast: 0.542,
         capture_k: 1.22,
-        reciprocity_p: 0.89,
+        reciprocity_p: RECIPROCITY_P,
         is_reversal: false,
     };
     let red_slow = EmulsionLayer {
@@ -250,40 +296,17 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.20,
         coupler: Some(DyeCoupler {
             name: "cyan",
-            epsilon: gaussian_curve(680.0, 40.0, 1.0),
+            epsilon: e4050_image_dye(E4050_CYAN),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.704, // cyan slow
         }),
         gamma_contrast: 0.542,
         capture_k: 0.7,
-        reciprocity_p: 0.93,
+        reciprocity_p: RECIPROCITY_P,
         is_reversal: false,
     };
 
-    let antihalation = EmulsionLayer {
-        name: "antihalation",
-        depth_from_surface: Microns(21.0),
-        thickness: Microns(2.0),
-        kind: LayerKind::Antihalation,
-        spectral_sensitivity: Some(gaussian_curve(650.0, 80.0, 0.3)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
-        reciprocity_p: 1.0,
-        is_reversal: false,
-    };
-
-    // 6 emulsion layers: [BF, BS, GF, GS, RF, RS]
-    let dir_matrix = vec![
-        vec![0.02, 0.01, 0.04, 0.02, 0.03, 0.01],
-        vec![0.01, 0.01, 0.02, 0.01, 0.02, 0.01],
-        vec![0.04, 0.02, 0.02, 0.01, 0.05, 0.02],
-        vec![0.02, 0.01, 0.01, 0.01, 0.02, 0.01],
-        vec![0.03, 0.01, 0.05, 0.02, 0.02, 0.01],
-        vec![0.01, 0.01, 0.02, 0.01, 0.01, 0.01],
-    ];
+    let antihalation = kit::antihalation_layer(21.0);
 
     let stock = FilmStock {
         name: "Portra400",
@@ -299,21 +322,28 @@ pub fn load() -> Result<FilmStock, FilmError> {
             red_slow,
             antihalation,
         ],
-        antihalation: AntihalationModel {
-            reflectance: gaussian_curve(680.0, 60.0, 0.06),
-            psf_local_um: 0.75,
-            psf_halation_um: 70.0,
-        },
-        developer_diffusion_length: Microns(7.0),
-        adjacency_beta: 0.30,
-        dir_diffusion_length: Microns(16.0),
-        dir_inhibition_matrix: dir_matrix,
+        // Halo fluence scales as T_AH² · R. Kit: Fresnel R + grey AH OD.
+        antihalation: kit::backing(70.0),
+        // Effective joint fit to Kodak E-4050 page 4 processed-film B/G/R
+        // response shape
+        // (Daylight exposure, C-41), PDF SHA256:
+        // e83ac6775d37832a4cb466892a3e1cf4c88917a6ee93384e59d6924b1cd97e3a.
+        // The split among this pre-capture component, the realized D/4 cloud
+        // PSF, and post-realization adjacency is not independently identified
+        // irradiation physics and is not exact Status-M calibration.
+        irradiation_response: Some(IrradiationResponse {
+            core_sigma_um: 1.8,
+            tail_decay_um: 7.4,
+            tail_weight_bgr: [0.55, 0.58, 0.79],
+        }),
+        developer_diffusion_length: Microns(20.2),
+        adjacency_beta: 0.66,
+        adjacency_beta_record: 0.0,
+        adjacency_beta_cross: 0.0,
         scanner_light: SpectralCurve::d50(),
         capture_luts: vec![],
         grain_kappa: vec![],
-        // Kodak T-grain (tabular) morphology: plate thickness ~0.15 µm
-        // (published T-grain range 0.1-0.2 µm).
-        tabular_grain_thickness_um: Some(0.15),
+        tabular_grain_thickness_um: Some(kit::T_GRAIN_THICKNESS_UM),
     };
     stock.finalize()
 }
@@ -322,9 +352,30 @@ pub fn load() -> Result<FilmStock, FilmError> {
 mod runtime_calibration_tests {
     use super::*;
     use crate::film::development::reduction::reduce;
-    use crate::film::FilmFormat;
-    use crate::film::scan::{invert::invert_negative, normalized_dmin_acescg};
+    use crate::film::scan::{
+        invert::invert_negative, normalized_dmin_acescg, scanner_calibration_acescg,
+    };
     use crate::film::types::{DyePlanes, LatentPlanes};
+    use crate::film::FilmFormat;
+
+    #[test]
+    fn portra_image_dyes_match_e4050_digitization_on_mvp_grid() {
+        let stock = load().unwrap();
+        let expected = [
+            E4050_YELLOW,
+            E4050_YELLOW,
+            E4050_MAGENTA,
+            E4050_MAGENTA,
+            E4050_CYAN,
+            E4050_CYAN,
+        ];
+        for ((_, layer), samples) in stock.emulsion_layers().zip(expected) {
+            let epsilon = &layer.coupler.as_ref().unwrap().epsilon.samples;
+            assert_eq!(epsilon.as_slice(), samples.as_slice(), "{}", layer.name);
+            assert!(epsilon.iter().all(|&value| value >= 0.0));
+            assert_eq!(epsilon.iter().copied().fold(0.0, f64::max), 1.0);
+        }
+    }
 
     #[test]
     fn fast_layer_capture_toe_has_shadow_latitude() {
@@ -342,7 +393,7 @@ mod runtime_calibration_tests {
             stock.box_iso.0 as f64,
         ) as f32;
 
-        let mut fast_at = |ratio: f32| -> [f32; 3] {
+        let fast_at = |ratio: f32| -> [f32; 3] {
             let l = l_mid * ratio;
             let rgb = vec![[l, l, l]; N * N];
             let latent = expose_with_pitch_and_shutter(&rgb, N, N, &stock, 10.0, shutter);
@@ -355,8 +406,11 @@ mod runtime_calibration_tests {
         };
 
         let f_mid = fast_at(1.0);
-        for (name, f) in [("blue_fast", f_mid[0]), ("green_fast", f_mid[1]), ("red_fast", f_mid[2])]
-        {
+        for (name, f) in [
+            ("blue_fast", f_mid[0]),
+            ("green_fast", f_mid[1]),
+            ("red_fast", f_mid[2]),
+        ] {
             assert!(
                 (0.40..=0.60).contains(&f),
                 "{name} mid-gray developable {f} outside [0.40, 0.60]"
@@ -396,7 +450,8 @@ mod runtime_calibration_tests {
     fn spectral_sensitivity_and_dye_curves_are_finite_and_grid_resolved() {
         let stock = load().unwrap();
         let expected_sensitivity_peaks = [400.0, 400.0, 540.0, 540.0, 640.0, 640.0];
-        let expected_dye_peaks = [440.0, 440.0, 540.0, 540.0, 680.0, 680.0];
+        // E-4050 digitization sampled on the 20 nm MVP grid (Y, M, C).
+        let expected_dye_peaks = [460.0, 460.0, 540.0, 540.0, 700.0, 700.0];
         let emulsions: Vec<_> = stock.emulsion_layers().collect();
         assert_eq!(emulsions.len(), 6);
 
@@ -477,14 +532,25 @@ mod runtime_calibration_tests {
     }
 
     #[test]
+    fn portra_emulsions_have_no_reciprocity_failure() {
+        // E-4050: no compensation 1/10 000 s–1 s; p=1 also avoids invented HIRF.
+        let stock = load().unwrap();
+        for (_, layer) in stock.emulsion_layers() {
+            assert_eq!(layer.reciprocity_p, 1.0, "{}", layer.name);
+        }
+    }
+
+    #[test]
     fn midgray_negative_and_invert_reference_are_finite() {
         let stock = load().unwrap();
-        let mid = crate::film::mid_negative_acescg(
+        let calibration = scanner_calibration_acescg(
             &stock,
             FilmFormat::Film35mm.pixel_pitch_um(1024),
             1.0 / stock.box_iso.0,
-        );
-        let dmin = normalized_dmin_acescg(&stock);
+        )
+        .unwrap();
+        let mid = calibration.mid;
+        let dmin = calibration.dmin;
         assert!(mid.iter().all(|value| value.is_finite() && *value > 0.0));
 
         let mut positive = vec![mid];

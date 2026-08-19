@@ -7,12 +7,10 @@ use rayon::prelude::*;
 
 /// Convert developable fraction planes to image/mask dye optical densities.
 ///
-/// `D_image = D_max * f_eff^(1/γ_eff)` with `f_eff = f` (negative) or `1−f` (reversal),
-/// after chemical fog: developable fraction floor from random fog crystals at
-/// zero exposure (`f_fog = FOG_OFFSET / d_max`, then `f_eff = 1 − (1−f)(1−f_fog)`).
-/// The particle overwrite recovers `f_eff` via γ and maps the realized
-/// population back through this same response, so the expected density floor
-/// at f=0 is the H&D fog density `d_max·f_fog^(1/γ)` at every width.
+/// `D_image = min(D_max, D_max * f^(1/γ_eff) + D_fog)` with `f` equal to the
+/// captured fraction (negative) or `1−f` (reversal). Chemical fog is an
+/// additive optical-density contribution from randomly developed crystals;
+/// particle overwrite samples the complete expected density as probability.
 ///
 /// Coloured film base remains a separate, unnoised mask plane. Grain never
 /// modulates residual colored-coupler density.
@@ -46,9 +44,7 @@ pub fn reduce(stock: &FilmStock, latent: &LatentPlanes) -> DyePlanes {
                 } else {
                     f.clamp(0.0, 1.0)
                 };
-                let f_fog = (FOG_OFFSET / d_max).clamp(0.0, 1.0);
-                let f_eff = 1.0 - (1.0 - f_clamped) * (1.0 - f_fog);
-                *d = d_max * f_eff.powf(inv_gamma);
+                *d = (d_max * f_clamped.powf(inv_gamma) + FOG_OFFSET).min(d_max);
             });
 
         if coupler.mask_epsilon.is_some() {
@@ -94,19 +90,18 @@ mod tests {
             layers: vec![vec![0.0f32; 2]; emulsion_count],
         };
         let dyes = reduce(&stock, &latent);
-        for (plane, layer) in dyes
-            .image_dye
-            .iter()
-            .zip(stock.layers.iter().filter(|l| l.kind == LayerKind::Emulsion))
-        {
+        for (plane, layer) in dyes.image_dye.iter().zip(
+            stock
+                .layers
+                .iter()
+                .filter(|l| l.kind == LayerKind::Emulsion),
+        ) {
             let d_max = layer.coupler.as_ref().unwrap().d_max;
-            let gamma = layer.gamma_contrast.max(1e-6);
-            let f_fog = (FOG_OFFSET / d_max).clamp(0.0, 1.0);
-            let expected = d_max * f_fog.powf(1.0 / gamma);
+            let expected = FOG_OFFSET.min(d_max);
             for &d in plane {
                 assert!(
                     (d - expected).abs() < 1e-6,
-                    "zero exposure must lift to chemical fog H&D floor {expected}, got {d}"
+                    "zero exposure must lift to additive chemical fog density {expected}, got {d}"
                 );
             }
         }

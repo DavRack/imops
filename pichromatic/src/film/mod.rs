@@ -6,12 +6,9 @@
 //! Stage *shapes* follow photographic physics (Beer–Lambert, crystal-population
 //! LUT, dye-cloud grain, adjacency, mask-aware invert). Absolute *scale* still
 //! depends on named empirical constants in [`constants`]:
-//! `ABSORPTION_SIGMA_SCALE_PER_UM`, `LOCAL_SCATTER_MIX`, `HALATION_BLEED_WEIGHTS_BGR`,
-//! `MASK_DENSITY_FRACTION_OF_DMAX`, plus per-layer `capture_k` and `adjacency_beta`.
-//! AH stack absorption and `AntihalationModel.reflectance` are not yet linked.
-//! ColorChecker gates measure round-trip vs input patches after mid/Dmin invert —
-//! not a measured commercial stock.
-//! Fast/slow emulsion pairs are not yet implemented.
+//! `ABSORPTION_SIGMA_SCALE_PER_UM`, `MASK_DENSITY_FRACTION_OF_DMAX`, plus per-layer `capture_k`
+//! and `adjacency_beta`. Construction (R, AH OD, T-grain plate thickness) is the
+//! shared C-41 kit in [`stock::kit`], not a per-stock look slider.
 
 pub mod blur;
 pub mod colorimetry;
@@ -32,11 +29,11 @@ pub use gpu::process_gpu;
 pub use stock::StockId;
 pub use types::{ExposureMeta, FilmFormat, FilmRenderGeometry};
 
+use crate::color::ColorSpaceTag;
 use crate::film::development::develop;
 use crate::film::exposure::{expose_with_pitch_and_shutter, expose_with_pitch_shutter_and_scale};
 use crate::film::scan::{scan, ScanMode};
 use crate::pixel::Image;
-use crate::color::ColorSpaceTag;
 
 /// Module version string for linkage / checkpoint tracking.
 pub fn film_version() -> &'static str {
@@ -47,7 +44,7 @@ pub fn film_version() -> &'static str {
 pub enum FilmOutput {
     /// Densitometric ACEScg, Dmin normalized ~1 (scanned negative).
     NegativeLinear,
-    /// Analytic mid/Dmin invert from stock film-base + mid-gray gain.
+    /// Bounded scanner invert from processed Dmin and a neutral mid-gray scan.
     PositiveLinear,
 }
 
@@ -62,8 +59,7 @@ pub struct FilmParams {
     pub seed: u64,
     pub output: FilmOutput,
     /// Enable the wide backing halation (reflectance-driven bounce). `false`
-    /// zeroes the AH reflectance so `max_r <= 0` gates the wide bounce; local
-    /// gelatin scatter remains (gated by `psf_local`/`LOCAL_SCATTER_MIX`).
+    /// zeroes the AH reflectance so `max_r <= 0` gates the wide bounce.
     pub enable_halation: bool,
     /// Normalize exposure across stocks to the capture ISO (scene-relative
     /// fluence `∝ v`, independent of stock box speed). `false` keeps the raw
@@ -158,7 +154,11 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
         .shutter_seconds
         .unwrap_or(1.0 / stock.box_iso.0);
 
-    let capture_scale = camera_capture_scale(&image.metadata, stock.box_iso.0, params.compensate_box_speed);
+    let capture_scale = camera_capture_scale(
+        &image.metadata,
+        stock.box_iso.0,
+        params.compensate_box_speed,
+    );
     let latent = expose_with_pitch_shutter_and_scale(
         &image.rgb_data,
         width,
@@ -172,21 +172,26 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
 
     let is_reversal = stock.layers.iter().any(|l| l.is_reversal);
     image.rgb_data = if is_reversal || params.output == FilmOutput::NegativeLinear {
-        scan(&stock, &dyes, ScanMode::NegativeLinear)
+        scan(&stock, &dyes, ScanMode::NegativeLinear, pitch)
     } else {
-        let dmin = crate::film::scan::normalized_dmin_acescg(&stock);
-        let mid = mid_negative_acescg(&stock, pitch, shutter);
-        scan(&stock, &dyes, ScanMode::PositiveLinear { dmin, mid })
+        let calibration = crate::film::scan::scanner_calibration_acescg(&stock, pitch, shutter)?;
+        scan(
+            &stock,
+            &dyes,
+            ScanMode::PositiveLinear {
+                dmin: calibration.dmin,
+                mid: calibration.mid,
+            },
+            pitch,
+        )
     };
     image.metadata.color_space = Some(ColorSpaceTag::AcesCg);
     Ok(())
 }
 
-/// Mid-gray densitometric RGB for invert gain.
+/// Legacy N32 mid-gray reference retained only for the stale GPU constants.
 ///
-/// Uses the same expose → develop → scan path as [`process`] (including DIR /
-/// adjacency) so channel gains match the image being inverted. A modest patch
-/// averages dye grain for a stable mean.
+/// CPU PositiveLinear calls the joint adaptive scanner calibration directly.
 pub(crate) fn mid_negative_acescg(
     stock: &crate::film::stock::FilmStock,
     pitch_um: f32,
@@ -197,13 +202,12 @@ pub(crate) fn mid_negative_acescg(
     let g = relative_to_absolute_y(MIDDLE_GRAY, stock.box_iso.0);
     let rgb = vec![[g, g, g]; N * N];
     let latent = expose_with_pitch_and_shutter(&rgb, N, N, stock, pitch_um, shutter_seconds);
-    // Same development as process (DIR + adjacency + grain); mean kills grain.
     let dyes = develop(stock, &latent, 0, pitch_um);
-    let buf = scan(stock, &dyes, ScanMode::NegativeLinear);
+    let buf = scan(stock, &dyes, ScanMode::NegativeLinear, pitch_um);
     crate::film::scan::mean_rgb(&buf)
 }
 
-fn relative_to_absolute_y(y_rel: f32, box_iso: f32) -> f32 {
+pub(crate) fn relative_to_absolute_y(y_rel: f32, box_iso: f32) -> f32 {
     use crate::film::exposure::radiance::{relative_to_absolute_luminance, sunny16_exposure};
     use crate::film::units::IsoSpeed;
     let e = sunny16_exposure(IsoSpeed(box_iso));
@@ -256,9 +260,9 @@ pub(crate) fn camera_capture_scale(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::ColorSpaceTag;
     use crate::image::ImageMetadata;
     use crate::pixel::{PixelOps, MIDDLE_GRAY};
-    use crate::color::ColorSpaceTag;
 
     fn to_absolute_rgb(rgb: [f32; 3], box_iso: f32) -> [f32; 3] {
         let g = relative_to_absolute_y(1.0, box_iso);
@@ -343,11 +347,8 @@ mod tests {
         let u400 = camera_capture_scale(&meta, 400.0, false);
         assert!((u400 / u100 - 4.0).abs() < 1e-6);
         // Compensated total fluence factor is scene-relative: L·scale = 64·K·v.
-        let gain = crate::film::exposure::radiance::absolute_luminance_gain(
-            1.0 / 100.0,
-            4.0,
-            200.0,
-        ) as f32;
+        let gain = crate::film::exposure::radiance::absolute_luminance_gain(1.0 / 100.0, 4.0, 200.0)
+            as f32;
         let expected = 64.0 * crate::film::constants::METER_CONSTANT_K as f32;
         assert!(
             (gain * s400 - expected).abs() < 1e-3,
@@ -464,6 +465,18 @@ mod tests {
         assert_eq!(normal.width_mm, 36.0);
         assert_eq!(normal.pixel_pitch_um, 36.0);
 
+        let mut super8 = params.clone();
+        super8.film_format = FilmFormat::FilmSuper8;
+        let super8_g = super8.render_geometry(1000, 2).unwrap();
+        assert_eq!(super8_g.width_mm, 5.79);
+        assert_eq!(super8_g.pixel_pitch_um, 5.79);
+
+        let mut standard8 = params.clone();
+        standard8.film_format = FilmFormat::FilmStandard8;
+        let standard8_g = standard8.render_geometry(1000, 2).unwrap();
+        assert_eq!(standard8_g.width_mm, 4.90);
+        assert_eq!(standard8_g.pixel_pitch_um, 4.90);
+
         for (width_mm, expected_pitch) in [(1.0, 1.0), (0.5, 0.5)] {
             let mut custom = params.clone();
             custom.render_width_mm = Some(width_mm);
@@ -477,7 +490,10 @@ mod tests {
         alias.film_format = FilmFormat::Film1mmDebug;
         let mut generic = params;
         generic.render_width_mm = Some(1.0);
-        assert_eq!(alias.render_geometry(1000, 2), generic.render_geometry(1000, 2));
+        assert_eq!(
+            alias.render_geometry(1000, 2),
+            generic.render_geometry(1000, 2)
+        );
     }
 
     #[test]
@@ -537,6 +553,7 @@ mod tests {
             StockId::FujiPro400H,
             StockId::EktachromeE100,
             StockId::TriX400,
+            StockId::CineStill50D,
         ] {
             id.load().unwrap_or_else(|e| panic!("{id:?}: {e}"));
         }
@@ -724,9 +741,8 @@ mod tests {
                 data[y * 32 + x] = patch;
             }
         }
-        let e = crate::film::exposure::radiance::sunny16_exposure(crate::film::units::IsoSpeed(
-            200.0,
-        ));
+        let e =
+            crate::film::exposure::radiance::sunny16_exposure(crate::film::units::IsoSpeed(200.0));
         let mk = |data: Vec<[f32; 3]>| Image {
             rgb_data: data,
             raw_data: std::sync::Arc::from([]),
@@ -758,7 +774,7 @@ mod tests {
             .flat_map(|(_, (a, b))| a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()))
             .fold(0.0f32, f32::max);
         assert!(
-            ring_diff > 1e-3,
+            ring_diff > 1e-4,
             "halation must add signal around the patch (ring diff {ring_diff})"
         );
         for px in with.rgb_data.iter().chain(without.rgb_data.iter()) {
@@ -836,7 +852,7 @@ mod tests {
             c_sum += crate::film::colorimetry::chroma_ab(lab);
         }
         let mean_c = c_sum / 6.0;
-        // Analytic mid/Dmin invert only pins neutrality at the calibration mid;
+        // The bounded processed-Dmin invert only pins neutrality at the calibration mid;
         // darker/lighter neutrals pick up H&D channel imbalance (no gray-ramp).
         // Mid-gray neutrality is covered by `neutral_stays_near_neutral_positive`.
         assert!(mean_c < 55.0, "mean C*ab of neutrals = {mean_c}");
@@ -899,18 +915,56 @@ mod tests {
     }
 
     #[test]
-    fn stock_dmin_drives_invert_not_image_guess() {
+    fn processed_dmin_includes_chemical_fog() {
         let stock = StockId::ColorNeg200.load().unwrap();
-        let dmin = crate::film::scan::normalized_dmin_acescg(&stock);
-        let peak = dmin[0].max(dmin[1]).max(dmin[2]);
+        let base = crate::film::scan::normalized_dmin_acescg(&stock);
+        let peak = base[0].max(base[1]).max(base[2]);
         assert!(
             (peak - 1.0).abs() < 1e-5,
-            "normalized Dmin peak must be 1, got {dmin:?}"
+            "normalized base peak must be 1, got {base:?}"
         );
         // Orange mask: R > G > B on the film base.
         assert!(
-            dmin[0] > dmin[1] && dmin[1] > dmin[2],
-            "expected orange Dmin {dmin:?}"
+            base[0] > base[1] && base[1] > base[2],
+            "expected orange film base {base:?}"
+        );
+
+        let dmin = crate::film::scan::processed_dmin_acescg(
+            &stock,
+            FilmFormat::Film35mm.pixel_pitch_um(1000),
+            1.0 / stock.box_iso.0,
+        )
+        .unwrap();
+        assert!(
+            dmin.luminance() < base.luminance(),
+            "developed unexposed Dmin must include absorbing chemical fog: base={base:?}, dmin={dmin:?}"
+        );
+    }
+
+    #[test]
+    fn positive_half_mm_pre_rotation_width_halation_off_converges() {
+        // Film precedes final portrait rotation, so vale_lago reaches this stage
+        // at width 4032. Height 1 preserves the exact pitch without a 12 MP fixture.
+        let mut image = make_image(4032, 1, [MIDDLE_GRAY, MIDDLE_GRAY, MIDDLE_GRAY], 121.0);
+        image.metadata.shutter_seconds = Some(1.0 / 121.0);
+        let params = FilmParams {
+            stock: StockId::Portra400,
+            film_format: FilmFormat::Film35mm,
+            render_width_mm: Some(0.5),
+            seed: 1,
+            output: FilmOutput::PositiveLinear,
+            enable_halation: false,
+            compensate_box_speed: true,
+        };
+
+        process(&mut image, &params).unwrap();
+        assert!(
+            image
+                .rgb_data
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite()),
+            "production-state PositiveLinear output must remain finite"
         );
     }
 }

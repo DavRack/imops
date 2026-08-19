@@ -1,10 +1,12 @@
+use pichromatic::exp;
 use pichromatic::gpu::GpuContext;
 use pichromatic::image::ImageMetadata;
 use pichromatic::pixel::Image;
 use pichromatic_pipeline::backend::Backend;
 use pichromatic_pipeline::modules::{
-    CFACoeffs, Demosaic, DemosaicAlgorithmType, Exp, HighlightReconstruction,
-    LumaGuidedChromaDenoise, Module, Parameter, PipelineModule, SigmoidToneMap, Vignette,
+    BaselineExposureCompensation, CFACoeffs, Contrast, Demosaic, DemosaicAlgorithmType, Exp, Film,
+    HighlightReconstruction, LumaGuidedChromaDenoise, Module, Parameter, PipelineModule,
+    SigmoidToneMap, Vignette, CST,
 };
 use pichromatic_pipeline::pipeline::run_pixel_pipeline_with_backend;
 
@@ -18,120 +20,232 @@ use image::{DynamicImage, GenericImageView, RgbImage};
 fn main() {
     let raw_image_path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "test_data/plaza.dng".to_string());
+        .unwrap_or_else(|| "test_data/vale.dng".to_string());
 
     // 1. Load the raw image and its bytes
     let file_bytes = std::fs::read(&raw_image_path).expect("Failed to read raw image file");
     let decode_params = rawler::decoders::RawDecodeParams::default();
     let mut raw_file = rawler::rawsource::RawSource::new_from_slice(&file_bytes);
-    let raw_image = rawler::decode(&mut raw_file, &decode_params).expect("Failed to decode raw image");
+    let raw_image =
+        rawler::decode(&mut raw_file, &decode_params).expect("Failed to decode raw image");
 
     let file_bytes_clone = file_bytes.clone();
 
-    let pipeline1_label = "CPU";
-    let pipeline2_label = "GPU";
+    let pipeline1_label = "no halation";
+    let pipeline2_label = "halation";
 
-    run_viewer("Pipeline comparison (CPU vs GPU)", pipeline1_label, pipeline2_label, move || {
-        let gpu_context = GpuContext::try_new_sync().expect("Failed to initialize GPU context");
+    run_viewer(
+        "Pipeline comparison (CPU vs GPU)",
+        pipeline1_label,
+        pipeline2_label,
+        move || {
+            let gpu_context = GpuContext::try_new_sync().expect("Failed to initialize GPU context");
 
-        // --- Pipeline 1: CPU ---
-        let pipeline1: Vec<Box<dyn PipelineModule>> = vec![
-            Box::new(Module {
-                name: "Demosaic".to_string(),
-                cache: None,
-                config: Demosaic { algorithm: Parameter::new(DemosaicAlgorithmType::Markesteijn, "") },
-            }),
-            Box::new(Module {
-                name: "Vignette".to_string(),
-                cache: None,
-                config: Vignette { strength: Parameter::new(1.0, "") },
-            }),
-            Box::new(Module {
-                name: "HighlightReconstruction".to_string(),
-                cache: None,
-                config: HighlightReconstruction { },
-            }),
-            Box::new(Module {
-                name: "CFACoeffs".to_string(),
-                cache: None,
-                config: CFACoeffs { },
-            }),
-            Box::new(Module {
-                name: "LumaGuidedChromaDenoise".to_string(),
-                cache: None,
-                config: LumaGuidedChromaDenoise { radius: Parameter::new(4, ""), epsilon: Parameter::new(0.01, "") },
-            }),
-            Box::new(Module {
-                name: "Exp".to_string(),
-                cache: None,
-                config: Exp { ev: Parameter::new(3.0, "") },
-            }),
-            Box::new(Module {
-                name: "SigmoidToneMap".to_string(),
-                cache: None,
-                config: SigmoidToneMap { },
-            }),
-        ];
+            // --- Pipeline 1: CPU ---
+            let pipeline1: Vec<Box<dyn PipelineModule>> = vec![
+                Box::new(Module {
+                    name: "Demosaic".to_string(),
+                    cache: None,
+                    config: Demosaic {
+                        algorithm: Parameter::new(DemosaicAlgorithmType::Markesteijn, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "Vignette".to_string(),
+                    cache: None,
+                    config: Vignette {
+                        strength: Parameter::new(1.0, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "HighlightReconstruction".to_string(),
+                    cache: None,
+                    config: HighlightReconstruction {},
+                }),
+                Box::new(Module {
+                    name: "CFACoeffs".to_string(),
+                    cache: None,
+                    config: CFACoeffs {},
+                }),
+                Box::new(Module {
+                    name: "LumaGuidedChromaDenoise".to_string(),
+                    cache: None,
+                    config: LumaGuidedChromaDenoise {
+                        radius: Parameter::new(2, ""),
+                        epsilon: Parameter::new(0.01, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "Baselineexp".to_string(),
+                    cache: None,
+                    config: BaselineExposureCompensation {},
+                }),
+                Box::new(Module {
+                    name: "Exp".to_string(),
+                    cache: None,
+                    config: Exp {
+                        ev: Parameter::new(0.0, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "CST".to_string(),
+                    cache: None,
+                    config: CST {
+                        target_color_space: Parameter::new("AcesCg".to_string(), ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "film".to_string(),
+                    cache: None,
+                    config: Film {
+                        stock: Parameter::new("CineStill50D".to_string(), ""),
+                        film_format: Parameter::new("FilmSuper8".to_string(), ""),
+                        render_width_mm: Parameter::new(None, ""),
+                        seed: Parameter::new(1, ""),
+                        enable_halation: Parameter::new(false, ""),
+                        output: Parameter::new("PositiveLinear".to_string(), ""),
+                        compensate_box_speed: Parameter::new(true, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "Exp".to_string(),
+                    cache: None,
+                    config: Exp {
+                        ev: Parameter::new(0.0, ""),
+                    },
+                }),
+                // Box::new(Module {
+                //     name: "contrast".to_string(),
+                //     cache: None,
+                //     config: Contrast {c: Parameter::new(1.0, "") },
+                // }),
+                Box::new(Module {
+                    name: "SigmoidToneMap".to_string(),
+                    cache: None,
+                    config: SigmoidToneMap {},
+                }),
+                Box::new(Module {
+                    name: "CST".to_string(),
+                    cache: None,
+                    config: CST {
+                        target_color_space: Parameter::new("Srgb".to_string(), ""),
+                    },
+                }),
+            ];
 
-        // --- Pipeline 2: GPU ---
-        let pipeline2: Vec<Box<dyn PipelineModule>> = vec![
-            Box::new(Module {
-                name: "Demosaic".to_string(),
-                cache: None,
-                config: Demosaic { algorithm: Parameter::new(DemosaicAlgorithmType::Markesteijn, "") },
-            }),
-            Box::new(Module {
-                name: "Vignette".to_string(),
-                cache: None,
-                config: Vignette { strength: Parameter::new(1.0, "") },
-            }),
-            Box::new(Module {
-                name: "HighlightReconstruction".to_string(),
-                cache: None,
-                config: HighlightReconstruction { },
-            }),
-            Box::new(Module {
-                name: "CFACoeffs".to_string(),
-                cache: None,
-                config: CFACoeffs { },
-            }),
-            Box::new(Module {
-                name: "LumaGuidedChromaDenoise".to_string(),
-                cache: None,
-                config: LumaGuidedChromaDenoise { radius: Parameter::new(4, ""), epsilon: Parameter::new(0.01, "") },
-            }),
-            Box::new(Module {
-                name: "Exp".to_string(),
-                cache: None,
-                config: Exp { ev: Parameter::new(3.0, "") },
-            }),
-            Box::new(Module {
-                name: "SigmoidToneMap".to_string(),
-                cache: None,
-                config: SigmoidToneMap { },
-            }),
-        ];
+            // --- Pipeline 2: GPU ---
+            let pipeline2: Vec<Box<dyn PipelineModule>> = vec![
+                Box::new(Module {
+                    name: "Demosaic".to_string(),
+                    cache: None,
+                    config: Demosaic {
+                        algorithm: Parameter::new(DemosaicAlgorithmType::Markesteijn, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "Vignette".to_string(),
+                    cache: None,
+                    config: Vignette {
+                        strength: Parameter::new(1.0, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "HighlightReconstruction".to_string(),
+                    cache: None,
+                    config: HighlightReconstruction {},
+                }),
+                Box::new(Module {
+                    name: "CFACoeffs".to_string(),
+                    cache: None,
+                    config: CFACoeffs {},
+                }),
+                Box::new(Module {
+                    name: "LumaGuidedChromaDenoise".to_string(),
+                    cache: None,
+                    config: LumaGuidedChromaDenoise {
+                        radius: Parameter::new(2, ""),
+                        epsilon: Parameter::new(0.01, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "Baselineexp".to_string(),
+                    cache: None,
+                    config: BaselineExposureCompensation {},
+                }),
+                Box::new(Module {
+                    name: "Exp".to_string(),
+                    cache: None,
+                    config: Exp {
+                        ev: Parameter::new(0.0, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "CST".to_string(),
+                    cache: None,
+                    config: CST {
+                        target_color_space: Parameter::new("AcesCg".to_string(), ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "film".to_string(),
+                    cache: None,
+                    config: Film {
+                        stock: Parameter::new("CineStill50D".to_string(), ""),
+                        film_format: Parameter::new("Film35mm".to_string(), ""),
+                        render_width_mm: Parameter::new(None, ""),
+                        seed: Parameter::new(1, ""),
+                        enable_halation: Parameter::new(true, ""),
+                        output: Parameter::new("PositiveLinear".to_string(), ""),
+                        compensate_box_speed: Parameter::new(true, ""),
+                    },
+                }),
+                Box::new(Module {
+                    name: "Exp".to_string(),
+                    cache: None,
+                    config: Exp {
+                        ev: Parameter::new(0.0, ""),
+                    },
+                }),
+                // Box::new(Module {
+                //     name: "contrast".to_string(),
+                //     cache: None,
+                //     config: Contrast {c: Parameter::new(1.0, "") },
+                // }),
+                Box::new(Module {
+                    name: "SigmoidToneMap".to_string(),
+                    cache: None,
+                    config: SigmoidToneMap {},
+                }),
+                Box::new(Module {
+                    name: "CST".to_string(),
+                    cache: None,
+                    config: CST {
+                        target_color_space: Parameter::new("Srgb".to_string(), ""),
+                    },
+                }),
+            ];
 
-        println!("Processing pipeline 1 (CPU)...");
-        let now = Instant::now();
-        let mut image1 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
-        let mut config1 = pichromatic_pipeline::config::PipelineConfig {
-            pipeline_modules: pipeline1,
-        };
-        run_pixel_pipeline_with_backend(&mut image1, &mut config1, &Backend::Cpu);
-        println!("Pipeline 1 execution time: {}ms", now.elapsed().as_millis());
+            println!("Processing pipeline 1 (CPU)...");
+            let now = Instant::now();
+            let mut image1 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
+            let mut config1 = pichromatic_pipeline::config::PipelineConfig {
+                pipeline_modules: pipeline1,
+            };
+            run_pixel_pipeline_with_backend(&mut image1, &mut config1, &Backend::Cpu);
+            println!("Pipeline 1 execution time: {}ms", now.elapsed().as_millis());
 
-        println!("Processing pipeline 2 (GPU)...");
-        let now = Instant::now();
-        let mut image2 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
-        let mut config2 = pichromatic_pipeline::config::PipelineConfig {
-            pipeline_modules: pipeline2,
-        };
-        run_pixel_pipeline_with_backend(&mut image2, &mut config2, &Backend::Wgpu(gpu_context));
-        println!("Pipeline 2 execution time: {}ms", now.elapsed().as_millis());
+            println!("Processing pipeline 2 (GPU)...");
+            let now = Instant::now();
+            let mut image2 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
+            let mut config2 = pichromatic_pipeline::config::PipelineConfig {
+                pipeline_modules: pipeline2,
+            };
+            run_pixel_pipeline_with_backend(&mut image2, &mut config2, &Backend::Cpu);
+            println!("Pipeline 2 execution time: {}ms", now.elapsed().as_millis());
 
-        (image1, image2)
-    });
+            (image1, image2)
+        },
+    );
 
     println!("Visual tests finished.");
 }
@@ -178,10 +292,8 @@ impl ViewerApp {
     fn load_texture(&self, ctx: &Context, image: &RgbImage, name: &str) -> TextureHandle {
         let (width, height) = image.dimensions();
         let pixels = image.as_flat_samples();
-        let color_image = ColorImage::from_rgb(
-            [width as usize, height as usize],
-            pixels.as_slice(),
-        );
+        let color_image =
+            ColorImage::from_rgb([width as usize, height as usize], pixels.as_slice());
         ctx.load_texture(name, color_image, Default::default())
     }
 }
@@ -210,7 +322,11 @@ impl App for ViewerApp {
             let image_rect = Rect::from_center_size(rect.center(), widget_size);
 
             // --- Zoom and Pan calculations ---
-            let fit_zoom = if self.original_image_dims.x > 0.0 { widget_size.x / self.original_image_dims.x } else { 1.0 };
+            let fit_zoom = if self.original_image_dims.x > 0.0 {
+                widget_size.x / self.original_image_dims.x
+            } else {
+                1.0
+            };
 
             // Handle pan and zoom on the whole image area
             if response.hovered() {
@@ -227,8 +343,10 @@ impl App for ViewerApp {
 
                         if old_effective_zoom > 0.0 && new_effective_zoom > 0.0 {
                             let image_local_pos = pointer_pos - image_rect.min;
-                            let point_in_texture = self.offset_pixels + image_local_pos / old_effective_zoom;
-                            self.offset_pixels = point_in_texture - image_local_pos / new_effective_zoom;
+                            let point_in_texture =
+                                self.offset_pixels + image_local_pos / old_effective_zoom;
+                            self.offset_pixels =
+                                point_in_texture - image_local_pos / new_effective_zoom;
                         }
                     }
                 }
@@ -243,8 +361,14 @@ impl App for ViewerApp {
 
             // --- Clamp offset ---
             let visible_texture_dims = self.original_image_dims / self.zoom_level;
-            self.offset_pixels.x = self.offset_pixels.x.clamp(0.0, (self.original_image_dims.x - visible_texture_dims.x).max(0.0));
-            self.offset_pixels.y = self.offset_pixels.y.clamp(0.0, (self.original_image_dims.y - visible_texture_dims.y).max(0.0));
+            self.offset_pixels.x = self.offset_pixels.x.clamp(
+                0.0,
+                (self.original_image_dims.x - visible_texture_dims.x).max(0.0),
+            );
+            self.offset_pixels.y = self.offset_pixels.y.clamp(
+                0.0,
+                (self.original_image_dims.y - visible_texture_dims.y).max(0.0),
+            );
 
             // If we are not zoomed in, offset should be zero.
             if self.zoom_level <= 1.0 {
@@ -257,21 +381,31 @@ impl App for ViewerApp {
             let uv_rect = Rect::from_min_max(pos2(uv_min.x, uv_min.y), pos2(uv_max.x, uv_max.y));
 
             // --- Drawing ---
-            if let (Some(before_texture), Some(after_texture)) = (&self.before_texture, &self.after_texture) {
+            if let (Some(before_texture), Some(after_texture)) =
+                (&self.before_texture, &self.after_texture)
+            {
                 let painter = ui.painter_at(image_rect);
 
                 // Draw before image
-                painter.image(before_texture.id(), image_rect, uv_rect, egui::Color32::WHITE);
+                painter.image(
+                    before_texture.id(),
+                    image_rect,
+                    uv_rect,
+                    egui::Color32::WHITE,
+                );
 
                 // Draw after image (clipped)
                 let slider_x = image_rect.min.x + image_rect.width() * self.slider_position;
-                let clip_rect = Rect::from_min_max(
-                    pos2(slider_x, image_rect.min.y),
-                    image_rect.max,
-                );
-                
+                let clip_rect =
+                    Rect::from_min_max(pos2(slider_x, image_rect.min.y), image_rect.max);
+
                 let painter_clipped = painter.with_clip_rect(clip_rect);
-                painter_clipped.image(after_texture.id(), image_rect, uv_rect, egui::Color32::WHITE);
+                painter_clipped.image(
+                    after_texture.id(),
+                    image_rect,
+                    uv_rect,
+                    egui::Color32::WHITE,
+                );
 
                 // --- Labels with white outline ---
                 let text_y = image_rect.min.y + 8.0;
@@ -280,31 +414,53 @@ impl App for ViewerApp {
                 let fill = egui::Color32::from_black_alpha(200);
                 for (label, align, bx) in [
                     (&self.label1, egui::Align2::LEFT_TOP, image_rect.min.x + 8.0),
-                    (&self.label2, egui::Align2::RIGHT_TOP, image_rect.max.x - 8.0),
+                    (
+                        &self.label2,
+                        egui::Align2::RIGHT_TOP,
+                        image_rect.max.x - 8.0,
+                    ),
                 ] {
                     for &(dx, dy) in &[(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-                        painter.text(pos2(bx + dx, text_y + dy), align, label, font_id.clone(), outline);
+                        painter.text(
+                            pos2(bx + dx, text_y + dy),
+                            align,
+                            label,
+                            font_id.clone(),
+                            outline,
+                        );
                     }
                     painter.text(pos2(bx, text_y), align, label, font_id.clone(), fill);
                 }
 
                 // Draw slider line
                 painter.line_segment(
-                    [pos2(slider_x, image_rect.min.y), pos2(slider_x, image_rect.max.y)],
-                    egui::Stroke::new(2.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180)),
+                    [
+                        pos2(slider_x, image_rect.min.y),
+                        pos2(slider_x, image_rect.max.y),
+                    ],
+                    egui::Stroke::new(
+                        2.0,
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                    ),
                 );
-                
+
                 // --- Slider Interaction ---
                 let slider_handle_rect = Rect::from_center_size(
                     pos2(slider_x, image_rect.center().y),
                     Vec2::new(12.0, image_rect.height()),
                 );
-                let slider_response = ui.interact(slider_handle_rect, response.id.with("slider"), Sense::drag());
+                let slider_response = ui.interact(
+                    slider_handle_rect,
+                    response.id.with("slider"),
+                    Sense::drag(),
+                );
 
                 if slider_response.dragged() {
                     if let Some(pointer_pos) = ui.input(|i| i.pointer.hover_pos()) {
                         let new_slider_x = pointer_pos.x;
-                        self.slider_position = ((new_slider_x - image_rect.min.x) / image_rect.width()).clamp(0.0, 1.0);
+                        self.slider_position = ((new_slider_x - image_rect.min.x)
+                            / image_rect.width())
+                        .clamp(0.0, 1.0);
                     }
                 }
 
@@ -350,12 +506,7 @@ pub fn to_rgb_image(image: &Image) -> RgbImage {
     rgb_image
 }
 
-pub fn run_viewer<F>(
-    window_title: &'static str,
-    label1: &str,
-    label2: &str,
-    setup_fn: F,
-)
+pub fn run_viewer<F>(window_title: &'static str, label1: &str, label2: &str, setup_fn: F)
 where
     F: FnOnce() -> (Image, Image) + 'static,
 {

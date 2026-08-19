@@ -99,14 +99,20 @@ impl RoiLayout {
         num_emul: usize,
     ) -> Result<Self, crate::film::FilmError> {
         let e = num_emul.max(1);
-        let roi_n = roi_width.checked_mul(roi_height).ok_or(crate::film::FilmError::InvalidDimensions)?;
-        let img_n = img_width.checked_mul(img_height).ok_or(crate::film::FilmError::InvalidDimensions)?;
+        let roi_n = roi_width
+            .checked_mul(roi_height)
+            .ok_or(crate::film::FilmError::InvalidDimensions)?;
+        let img_n = img_width
+            .checked_mul(img_height)
+            .ok_or(crate::film::FilmError::InvalidDimensions)?;
 
         let num_planes = e
             .checked_mul(3)
             .and_then(|three_e| three_e.checked_add(2))
             .ok_or(crate::film::FilmError::InvalidDimensions)?;
-        let total_arena_floats = num_planes.checked_mul(roi_n).ok_or(crate::film::FilmError::InvalidDimensions)?;
+        let total_arena_floats = num_planes
+            .checked_mul(roi_n)
+            .ok_or(crate::film::FilmError::InvalidDimensions)?;
 
         Ok(Self {
             roi_width,
@@ -126,7 +132,9 @@ impl RoiLayout {
         if e >= self.num_emul {
             return Err(crate::film::FilmError::InvalidDimensions);
         }
-        let off = e.checked_mul(self.roi_n).ok_or(crate::film::FilmError::InvalidDimensions)?;
+        let off = e
+            .checked_mul(self.roi_n)
+            .ok_or(crate::film::FilmError::InvalidDimensions)?;
         u32::try_from(off).map_err(|_| crate::film::FilmError::InvalidDimensions)
     }
 
@@ -136,7 +144,8 @@ impl RoiLayout {
         if e >= self.num_emul {
             return Err(crate::film::FilmError::InvalidDimensions);
         }
-        let off = self.num_emul
+        let off = self
+            .num_emul
             .checked_add(e)
             .and_then(|idx| idx.checked_mul(self.roi_n))
             .ok_or(crate::film::FilmError::InvalidDimensions)?;
@@ -150,7 +159,8 @@ impl RoiLayout {
         if e >= self.num_emul {
             return Err(crate::film::FilmError::InvalidDimensions);
         }
-        let off = self.num_emul
+        let off = self
+            .num_emul
             .checked_mul(2)
             .and_then(|two_e| two_e.checked_add(e))
             .and_then(|idx| idx.checked_mul(self.roi_n))
@@ -161,7 +171,8 @@ impl RoiLayout {
     /// Offset (in f32 elements) of `blur_tmp` plane in the arena.
     #[inline]
     pub(super) fn blur_tmp_offset(&self) -> Result<u32, crate::film::FilmError> {
-        let off = self.num_emul
+        let off = self
+            .num_emul
             .checked_mul(3)
             .and_then(|three_e| three_e.checked_mul(self.roi_n))
             .ok_or(crate::film::FilmError::InvalidDimensions)?;
@@ -171,7 +182,8 @@ impl RoiLayout {
     /// Offset (in f32 elements) of `blur_out` plane in the arena.
     #[inline]
     pub(super) fn blur_out_offset(&self) -> Result<u32, crate::film::FilmError> {
-        let off = self.num_emul
+        let off = self
+            .num_emul
             .checked_mul(3)
             .and_then(|three_e| three_e.checked_add(1))
             .and_then(|idx| idx.checked_mul(self.roi_n))
@@ -537,7 +549,8 @@ pub(super) fn acquire_film_roi_resources(
     num_emul: usize,
 ) -> Result<FilmRoiLease, crate::film::FilmError> {
     let mut ws = WORKSPACE.0.lock().unwrap();
-    let roi_scratch = ws.take_roi_scratch(ctx, roi_width, roi_height, img_width, img_height, num_emul)?;
+    let roi_scratch =
+        ws.take_roi_scratch(ctx, roi_width, roi_height, img_width, img_height, num_emul)?;
     let (consts_key, consts) = ws.take_consts(ctx, stock, params, meta, img_width);
     Ok(FilmRoiLease {
         roi_scratch: Some(roi_scratch),
@@ -583,20 +596,21 @@ mod roi_workspace_tests {
         // Compute real plan.root dimensions (1024 + 2 * total_halo)
         let roi_w = plan.root.width as usize;
         let roi_h = plan.root.height as usize;
-        // Portra 400 halo radius: local(1) + wide(41) + dir(6) + adj(3) = 51.
+        // Portra 400 GPU halo: wide bounce (41) + adj (7) = 48.
+        // GPU scatter/DIR are not ported (CPU: core+tail scatter, DIR off).
         // Wide covers the CPU multi-bounce halation's widest kernel (σ·√3).
-        // 1024 + 102 = 1126.
-        assert_eq!(roi_w, 1126);
-        assert_eq!(roi_h, 1126);
+        // 1024 + 96 = 1120.
+        assert_eq!(roi_w, 1120);
+        assert_eq!(roi_h, 1120);
 
         let breakdown = film_roi_memory_breakdown(roi_w, roi_h, 4032, 3024, 6).unwrap();
 
-        // Exact byte verification for 1126x1126 root:
-        // Arena: (3*6 + 2) * 1126 * 1126 * 4 = 20 * 1,267,876 * 4 = 101,430,080 bytes (~96.73 MiB)
-        // Grain Spill: 4032 * 3024 * 4 = 12,192,768 * 4 = 48,771,072 bytes (~46.51 MiB)
-        // Partial: 2048 * 6 * 4 = 49,152 bytes (~0.05 MiB)
-        // Output: 4032 * 3024 * 16 = 195,084,288 bytes (~186.05 MiB)
-        assert_eq!(breakdown.arena_bytes, 101_430_080);
+        // Exact byte verification for 1120x1120 root:
+        // Arena: (3*6 + 2) * 1120 * 1120 * 4 = 20 * 1,254,400 * 4 = 100,352,000 bytes
+        // Grain Spill: 4032 * 3024 * 4 = 12,192,768 * 4 = 48,771,072 bytes
+        // Partial: 2048 * 6 * 4 = 49,152 bytes
+        // Output: 4032 * 3024 * 16 = 195,084,288 bytes
+        assert_eq!(breakdown.arena_bytes, 100_352_000);
         assert_eq!(breakdown.grain_spill_bytes, 48_771_072);
         assert_eq!(breakdown.var_partial_bytes, 49_152);
         assert_eq!(breakdown.output_bytes, 195_084_288);
@@ -604,8 +618,8 @@ mod roi_workspace_tests {
         let internal_scratch_mb = breakdown.internal_scratch_bytes as f64 / (1024.0 * 1024.0);
         let total_owned_mb = breakdown.total_film_owned_bytes as f64 / (1024.0 * 1024.0);
 
-        assert_eq!(breakdown.internal_scratch_bytes, 150_250_304); // ~143.28 MiB
-        assert_eq!(breakdown.total_film_owned_bytes, 345_334_592); // ~329.33 MiB
+        assert_eq!(breakdown.internal_scratch_bytes, 149_172_224);
+        assert_eq!(breakdown.total_film_owned_bytes, 344_256_512);
 
         assert!(
             internal_scratch_mb <= 150.0,

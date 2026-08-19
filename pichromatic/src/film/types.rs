@@ -29,6 +29,11 @@ pub enum FilmFormat {
     Film6x6,
     /// 4×5 sheet: 101.6 mm.
     Film4x5,
+    /// Super 8 (8 mm Type S) camera aperture width: 5.79 mm (ISO 3645 / Kodak Super 8).
+    /// Projectable is smaller (~5.46 mm); do not use that here.
+    FilmSuper8,
+    /// Standard 8 (8 mm Type R / Regular 8) camera aperture width: 4.90 mm (ISO 74: 4.90 × 3.60 mm).
+    FilmStandard8,
     /// Compatibility alias for a generic 1 mm physical render width.
     Film1mmDebug,
 }
@@ -40,6 +45,10 @@ impl FilmFormat {
             FilmFormat::Film35mm => Millimeters(36.0),
             FilmFormat::Film6x6 => Millimeters(56.0),
             FilmFormat::Film4x5 => Millimeters(101.6),
+            // ISO 3645 / Kodak Super 8 camera aperture (not projectable ~5.46 mm).
+            FilmFormat::FilmSuper8 => Millimeters(5.79),
+            // ISO 74 Regular 8 camera aperture 4.90 × 3.60 mm.
+            FilmFormat::FilmStandard8 => Millimeters(4.90),
             FilmFormat::Film1mmDebug => Millimeters(1.0),
         }
     }

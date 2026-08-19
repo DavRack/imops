@@ -9,7 +9,7 @@ pub mod upsample;
 pub use capture::DevelopableFractionLut;
 
 use crate::film::constants::ABSORPTION_SIGMA_SCALE_PER_UM;
-use crate::film::exposure::absorption::{absorb_stack, integrated_absorbed};
+use crate::film::exposure::absorption::{absorb_stack, absorb_stack_upward, mean_absorbed_fluence};
 use crate::film::exposure::upsample::upsample_acescg_f32;
 use crate::film::stock::{FilmStock, LayerKind};
 use crate::film::types::LatentPlanes;
@@ -18,8 +18,10 @@ use rayon::prelude::*;
 
 /// Expose `rgb` (absolute-luminance ACEScg) through `stock`.
 ///
-/// Always applies local gelatin scatter (`psf_local_um`) and support-reflection
-/// halation with cross-layer bleed from the stock antihalation model.
+/// Applies support-reflection bounce from the stock antihalation model.
+/// Processed-film MTF is not applied here as an exposure blur: it also includes
+/// development and adjacency and therefore belongs to end-to-end calibration.
+/// `enable_halation` only zeroes reflectance.
 pub fn expose(rgb: &ImageBuffer, width: usize, height: usize, stock: &FilmStock) -> LatentPlanes {
     expose_with_pitch(rgb, width, height, stock, 10.0)
 }
@@ -78,31 +80,48 @@ pub fn expose_with_pitch_shutter_and_scale(
         .count();
 
     let mut absorbed_planes: Vec<Vec<f32>> = (0..emulsion_count).map(|_| vec![0.0f32; n]).collect();
+    let mut bounce_planes: Vec<Vec<f32>> = (0..emulsion_count).map(|_| vec![0.0f32; n]).collect();
     let sigma_scale = ABSORPTION_SIGMA_SCALE_PER_UM;
 
-    let per_pixel: Vec<Vec<f32>> = rgb
+    let per_pixel: Vec<(Vec<f32>, Vec<f32>)> = rgb
         .par_iter()
         .map(|px| {
             let spectrum = pixel_fluence_spectrum(px, capture_scale);
-            let (layers, _) = absorb_stack(&stock.layers, &spectrum, sigma_scale);
+            let (forward_layers, phi_trans) = absorb_stack(&stock.layers, &spectrum, sigma_scale);
+            let mut phi_refl = [0.0f32; 16];
+            for i in 0..16 {
+                phi_refl[i] = phi_trans[i] * stock.antihalation.reflectance.samples[i] as f32;
+            }
+            let upward_layers = absorb_stack_upward(&stock.layers, &phi_refl, sigma_scale);
+
             let mut emulsion_abs = Vec::with_capacity(emulsion_count);
-            for la in &layers {
+            for la in &forward_layers {
                 if la.produces_latent {
-                    emulsion_abs.push(integrated_absorbed(&la.absorbed));
+                    emulsion_abs.push(mean_absorbed_fluence(&la.absorbed));
                 }
             }
-            emulsion_abs
+            let mut emulsion_bounce = Vec::with_capacity(emulsion_count);
+            for la in &upward_layers {
+                if la.produces_latent {
+                    emulsion_bounce.push(mean_absorbed_fluence(&la.absorbed));
+                }
+            }
+            (emulsion_abs, emulsion_bounce)
         })
         .collect();
 
-    for (p, abs_list) in per_pixel.iter().enumerate() {
+    for (p, (abs_list, bounce_list)) in per_pixel.iter().enumerate() {
         for (e, &a) in abs_list.iter().enumerate() {
             absorbed_planes[e][p] = a;
+        }
+        for (e, &b) in bounce_list.iter().enumerate() {
+            bounce_planes[e][p] = b;
         }
     }
 
     crate::film::exposure::halation::apply_spatial_exposure_effects(
         &mut absorbed_planes,
+        &bounce_planes,
         width,
         height,
         stock,

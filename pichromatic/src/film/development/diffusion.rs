@@ -1,91 +1,101 @@
-//! Eberhard / adjacency effect via reaction–diffusion unsharp mask.
+//! Eberhard / adjacency effect and cross-layer inhibitor diffusion via reaction–diffusion unsharp mask.
 //!
-//! Developer exhaustion depends on the local developed dye field. Adjacency is
-//! applied to the realized image-bearing planes (particle or continuum):
+//! Developer exhaustion and inhibitor release (DIR) depend on the local developed
+//! dye field. Adjacency and interlayer inhibitor coupling are applied to the
+//! realized image-bearing planes (particle realizations convolved with dye cloud PSF):
 //!
 //! ```text
-//! D' = D + β * (D − (D ⊛ G_σ))
+//! D_i' = D_i + sum_j M_ij * (D_j − (D_j ⊛ G_σ))
 //! ```
 //!
-//! σ = developer_diffusion_length in pixels; β = exhaustion sensitivity.
-//! Derived from reaction–diffusion, not a creative sharpening tool.
+//! where:
+//! - M_ii = β_self (intra-layer acutance / exhaustion)
+//! - M_ij = β_record for fast/slow layers of the same color record
+//! - M_ij = β_cross for layers across different color records (Y <-> M <-> C)
+//! - σ = developer_diffusion_length in pixels.
+//!
+//! Because the spatial expectation of (D_j − (D_j ⊛ G_σ)) is zero, total mean
+//! density is conserved: ⟨D_i'⟩ = ⟨D_i⟩.
 
 use crate::film::blur::gaussian_blur_separable;
 use crate::film::types::DyePlanes;
+use rayon::prelude::*;
 
-/// Apply Eberhard adjacency correction to realized image dye planes.
+/// Apply Eberhard adjacency correction to realized image dye planes (diagonal intra-layer only).
 pub fn apply_adjacency(dyes: &mut DyePlanes, sigma_px: f32, beta: f32) {
-    if beta.abs() < 1e-8 || sigma_px < 1e-3 {
+    if beta.abs() < 1e-8 || sigma_px < 1e-3 || dyes.image_dye.is_empty() {
         return;
     }
-    let width = dyes.width;
-    let height = dyes.height;
-    for plane in dyes.image_dye.iter_mut() {
-        let mut blurred = plane.clone();
-        gaussian_blur_separable(&mut blurred, width, height, sigma_px);
-        for (d, &b) in plane.iter_mut().zip(blurred.iter()) {
-            *d += beta * (*d - b);
-        }
+    let n = dyes.image_dye.len();
+    let mut matrix = vec![vec![0.0f32; n]; n];
+    for i in 0..n {
+        matrix[i][i] = beta;
     }
+    apply_cross_layer_adjacency(dyes, sigma_px, &matrix);
 }
 
-/// Apply DIR (Development Inhibitor Releasing) coupler interlayer chemical inhibition.
+/// Apply cross-layer inhibitor diffusion and adjacency correction to realized image dye planes.
 ///
-/// Developing silver halide in emulsion layer `i` releases inhibitor `I_i(x,y)`
-/// proportional to the realized dye density in that layer. Inhibitor is blurred
-/// by σ_dir = `dir_diffusion_length / pitch`, and target layers are scaled
-/// multiplicatively — no additive scene reinjection.
-///
-/// **Matrix layout:** `matrix[source][target]` (row = source emulsion `i` releasing inhibitor,
-/// column = target emulsion `j` receiving inhibition). Target `j` receives
-/// `ΔI_j = Σ_i matrix[i][j] · ((I_i ⊛ G_σ) − I_i)` from realized dyes, and its image
-/// dye is scaled by `exp(−ΔI_j)`.
-pub fn apply_dir_inhibition(
+/// For each layer `i`, the updated density is:
+/// ```text
+/// D_i' = D_i + sum_j M_ij * (D_j - G_sigma * D_j)
+/// ```
+/// where `M_ij` is the coupling matrix between layer `i` and layer `j`.
+pub fn apply_cross_layer_adjacency(
     dyes: &mut DyePlanes,
-    sigma_dir_px: f32,
-    matrix: &[Vec<f32>],
+    sigma_px: f32,
+    coupling_matrix: &[Vec<f32>],
 ) {
-    let num_emulsions = dyes.image_dye.len();
-    if num_emulsions == 0 || matrix.is_empty() || sigma_dir_px < 1e-3 {
+    if sigma_px < 1e-3 || dyes.image_dye.is_empty() || coupling_matrix.is_empty() {
+        return;
+    }
+    let is_all_zero = coupling_matrix
+        .iter()
+        .all(|row| row.iter().all(|&val| val.abs() < 1e-8));
+    if is_all_zero {
         return;
     }
     let width = dyes.width;
     let height = dyes.height;
-    let n = width * height;
+    let n = dyes.image_dye.len();
+    assert_eq!(
+        coupling_matrix.len(),
+        n,
+        "coupling matrix row count must match image_dye planes"
+    );
 
-    let mut diffused_inhibitors = Vec::with_capacity(num_emulsions);
-    for i in 0..num_emulsions {
-        let mut inh = dyes.image_dye[i].clone();
-        gaussian_blur_separable(&mut inh, width, height, sigma_dir_px);
-        diffused_inhibitors.push(inh);
-    }
+    // Compute Delta_j = D_j - G_sigma * D_j for each layer j.
+    let deltas: Vec<Vec<f32>> = dyes
+        .image_dye
+        .par_iter()
+        .map(|plane| {
+            let mut blurred = plane.clone();
+            gaussian_blur_separable(&mut blurred, width, height, sigma_px);
+            plane
+                .iter()
+                .zip(blurred.iter())
+                .map(|(&d, &b)| d - b)
+                .collect()
+        })
+        .collect();
 
-    for j in 0..num_emulsions {
-        let mut delta_inhibition = vec![0.0f32; n];
-        let mut active = false;
-
-        for i in 0..num_emulsions {
-            if i < matrix.len() && j < matrix[i].len() {
-                let weight = matrix[i][j]; // row i = source, col j = target
-                if weight.abs() > 1e-6 {
-                    active = true;
-                    let inh_diffused = &diffused_inhibitors[i];
-                    let inh_local = &dyes.image_dye[i];
-                    for p in 0..n {
-                        delta_inhibition[p] += weight * (inh_diffused[p] - inh_local[p]);
+    // D_i' = D_i + sum_j M_ij * Delta_j
+    dyes.image_dye
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, plane)| {
+            let row = &coupling_matrix[i];
+            let num_pixels = plane.len();
+            for p in 0..num_pixels {
+                let mut sum = 0.0f32;
+                for (j, &m_ij) in row.iter().enumerate() {
+                    if m_ij.abs() > 1e-8 && j < deltas.len() {
+                        sum += m_ij * deltas[j][p];
                     }
                 }
+                plane[p] += sum;
             }
-        }
-
-        if active {
-            let target_plane = &mut dyes.image_dye[j];
-            for p in 0..n {
-                let factor = (-delta_inhibition[p]).exp();
-                target_plane[p] *= factor;
-            }
-        }
-    }
+        });
 }
 
 #[cfg(test)]
@@ -174,80 +184,109 @@ mod tests {
             .zip(reference.image_dye[0].iter().zip(blurred.iter()))
         {
             let expected = d + beta * (d - b);
-            assert!((got - expected).abs() < 1e-5, "got={got} expected={expected}");
+            assert!(
+                (got - expected).abs() < 1e-5,
+                "got={got} expected={expected}"
+            );
         }
     }
 
     #[test]
-    fn dir_matrix_is_source_row_target_column() {
-        // Asymmetric coupling: source 1 → target 0 (matrix[1][0] = w).
-        let n = 16 * 16;
-        let mut dyes = DyePlanes {
-            width: 16,
-            height: 16,
-            image_dye: vec![vec![1.0f32; n], vec![1.0f32; n]],
-            mask_dye: vec![vec![0.0; n], vec![0.0; n]],
-        };
-        // Step edge in layer 1
-        for y in 0..16 {
-            for x in 0..16 {
-                dyes.image_dye[1][y * 16 + x] = if x < 8 { 0.2 } else { 1.0 };
+    fn cross_layer_adjacency_coupling_two_layers() {
+        let width = 64;
+        let height = 32;
+        let n = width * height;
+        // Layer 0 has step edge; Layer 1 is flat.
+        let mut l0 = vec![0.0f32; n];
+        let l1 = vec![0.5f32; n];
+        for y in 0..height {
+            for x in 0..width {
+                l0[y * width + x] = if x < width / 2 { 0.2 } else { 0.8 };
             }
         }
-        let w = 0.5f32;
-        let matrix = vec![vec![0.0, 0.0], vec![w, 0.0]]; // matrix[source 1][target 0]
-        apply_dir_inhibition(&mut dyes, 2.0, &matrix);
-        let got0_edge = dyes.image_dye[0][8 * 16 + 8];
-        let got1 = dyes.image_dye[1][8 * 16 + 8];
-        assert!(
-            got0_edge != 1.0,
-            "target 0 should be inhibited on edge by source 1"
-        );
-        assert_eq!(
-            got1, 1.0,
-            "target 1 must be unchanged under matrix[1][0]-only coupling"
-        );
-    }
-
-    #[test]
-    fn dir_flat_field_preserves_hd_curve() {
-        let n = 16 * 16;
         let mut dyes = DyePlanes {
-            width: 16,
-            height: 16,
-            image_dye: vec![vec![0.8f32; n], vec![0.5f32; n]],
-            mask_dye: vec![vec![0.0; n], vec![0.0; n]],
+            width,
+            height,
+            image_dye: vec![l0.clone(), l1.clone()],
+            mask_dye: vec![vec![0.0; n]; 2],
         };
-        let matrix = vec![vec![0.2, 0.4], vec![0.3, 0.1]];
-        apply_dir_inhibition(&mut dyes, 2.0, &matrix);
-        // Flat field should remain unchanged because diffused == local
-        for p in 0..n {
-            assert!((dyes.image_dye[0][p] - 0.8).abs() < 1e-5);
-            assert!((dyes.image_dye[1][p] - 0.5).abs() < 1e-5);
-        }
+
+        // Coupling matrix: Layer 0 has self beta=0.4; Layer 1 gets cross-coupled beta=0.2 from Layer 0.
+        let matrix = vec![vec![0.4, 0.0], vec![0.2, 0.3]];
+        let sigma = 3.0f32;
+        apply_cross_layer_adjacency(&mut dyes, sigma, &matrix);
+
+        let edge = width / 2;
+        // Layer 1 was initially flat at 0.5. Near the step edge of Layer 0, Layer 1 should be modulated.
+        let l1_near_light = dyes.image_dye[1][height / 2 * width + edge];
+        let l1_near_dark = dyes.image_dye[1][height / 2 * width + edge - 1];
+        assert!(
+            l1_near_light > 0.5,
+            "layer 1 near layer 0's light side should receive positive boost: got {l1_near_light}"
+        );
+        assert!(
+            l1_near_dark < 0.5,
+            "layer 1 near layer 0's dark side should receive depression: got {l1_near_dark}"
+        );
+
+        // Verify mean density of Layer 1 is preserved (since <Delta_0> = 0 and <Delta_1> = 0).
+        let mean_l1_after = dyes.image_dye[1].iter().sum::<f32>() / n as f32;
+        assert!(
+            (mean_l1_after - 0.5).abs() < 1e-5,
+            "layer 1 mean density must be strictly conserved: got {mean_l1_after}"
+        );
     }
 
     #[test]
-    fn dir_particle_spikes_affect_inhibition() {
-        let n = 16 * 16;
-        let flat = 0.5f32;
-        let mut flat_dyes = DyePlanes {
-            width: 16,
-            height: 16,
-            image_dye: vec![vec![flat; n], vec![flat; n]],
-            mask_dye: vec![vec![0.0; n], vec![0.0; n]],
-        };
-        let mut spiked = flat_dyes.clone();
-        for p in (0..n).step_by(7) {
-            spiked.image_dye[0][p] = 0.0;
-            spiked.image_dye[1][p] = 1.0;
+    fn cross_layer_adjacency_mean_conservation() {
+        let width = 48;
+        let height = 48;
+        let n = width * height;
+        let num_layers = 6;
+        let mut image_dye = Vec::new();
+        for l in 0..num_layers {
+            let mut plane = vec![0.0f32; n];
+            for y in 0..height {
+                for x in 0..width {
+                    plane[y * width + x] = 0.1 * (l as f32 + 1.0)
+                        + 0.3 * ((x * y + l * 13) % 17) as f32 / 17.0;
+                }
+            }
+            image_dye.push(plane);
         }
-        let matrix = vec![vec![0.2, 0.4], vec![0.3, 0.1]];
-        apply_dir_inhibition(&mut flat_dyes, 2.0, &matrix);
-        apply_dir_inhibition(&mut spiked, 2.0, &matrix);
-        assert_ne!(
-            flat_dyes.image_dye, spiked.image_dye,
-            "DIR must act on realized dye, not ignore particle structure"
-        );
+        let mut dyes = DyePlanes {
+            width,
+            height,
+            image_dye,
+            mask_dye: vec![vec![0.0; n]; num_layers],
+        };
+        let before_means: Vec<f64> = dyes
+            .image_dye
+            .iter()
+            .map(|plane| plane.iter().map(|&x| x as f64).sum::<f64>() / n as f64)
+            .collect();
+
+        // 6x6 coupling matrix with self, record, and cross terms.
+        let mut matrix = vec![vec![0.08f32; num_layers]; num_layers];
+        for i in 0..num_layers {
+            matrix[i][i] = 0.5; // self
+            let pair = if i % 2 == 0 { i + 1 } else { i - 1 };
+            matrix[i][pair] = 0.2; // same record
+        }
+
+        apply_cross_layer_adjacency(&mut dyes, 4.0, &matrix);
+
+        let after_means: Vec<f64> = dyes
+            .image_dye
+            .iter()
+            .map(|plane| plane.iter().map(|&x| x as f64).sum::<f64>() / n as f64)
+            .collect();
+
+        for (i, (&before, &after)) in before_means.iter().zip(after_means.iter()).enumerate() {
+            assert!(
+                (before - after).abs() < 2e-3,
+                "layer {i} mean must be conserved within boundary reflection precision: before={before}, after={after}"
+            );
+        }
     }
 }

@@ -48,16 +48,27 @@ pub const ABSORPTION_SIGMA_SCALE_PER_UM: f64 = 2.0;
 /// into absolute photon fluence to correctly anchor the T=4 crystal threshold model.
 pub const RADIOMETRIC_SCALE: f64 = 6.0;
 
-/// Fraction of each emulsion's absorbed fluence mixed with a local gelatin-scatter
-/// PSF (`AntihalationModel::psf_local_um`). Energy-conserving:
-/// `Φ' = (1−f)·Φ + f·(Φ ⊛ PSF_local)`. Order-of-magnitude in-emulsion scatter.
-pub const LOCAL_SCATTER_MIX: f32 = 0.18;
+/// Legacy GPU scatter amount `s` in the in-emulsion irradiation mix
+/// `scattered = (1−w)·G(σ_core)*Φ + w·Exp(λ)*Φ`,
+/// `Φ' = (1−s)·Φ + s·scattered`.
+///
+/// Retained only while the GPU is frozen under the CPU-first workflow. The CPU
+/// does not use these legacy constants: Kodak E-4050 publishes distinct
+/// processed-film B/G/R responses with an acutance lobe above 100%, which a
+/// nonnegative normalized kernel cannot represent by itself. The CPU uses the
+/// optional stock irradiation component jointly calibrated with cloud formation
+/// and post-realization adjacency.
+// Source context: Kodak E-4050, page 4, Daylight exposure / Process C-41.
+pub const SCATTER_AMOUNT: f32 = 1.0;
 
-/// Relative acceptance of support-bounce (wide halation) by emulsion index
-/// top→bottom (blue, green, red). Bounce arrives from below, so the deepest
-/// emulsion takes the most; shallower layers get a red-biased bleed (colored halo).
-/// Empirically chosen MVP weights — not measured interlayer coupling.
-pub const HALATION_BLEED_WEIGHTS_BGR: [f32; 3] = [0.20, 0.45, 1.0];
+/// Legacy GPU Gaussian core σ (µm); not used by the corrected CPU path.
+pub const SCATTER_CORE_UM: f32 = 2.5;
+
+/// Legacy GPU exponential-tail decay length λ (µm); not used by the CPU path.
+pub const SCATTER_TAIL_UM: f32 = 2.5;
+
+/// Legacy GPU exponential-tail weight; not used by the corrected CPU path.
+pub const SCATTER_TAIL_WEIGHT: f32 = 0.75;
 
 /// Empirically fit residual colored-coupler (orange mask) density as a fraction
 /// of `d_max` at undeveloped (f=0). Shared by reduction and Dmin densitometry —
@@ -69,3 +80,19 @@ pub const MASK_DENSITY_FRACTION_OF_DMAX: f32 = 0.4;
 /// random developable crystals at zero exposure yield linear particle density
 /// ≈ `FOG_OFFSET` when overwrite uses `D ≈ d_max · f`.
 pub const FOG_OFFSET: f32 = 0.005;
+
+/// Scanner detector / reconstruction Gaussian PSF sampling floor standard deviation (pixels).
+///
+/// In physical film scanners and digital camera digitization rigs, the sensor optical
+/// low-pass filter (OLPF), pixel aperture fill-factor diffusion, and optical reconstruction
+/// yield an effective detector sampling floor on the order of 0.6–0.7 px.
+pub const SCANNER_SENSOR_SIGMA_PX: f32 = 0.65;
+
+/// Scanner optical lens Gaussian PSF standard deviation (µm).
+///
+/// Physical film scanners and digital camera scanning lenses have a finite optical transfer
+/// function (diffraction, aberrations, focus depth) on the order of 1.5–2.5 µm.
+pub const SCANNER_OPTICAL_SIGMA_UM: f32 = 2.0;
+
+
+

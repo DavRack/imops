@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
-use pichromatic::pixel::Image;
 use super::{fields_from_config, Module, ModuleSchema, Parameter, PipelineModule};
 use crate::backend::{Backend, PipelineImage};
+use pichromatic::film::{FilmFormat, FilmOutput, FilmParams, StockId};
+use pichromatic::pixel::Image;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(default)]
@@ -26,6 +26,7 @@ fn parse_stock(s: &str) -> Option<StockId> {
         "FujichromeVelvia100" => StockId::FujichromeVelvia100,
         "EktachromeE100" => StockId::EktachromeE100,
         "TriX400" => StockId::TriX400,
+        "CineStill50D" => StockId::CineStill50D,
         _ => return None,
     })
 }
@@ -35,6 +36,8 @@ fn parse_film_format(s: &str) -> Option<FilmFormat> {
         "Film35mm" => FilmFormat::Film35mm,
         "Film6x6" => FilmFormat::Film6x6,
         "Film4x5" => FilmFormat::Film4x5,
+        "FilmSuper8" => FilmFormat::FilmSuper8,
+        "FilmStandard8" => FilmFormat::FilmStandard8,
         "Film1mmDebug" => FilmFormat::Film1mmDebug,
         _ => return None,
     })
@@ -59,7 +62,10 @@ fn film_params_from_config(config: &Film) -> Option<FilmParams> {
     let film_format = match parse_film_format(config.film_format.value.as_str()) {
         Some(f) => f,
         None => {
-            web_sys_warn(&format!("Unknown film format: {}", config.film_format.value));
+            web_sys_warn(&format!(
+                "Unknown film format: {}",
+                config.film_format.value
+            ));
             return None;
         }
     };
@@ -107,6 +113,7 @@ impl Default for Film {
                     "FujichromeVelvia100".to_string(),
                     "EktachromeE100".to_string(),
                     "TriX400".to_string(),
+                    "CineStill50D".to_string(),
                 ],
             ),
             film_format: Parameter::new_with_choices(
@@ -116,6 +123,8 @@ impl Default for Film {
                     "Film35mm".to_string(),
                     "Film6x6".to_string(),
                     "Film4x5".to_string(),
+                    "FilmSuper8".to_string(),
+                    "FilmStandard8".to_string(),
                     "Film1mmDebug".to_string(),
                 ],
             ),
@@ -130,7 +139,7 @@ impl Default for Film {
             ),
             output: Parameter::new_with_choices(
                 "NegativeLinear".to_string(),
-                "NegativeLinear: densitometric scanned negative. PositiveLinear: mid/Dmin invert from stock film base + mid-gray gain.",
+                "NegativeLinear: densitometric scanned negative. PositiveLinear: bounded invert from processed Dmin + neutral mid-gray scan.",
                 vec!["NegativeLinear".to_string(), "PositiveLinear".to_string()],
             ),
             compensate_box_speed: Parameter::new(
@@ -260,11 +269,7 @@ impl PipelineModule for Module<Film> {
             web_sys::console::log_1(
                 &format!(
                     "[Film] start stock={:?} format={:?} output={:?} {}x{}",
-                    params.stock,
-                    params.film_format,
-                    params.output,
-                    gpu_buf.width,
-                    gpu_buf.height
+                    params.stock, params.film_format, params.output, gpu_buf.width, gpu_buf.height
                 )
                 .into(),
             );
@@ -289,13 +294,17 @@ impl PipelineModule for Module<Film> {
     fn schema(&self) -> ModuleSchema {
         ModuleSchema {
             name: "Film".to_string(),
-            description: "Physically-based analog film simulation. NegativeLinear exports the densitometric scan; PositiveLinear inverts with the stock film-base Dmin and mid-gray gain.".to_string(),
+            description: "Physically-based analog film simulation. NegativeLinear exports the densitometric scan; PositiveLinear applies a bounded technical invert from processed Dmin and a neutral mid-gray scan.".to_string(),
             fields: fields_from_config(&self.config),
         }
     }
 
-    fn create(&self, module: serde_json::Map<String, serde_json::Value>) -> Box<dyn PipelineModule> {
-        let config: Film = serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid Film config");
+    fn create(
+        &self,
+        module: serde_json::Map<String, serde_json::Value>,
+    ) -> Box<dyn PipelineModule> {
+        let config: Film =
+            serde_json::from_value(serde_json::Value::Object(module)).expect("Invalid Film config");
         Box::new(Module {
             name: self.schema().name,
             cache: None,
@@ -352,7 +361,11 @@ mod tests {
         seed_image.cst(ColorSpaceTag::AcesCg);
         let dr_stops = 20;
         for (i, px) in seed_image.rgb_data.iter_mut().enumerate() {
-            let scale = if i % 2 == 0 { 2.0_f32.powi(dr_stops/2) } else { 1.0 / 2.0_f32.powi(dr_stops/2) };
+            let scale = if i % 2 == 0 {
+                2.0_f32.powi(dr_stops / 2)
+            } else {
+                1.0 / 2.0_f32.powi(dr_stops / 2)
+            };
             px[0] *= scale;
             px[1] *= scale;
             px[2] *= scale;

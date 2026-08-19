@@ -5,7 +5,7 @@
 //! path XYZ↔linear. Spatial layout: 6 columns × 4 rows.
 //!
 //! **These patches feed both the synthetic scene and the ΔE reference**.
-//! PositiveLinear is a mid/Dmin densitometric invert (no print-paper curve).
+//! PositiveLinear is a bounded processed-Dmin scanner invert (no print-paper curve).
 //! There is no independent densitometric characterization of a commercial stock.
 use crate::color::ColorSpaceTag;
 use crate::image::ImageMetadata;
@@ -130,7 +130,11 @@ pub fn sample_patch_means(image: &Image, patch: usize) -> [[f32; 3]; 24] {
                 }
             }
             let n = n.max(1) as f64;
-            means[idx] = [(acc[0] / n) as f32, (acc[1] / n) as f32, (acc[2] / n) as f32];
+            means[idx] = [
+                (acc[0] / n) as f32,
+                (acc[1] / n) as f32,
+                (acc[2] / n) as f32,
+            ];
         }
     }
     means

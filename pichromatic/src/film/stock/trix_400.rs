@@ -51,6 +51,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         is_reversal: false,
     };
 
+    // Kodak F-4017 reciprocity ladder; single per-film value.
     let slow_emulsion = EmulsionLayer {
         name: "trix_slow",
         depth_from_surface: Microns(6.0),
@@ -70,7 +71,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.70,
         capture_k: 0.9,
-        reciprocity_p: 0.89,
+        reciprocity_p: 0.85,
         is_reversal: false,
     };
 
@@ -80,13 +81,13 @@ pub fn load() -> Result<FilmStock, FilmError> {
         layers: vec![fast_emulsion, slow_emulsion],
         antihalation: AntihalationModel {
             reflectance: SpectralCurve::constant(0.02),
-            psf_local_um: 3.5,
             psf_halation_um: 50.0,
         },
+        irradiation_response: None,
         developer_diffusion_length: Microns(6.0),
         adjacency_beta: 0.35,
-        dir_diffusion_length: Microns(12.0),
-        dir_inhibition_matrix: vec![vec![0.03, 0.02], vec![0.02, 0.02]],
+        adjacency_beta_record: 0.0,
+        adjacency_beta_cross: 0.0,
         scanner_light: SpectralCurve::constant(1.0),
         capture_luts: vec![],
         grain_kappa: vec![],

@@ -43,10 +43,7 @@ fn vv_four_photon_poisson_emulsion_monotonicity() {
             f >= prev_f,
             "Emulsion fraction non-monotonic at phi={phi}: {f} < {prev_f}"
         );
-        assert!(
-            f >= 0.0 && f <= 1.0,
-            "Emulsion fraction out of [0, 1]: {f}"
-        );
+        assert!(f >= 0.0 && f <= 1.0, "Emulsion fraction out of [0, 1]: {f}");
         prev_f = f;
     }
 }
@@ -93,7 +90,11 @@ fn vv_dye_cloud_grain_variance_scaling() {
     let std_dev = |plane: &[f32]| {
         let n = plane.len() as f64;
         let mean = plane.iter().map(|&x| x as f64).sum::<f64>() / n;
-        let var = plane.iter().map(|&x| (x as f64 - mean).powi(2)).sum::<f64>() / n;
+        let var = plane
+            .iter()
+            .map(|&x| (x as f64 - mean).powi(2))
+            .sum::<f64>()
+            / n;
         var.sqrt() as f32
     };
 
@@ -104,10 +105,8 @@ fn vv_dye_cloud_grain_variance_scaling() {
             dyes,
             &[d_max],
             &[kappa],
-            &[1.0],
             pitch_um,
             seed,
-            &[None], 0.0, &[], 0.0, 0.0,
         );
     };
 
@@ -129,10 +128,7 @@ fn vv_dye_cloud_grain_variance_scaling() {
     let std_dmax = std_dev(plane_dmax);
     let mean_dmax = mean_of(plane_dmax) as f32;
 
-    assert!(
-        std_mid > 0.01,
-        "midtone grain too weak: std_mid={std_mid}"
-    );
+    assert!(std_mid > 0.01, "midtone grain too weak: std_mid={std_mid}");
     assert!(
         std_dmax > 0.01,
         "Dmax must retain site-count noise under fixed sites: std_dmax={std_dmax}"
@@ -155,8 +151,8 @@ fn vv_dye_cloud_grain_variance_scaling() {
     );
     for plane in [plane_mid, plane_dmin, plane_dmax] {
         assert!(
-            plane.iter().all(|&v| v.is_finite() && v <= d_max * 1.05),
-            "grain output must stay finite and within toe-clamped range"
+            plane.iter().all(|&v| v.is_finite() && v >= 0.0),
+            "grain output must stay finite and non-negative"
         );
         assert!(
             plane.iter().any(|&v| v > 0.0),

@@ -5,14 +5,14 @@
 //!
 //! Dye density is `D = D_max · f^(1/γ)`. Lower γ → steeper mid/highlight punch.
 //! Fast (large-crystal) layers use a milder γ so the toe still densifies; slow
-//! layers use a harder γ for snap above mid. Strong DIR + narrow dye ε for
-//! saturation. Not a densitometric match to measured Ektar.
+//! layers use a harder γ for snap above mid. Narrow dye ε for saturation;
+//! DIR is off (no published matrix). Residual acutance is `adjacency_beta`.
+//! Not a densitometric match to measured Ektar.
 
 use crate::film::error::FilmError;
 use crate::film::spectrum::{SpectralCurve, WavelengthGrid};
-use crate::film::stock::{
-    AntihalationModel, DyeCoupler, EmulsionLayer, FilmStock, LayerKind, LogNormalDist,
-};
+use crate::film::stock::kit;
+use crate::film::stock::{DyeCoupler, EmulsionLayer, FilmStock, LayerKind, LogNormalDist};
 use crate::film::units::{IsoSpeed, Microns};
 
 fn gaussian_curve(peak_nm: f64, sigma_nm: f64, amplitude: f64) -> SpectralCurve {
@@ -44,21 +44,10 @@ fn orange_mask_epsilon() -> SpectralCurve {
 }
 
 pub fn load() -> Result<FilmStock, FilmError> {
-    let overcoat = EmulsionLayer {
-        name: "overcoat",
-        depth_from_surface: Microns(0.0),
-        thickness: Microns(1.0),
-        kind: LayerKind::Overcoat,
-        spectral_sensitivity: Some(SpectralCurve::constant(0.01)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
-        reciprocity_p: 1.0,
-        is_reversal: false,
-    };
+    let overcoat = kit::overcoat(0.0);
 
+    // Kodak E-4040 datasheet: "no compensation required 1/10,000 s to 1 s"; digitized spectral peak B=470 nm (official curve).
+    // Beyond 1 s: LIRF rolloff not modeled (single-exponent limit).
     // --- BLUE FAST & SLOW ---
     // Fast: larger crystals + milder γ → open toe. Slow: fine + hard γ → punch.
     // Ektar 100 is a fine-grain 100-speed tabular-grain emulsion; fast-layer
@@ -69,7 +58,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         depth_from_surface: Microns(1.0),
         thickness: Microns(2.8),
         kind: LayerKind::Emulsion,
-        spectral_sensitivity: Some(gaussian_curve(450.0, 32.0, 1.0)),
+        spectral_sensitivity: Some(gaussian_curve(470.0, 32.0, 1.0)),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.66_f64.ln(),
             sigma_ln: 0.32,
@@ -83,7 +72,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.58,
         capture_k: 4.8,
-        reciprocity_p: 0.86,
+        reciprocity_p: 1.0,
         is_reversal: false,
     };
     let blue_slow = EmulsionLayer {
@@ -91,7 +80,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         depth_from_surface: Microns(3.8),
         thickness: Microns(2.5),
         kind: LayerKind::Emulsion,
-        spectral_sensitivity: Some(gaussian_curve(450.0, 32.0, 0.85)),
+        spectral_sensitivity: Some(gaussian_curve(470.0, 32.0, 0.85)),
         crystal_size: Some(LogNormalDist {
             mu_ln: 0.30_f64.ln(),
             sigma_ln: 0.24,
@@ -105,24 +94,11 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.34,
         capture_k: 6.5,
-        reciprocity_p: 0.90,
-        is_reversal: false,
-    };
-
-    let yellow_filter = EmulsionLayer {
-        name: "yellow_filter",
-        depth_from_surface: Microns(6.0),
-        thickness: Microns(2.0),
-        kind: LayerKind::Filter,
-        spectral_sensitivity: Some(gaussian_curve(430.0, 38.0, 1.35)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
         reciprocity_p: 1.0,
         is_reversal: false,
     };
+
+    let yellow_filter = kit::yellow_filter(6.0, 2.0, gaussian_curve(430.0, 38.0, 1.35));
 
     // --- GREEN FAST & SLOW ---
     let green_fast = EmulsionLayer {
@@ -144,7 +120,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.58,
         capture_k: 2.6,
-        reciprocity_p: 0.88,
+        reciprocity_p: 1.0,
         is_reversal: false,
     };
     let green_slow = EmulsionLayer {
@@ -166,7 +142,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.34,
         capture_k: 3.6,
-        reciprocity_p: 0.92,
+        reciprocity_p: 1.0,
         is_reversal: false,
     };
 
@@ -190,7 +166,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.58,
         capture_k: 1.6,
-        reciprocity_p: 0.90,
+        reciprocity_p: 1.0,
         is_reversal: false,
     };
     let red_slow = EmulsionLayer {
@@ -212,36 +188,11 @@ pub fn load() -> Result<FilmStock, FilmError> {
         }),
         gamma_contrast: 0.34,
         capture_k: 2.4,
-        reciprocity_p: 0.94,
-        is_reversal: false,
-    };
-
-    let antihalation = EmulsionLayer {
-        name: "antihalation",
-        depth_from_surface: Microns(21.5),
-        thickness: Microns(2.0),
-        kind: LayerKind::Antihalation,
-        spectral_sensitivity: Some(gaussian_curve(650.0, 80.0, 0.25)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
         reciprocity_p: 1.0,
         is_reversal: false,
     };
 
-    // 6 emulsion layers: [BF, BS, GF, GS, RF, RS]
-    // Stronger off-diagonal DIR than Portra, but not so strong that slow
-    // highlight layers are extinguished by fast-layer inhibitor.
-    let dir_matrix = vec![
-        vec![0.03, 0.02, 0.09, 0.04, 0.07, 0.03],
-        vec![0.02, 0.02, 0.04, 0.02, 0.04, 0.02],
-        vec![0.09, 0.04, 0.03, 0.02, 0.10, 0.04],
-        vec![0.04, 0.02, 0.02, 0.02, 0.04, 0.02],
-        vec![0.07, 0.03, 0.10, 0.04, 0.03, 0.02],
-        vec![0.03, 0.02, 0.04, 0.02, 0.02, 0.02],
-    ];
+    let antihalation = kit::antihalation_layer(21.5);
 
     let stock = FilmStock {
         name: "Ektar100",
@@ -257,21 +208,16 @@ pub fn load() -> Result<FilmStock, FilmError> {
             red_slow,
             antihalation,
         ],
-        antihalation: AntihalationModel {
-            reflectance: gaussian_curve(680.0, 60.0, 0.08),
-            psf_local_um: 2.5,
-            psf_halation_um: 55.0,
-        },
+        antihalation: kit::backing(55.0),
+        irradiation_response: None,
         developer_diffusion_length: Microns(6.0),
-        adjacency_beta: 0.55,
-        dir_diffusion_length: Microns(14.0),
-        dir_inhibition_matrix: dir_matrix,
+        adjacency_beta: 0.72,
+        adjacency_beta_record: 0.0,
+        adjacency_beta_cross: 0.0,
         scanner_light: SpectralCurve::constant(1.0),
         capture_luts: vec![],
         grain_kappa: vec![],
-        // Kodak T-grain (tabular) morphology: plate thickness ~0.15 µm
-        // (published T-grain range 0.1-0.2 µm).
-        tabular_grain_thickness_um: Some(0.15),
+        tabular_grain_thickness_um: Some(kit::T_GRAIN_THICKNESS_UM),
     };
     stock.finalize()
 }
@@ -309,12 +255,5 @@ mod tests {
         );
         assert!(p_gamma.iter().all(|&g| (0.5..0.72).contains(&g)));
         assert!(ektar.adjacency_beta > portra.adjacency_beta);
-
-        let e_dir: f32 = ektar.dir_inhibition_matrix.iter().flatten().copied().sum();
-        let p_dir: f32 = portra.dir_inhibition_matrix.iter().flatten().copied().sum();
-        assert!(
-            e_dir > p_dir,
-            "Ektar DIR sum {e_dir} should exceed Portra {p_dir}"
-        );
     }
 }

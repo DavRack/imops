@@ -1,28 +1,24 @@
-//! Halation and local gelatin scatter on absorbed-fluence planes.
+//! Stock-specific irradiation spread and halation from wide support bounce.
 //!
-//! Two stages (film-implementation.md §5.6):
-//! 1. **Local scatter** — always-on in-gelatin blur via `psf_local_um`
-//!    (`Φ' = (1−f)·Φ + f·(Φ ⊛ PSF_local)`). Softens even with zero backing R.
-//! 2. **Support bounce** — wide PSF from `psf_halation_um`, weighted by backing
-//!    reflectance. Bounce is formed from the deepest emulsion's *absorbed*
-//!    fluence (not transmitted-to-backing). Absorbed ≈ complement of transmitted
-//!    only in a thin-layer sense; for MVP both broadly track incident red, so
-//!    absorbed is used as a cheap bounce-source proxy. Shallower layers receive
-//!    a red-biased bleed so the halo is colored, not gray.
+//! A wide multi-bounce PSF from `psf_halation_um` is applied
+//!    to each emulsion layer's physical upward-reflected bounce field B_e,
+//!    derived via bidirectional Beer-Lambert absorption through the film stack.
+//!    Gated by backing reflectance (`enable_halation` zeroes R).
 
-use crate::film::blur::gaussian_blur_separable;
-use crate::film::constants::{HALATION_BLEED_WEIGHTS_BGR, LOCAL_SCATTER_MIX};
+use crate::film::blur::{exponential_blur_separable, gaussian_blur_separable};
 use crate::film::spectrum::{SpectralCurve, WavelengthGrid};
-use crate::film::stock::{AntihalationModel, EmulsionLayer, FilmStock};
+use crate::film::stock::{AntihalationModel, FilmStock};
 
 /// Representative bands for spectral reflectance sampling (nm).
 const HALATION_BANDS_NM: [f64; 4] = [450.0, 550.0, 650.0, 700.0];
 
-/// Apply local scatter + wide backing halation with cross-layer bleed in place.
+/// Apply stock-specific irradiation spread, then wide backing bounce in place.
 ///
-/// `absorbed_planes` are emulsion planes top→bottom (e.g. blue, green, red).
+/// `absorbed_planes` are forward absorbed emulsion planes top→bottom (e.g. blue, green, red).
+/// `bounce_planes` are unblurred upward absorbed bounce fields $B_e$ in the same layer order.
 pub fn apply_spatial_exposure_effects(
     absorbed_planes: &mut [Vec<f32>],
+    bounce_planes: &[Vec<f32>],
     width: usize,
     height: usize,
     stock: &FilmStock,
@@ -35,33 +31,48 @@ pub fn apply_spatial_exposure_effects(
     for plane in absorbed_planes.iter() {
         assert_eq!(plane.len(), n);
     }
+    for plane in bounce_planes.iter() {
+        assert_eq!(plane.len(), n);
+    }
 
-    // --- 1. Local gelatin scatter (always on if psf_local > 0) ---
-    let sigma_local = sigma_px_from_um(stock.antihalation.psf_local_um, pixel_pitch_um);
-    if sigma_local >= 1e-3 && LOCAL_SCATTER_MIX > 0.0 {
-        for plane in absorbed_planes.iter_mut() {
-            apply_local_scatter(plane, width, height, LOCAL_SCATTER_MIX, sigma_local);
+    // This is one component of an effective joint record-response fit with the
+    // D/4 realized-cloud footprint and realization-only adjacency. The split is
+    // not independently identified irradiation physics or exact Status-M
+    // calibration, and is not Kodak's final-film MTF applied wholesale here.
+    if let Some(response) = stock.irradiation_response {
+        let core_sigma_px = response.core_sigma_um / pixel_pitch_um.max(1e-6);
+        let tail_decay_px = response.tail_decay_um / pixel_pitch_um.max(1e-6);
+        for (emulsion, plane) in absorbed_planes.iter_mut().enumerate() {
+            let weight = response.tail_weight_bgr[emulsion / 2];
+            let mut core = plane.clone();
+            let mut tail = plane.clone();
+            gaussian_blur_separable(&mut core, width, height, core_sigma_px);
+            exponential_blur_separable(&mut tail, width, height, tail_decay_px);
+            for ((value, core), tail) in plane.iter_mut().zip(core).zip(tail) {
+                *value = (1.0 - weight) * core + weight * tail;
+            }
         }
     }
 
-    // --- 2. Wide support bounce with multi-bounce geometry and cross-layer bleed ---
+    // Wide support bounce with multi-bounce geometry.
     let sigma_wide = sigma_px_from_um(stock.antihalation.psf_halation_um, pixel_pitch_um);
     if sigma_wide < 1e-3 {
         return;
     }
 
-    let emulsion_layers: Vec<&EmulsionLayer> = stock.emulsion_layers().map(|(_, l)| l).collect();
-    let use_stock_layers = emulsion_layers.len() == absorbed_planes.len();
-
     // Check if backing reflectance is non-zero
-    let bands = band_reflectances(&stock.antihalation);
-    let max_r = bands.iter().copied().fold(0.0f32, f32::max);
+    let max_r = stock
+        .antihalation
+        .reflectance
+        .samples
+        .iter()
+        .copied()
+        .fold(0.0f64, f64::max) as f32;
     if max_r <= 0.0 {
         return;
     }
 
     // Multi-bounce back reflection geometry (N=3 bounces with decay rho=0.5)
-    let deep = absorbed_planes.len() - 1;
     const N_BOUNCES: usize = 3;
     const RHO: f32 = 0.5;
     let mut decay_weights = [0.0f32; N_BOUNCES];
@@ -74,100 +85,23 @@ pub fn apply_spatial_exposure_effects(
         decay_weights[k] /= sum_decay;
     }
 
-    let mut multi_bounce = vec![0.0f32; n];
-    for (k, &wk) in decay_weights.iter().enumerate() {
-        let bounce_k_sigma = sigma_wide * ((k + 1) as f32).sqrt();
-        let mut b_k = absorbed_planes[deep].clone();
-        gaussian_blur_separable(&mut b_k, width, height, bounce_k_sigma);
-        for p in 0..n {
-            multi_bounce[p] += wk * b_k[p];
-        }
-    }
-
-    // Compute bleed weights derived from each layer's spectral sensitivity peak wavelength.
-    let bleed = if use_stock_layers {
-        bleed_weights_for_layers(&emulsion_layers)
-    } else {
-        bleed_weights_fallback(absorbed_planes.len())
-    };
-
     for (e, plane) in absorbed_planes.iter_mut().enumerate() {
-        let r_e = if use_stock_layers {
-            if let Some(sens) = emulsion_layers[e].spectral_sensitivity.as_ref() {
-                effective_reflectance(&stock.antihalation.reflectance, sens)
-            } else {
-                reflectance_at(&stock.antihalation, 650.0)
-            }
-        } else {
-            reflectance_at(&stock.antihalation, 650.0)
-        };
-        let gain = r_e * bleed[e];
-        if gain <= 0.0 {
+        if e >= bounce_planes.len() {
             continue;
         }
-        for (p, &b) in plane.iter_mut().zip(multi_bounce.iter()) {
-            *p += gain * b;
+        let mut halation_plane = vec![0.0f32; n];
+        for (k, &wk) in decay_weights.iter().enumerate() {
+            let bounce_k_sigma = sigma_wide * ((k + 1) as f32).sqrt();
+            let mut b_k = bounce_planes[e].clone();
+            gaussian_blur_separable(&mut b_k, width, height, bounce_k_sigma);
+            for p in 0..n {
+                halation_plane[p] += wk * b_k[p];
+            }
+        }
+        for (p, &h) in plane.iter_mut().zip(halation_plane.iter()) {
+            *p += h;
         }
     }
-}
-
-/// Compute per-layer halation bleed weights for stock emulsion layers based on spectral sensitivity peak wavelength.
-pub fn bleed_weights_for_stock(stock: &FilmStock) -> Vec<f32> {
-    let emulsion_layers: Vec<&EmulsionLayer> = stock.emulsion_layers().map(|(_, l)| l).collect();
-    bleed_weights_for_layers(&emulsion_layers)
-}
-
-/// Derive each layer's bleed weight from its actual spectral sensitivity peak wavelength.
-pub fn bleed_weights_for_layers(layers: &[&EmulsionLayer]) -> Vec<f32> {
-    let mut w = vec![0.0f32; layers.len()];
-    for (i, layer) in layers.iter().enumerate() {
-        let peak_lambda = if let Some(sens) = &layer.spectral_sensitivity {
-            sens.peak_wavelength()
-        } else {
-            if layers.len() <= 1 {
-                550.0
-            } else {
-                450.0 + (i as f64 / (layers.len() - 1) as f64) * 200.0
-            }
-        };
-
-        let b = HALATION_BLEED_WEIGHTS_BGR[0];
-        let g = HALATION_BLEED_WEIGHTS_BGR[1];
-        let r = HALATION_BLEED_WEIGHTS_BGR[2];
-
-        w[i] = if peak_lambda <= 450.0 {
-            b
-        } else if peak_lambda <= 550.0 {
-            let t = ((peak_lambda - 450.0) / 100.0) as f32;
-            b + (g - b) * t
-        } else if peak_lambda <= 650.0 {
-            let t = ((peak_lambda - 550.0) / 100.0) as f32;
-            g + (r - g) * t
-        } else {
-            r
-        };
-    }
-    w
-}
-
-fn bleed_weights_fallback(emulsion_count: usize) -> Vec<f32> {
-    let mut w = vec![0.0f32; emulsion_count];
-    for i in 0..emulsion_count {
-        let t = if emulsion_count <= 1 {
-            1.0
-        } else {
-            i as f32 / (emulsion_count - 1) as f32
-        };
-        let b = HALATION_BLEED_WEIGHTS_BGR[0];
-        let r = HALATION_BLEED_WEIGHTS_BGR[2];
-        let g = HALATION_BLEED_WEIGHTS_BGR[1];
-        w[i] = if t <= 0.5 {
-            b + (g - b) * (t * 2.0)
-        } else {
-            g + (r - g) * ((t - 0.5) * 2.0)
-        };
-    }
-    w
 }
 
 /// Effective backing reflectance integrated over an emulsion layer's spectral sensitivity curve.
@@ -177,26 +111,6 @@ pub fn effective_reflectance(reflectance: &SpectralCurve, sensitivity: &Spectral
         return reflectance.evaluate(650.0) as f32;
     }
     (reflectance.integrate_against(sensitivity) / norm) as f32
-}
-
-/// Energy-conserving local scatter: `Φ' = (1−f)·Φ + f·blur(Φ)`.
-pub fn apply_local_scatter(
-    plane: &mut [f32],
-    width: usize,
-    height: usize,
-    mix: f32,
-    sigma_px: f32,
-) {
-    let f = mix.clamp(0.0, 1.0);
-    if f <= 0.0 || sigma_px < 1e-3 {
-        return;
-    }
-    let mut scattered = plane.to_vec();
-    gaussian_blur_separable(&mut scattered, width, height, sigma_px);
-    let keep = 1.0 - f;
-    for (p, s) in plane.iter_mut().zip(scattered.iter()) {
-        *p = keep * *p + f * s;
-    }
 }
 
 /// Apply additive wide-halation to a planar absorbed-fluence field.
@@ -258,7 +172,8 @@ pub fn interpolate_band_weights(band_weights: [f32; 4]) -> [f32; 16] {
         for b in 0..3 {
             if lambda >= HALATION_BANDS_NM[b] && lambda <= HALATION_BANDS_NM[b + 1] {
                 let t = ((lambda - HALATION_BANDS_NM[b])
-                    / (HALATION_BANDS_NM[b + 1] - HALATION_BANDS_NM[b])) as f32;
+                    / (HALATION_BANDS_NM[b + 1] - HALATION_BANDS_NM[b]))
+                    as f32;
                 out[i] = band_weights[b] * (1.0 - t) + band_weights[b + 1] * t;
                 break;
             }
@@ -279,7 +194,6 @@ mod tests {
     fn elevated_ah() -> AntihalationModel {
         AntihalationModel {
             reflectance: SpectralCurve::constant(0.5),
-            psf_local_um: 2.0,
             psf_halation_um: 20.0,
         }
     }
@@ -326,22 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn local_scatter_softens_impulse() {
-        let width = 33;
-        let height = 33;
-        let mut plane = vec![0.0f32; width * height];
-        let cx = width / 2;
-        let cy = height / 2;
-        plane[cy * width + cx] = 1.0;
-        apply_local_scatter(&mut plane, width, height, 0.5, 2.0);
-        assert!(plane[cy * width + cx] < 1.0);
-        assert!(plane[cy * width + cx + 2] > 1e-4);
-        let sum: f32 = plane.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-3, "energy should conserve, sum={sum}");
-    }
-
-    #[test]
-    fn cross_layer_bleed_hits_shallower_more_from_deep_source() {
+    fn halation_multi_bounce_adds_to_absorbed_planes() {
         use crate::film::stock::{EmulsionLayer, FilmStock, LayerKind};
         use crate::film::units::{IsoSpeed, Microns};
 
@@ -349,10 +248,13 @@ mod tests {
         let height = 41;
         let n = width * height;
         let mut planes = vec![vec![0.0f32; n]; 3];
-        // Only deep (red) layer has an impulse.
+        let mut bounce_planes = vec![vec![0.0f32; n]; 3];
         let cx = width / 2;
         let cy = height / 2;
-        planes[2][cy * width + cx] = 1.0;
+        // Red bounce layer has an impulse
+        bounce_planes[2][cy * width + cx] = 1.0;
+        // Blue bounce layer has smaller impulse
+        bounce_planes[0][cy * width + cx] = 0.1;
 
         fn make_emulsion(name: &'static str, peak_nm: f64) -> EmulsionLayer {
             let grid = WavelengthGrid::mvp();
@@ -389,25 +291,53 @@ mod tests {
                 make_emulsion("red", 650.0),
             ],
             antihalation: elevated_ah(),
+            irradiation_response: None,
             developer_diffusion_length: Microns(1.0),
             adjacency_beta: 0.0,
-            dir_diffusion_length: Microns(1.0),
-            dir_inhibition_matrix: vec![],
+            adjacency_beta_record: 0.0,
+            adjacency_beta_cross: 0.0,
             scanner_light: SpectralCurve::constant(1.0),
             capture_luts: vec![],
             grain_kappa: vec![],
             tabular_grain_thickness_um: None,
         };
 
-        apply_spatial_exposure_effects(&mut planes, width, height, &stock, 5.0);
+        apply_spatial_exposure_effects(&mut planes, &bounce_planes, width, height, &stock, 5.0);
 
-        // Shallower planes must pick up some of the deep bounce (colored halo path).
         let blue_halo = planes[0][cy * width + cx + 4];
         let green_halo = planes[1][cy * width + cx + 4];
         let red_halo = planes[2][cy * width + cx + 4];
-        assert!(blue_halo > 1e-6, "blue should receive bleed");
-        assert!(green_halo > blue_halo, "green bleed ≥ blue");
-        assert!(red_halo > green_halo, "red (source layer) gets most bounce");
+        assert!(
+            blue_halo > 1e-6,
+            "blue should receive halation blur from blue bounce"
+        );
+        assert_eq!(
+            green_halo, 0.0,
+            "green had zero bounce, receives 0 halation"
+        );
+        assert!(
+            red_halo > blue_halo,
+            "red halo > blue halo due to stronger red bounce"
+        );
+    }
+
+    #[test]
+    fn portra_irradiation_response_preserves_uniform_fluence() {
+        use crate::film::stock::StockId;
+
+        let mut stock = StockId::Portra400.load().unwrap();
+        stock.antihalation.reflectance = SpectralCurve::constant(0.0);
+        let width = 64;
+        let height = 64;
+        let mut planes = vec![vec![1.0; width * height]; 6];
+        let bounce = vec![vec![0.0; width * height]; 6];
+
+        apply_spatial_exposure_effects(&mut planes, &bounce, width, height, &stock, 1.0);
+
+        assert!(planes
+            .iter()
+            .flatten()
+            .all(|value| (*value - 1.0).abs() < 1e-5));
     }
 
     #[test]
@@ -433,7 +363,6 @@ mod tests {
                     .collect();
                 SpectralCurve::new(grid, samples)
             },
-            psf_local_um: 2.0,
             psf_halation_um: 30.0,
         };
         let w_blue = reflectance_at(&ah, 450.0);
@@ -442,24 +371,43 @@ mod tests {
     }
 
     #[test]
-    fn fast_slow_sublayers_get_correct_spectral_bleed_weights() {
+    fn cinestill50d_halation_physics_red_signature() {
+        use crate::film::exposure::expose_with_pitch;
         use crate::film::stock::StockId;
-        let portra = StockId::Portra400.load().expect("portra400 loads");
-        let weights = bleed_weights_for_stock(&portra);
-        assert_eq!(weights.len(), 6, "Portra 400 has 6 emulsion layers");
-        // [BF, BS, GF, GS, RF, RS]
-        let b_fast = weights[0];
-        let b_slow = weights[1];
-        let g_fast = weights[2];
-        let g_slow = weights[3];
-        let r_fast = weights[4];
-        let r_slow = weights[5];
 
-        assert!((b_fast - b_slow).abs() < 1e-4, "both blue sub-layers should have equal blue bleed weight");
-        assert!((g_fast - g_slow).abs() < 1e-4, "both green sub-layers should have equal green bleed weight");
-        assert!((r_fast - r_slow).abs() < 1e-4, "both red sub-layers should have equal red bleed weight");
+        let stock = StockId::CineStill50D.load().expect("CineStill 50D loads");
+        let width = 45;
+        let height = 45;
+        let cx = width / 2;
+        let cy = height / 2;
 
-        assert!(b_fast < g_fast, "blue bleed weight < green bleed weight");
-        assert!(g_fast < r_fast, "green bleed weight < red bleed weight");
+        // Bright red specular highlight patch (7x7 pixels at center, 5000 nits)
+        let mut red_img = vec![[0.0f32, 0.0, 0.0]; width * height];
+        for dy in -3..=3 {
+            for dx in -3..=3 {
+                red_img[(cy as isize + dy) as usize * width + (cx as isize + dx) as usize] =
+                    [5000.0, 0.0, 0.0];
+            }
+        }
+
+        let latent_red = expose_with_pitch(&red_img, width, height, &stock, 5.0);
+        // Scatter is always on; isolate bounce by repeating with R = 0.
+        let mut stock_no_bounce = stock.clone();
+        stock_no_bounce.antihalation.reflectance = SpectralCurve::constant(0.0);
+        let latent_scatter = expose_with_pitch(&red_img, width, height, &stock_no_bounce, 5.0);
+        // Emulsion order: [BF, BS, GF, GS, RF, RS]
+        // Outside the specular core (offset 7 px), red fast receives backing bounce;
+        // blue fast must not receive bounce from a red highlight (scatter may still leak).
+        let pos = cy * width + cx + 7;
+        let red_bounce = latent_red.layers[4][pos] - latent_scatter.layers[4][pos];
+        let blue_bounce = latent_red.layers[0][pos] - latent_scatter.layers[0][pos];
+        assert!(
+            red_bounce > 1e-4,
+            "CineStill 50D must produce strong red backing bounce in RF layer: {red_bounce}"
+        );
+        assert!(
+            blue_bounce.abs() < 1e-6,
+            "Blue emulsion must receive no backing bounce from a red highlight: BF_bounce={blue_bounce}"
+        );
     }
 }

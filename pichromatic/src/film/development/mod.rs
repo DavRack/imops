@@ -4,20 +4,42 @@ pub mod diffusion;
 pub mod grain;
 pub mod reduction;
 
-use crate::film::development::grain::apply_particle_grain_overwrite;
+use crate::film::development::grain::apply_particle_grain_overwrite_with_sublayers;
 use crate::film::development::reduction::reduce;
 use crate::film::stock::{FilmStock, LayerKind};
 use crate::film::types::{DyePlanes, LatentPlanes};
+use rayon::prelude::*;
+
+pub(crate) fn stock_record_sublayers(stock: &FilmStock) -> Vec<(u32, u32)> {
+    let mut record_sublayers = Vec::new();
+    let mut current_coupler: Option<&str> = None;
+    let mut current_record = 0u32;
+    let mut current_sublayer = 0u32;
+
+    for (_, layer) in stock.emulsion_layers() {
+        let coupler_name = layer.coupler.as_ref().map(|c| c.name);
+        if let (Some(prev), Some(curr)) = (current_coupler, coupler_name) {
+            if prev == curr {
+                current_sublayer += 1;
+            } else {
+                current_record += 1;
+                current_sublayer = 0;
+            }
+        }
+        current_coupler = coupler_name;
+        record_sublayers.push((current_record, current_sublayer));
+    }
+    record_sublayers
+}
 
 /// Develop latent planes to dye densities.
 ///
 /// One population process at every render width: reduce (chemical fog
 /// supplies a nonzero developable population at zero exposure), then particle
 /// overwrite — the realized crystal population convolved with the dye-cloud
-/// PSF — followed by DIR chemical inhibition and adjacency (Eberhard) on the
-/// realized field. Width only changes the sampling pitch: at coarse pitch the
-/// population cells collapse to single pixels whose apertures hold hundreds
-/// of crystals, reproducing the central-limit continuum of the same process.
+/// PSF — followed by adjacency on that realized field. Width only changes the
+/// sampling pitch: coarse pixel apertures contain many crystal sites while
+/// microscope pixels resolve sparse sites before cloud convolution.
 pub fn develop(
     stock: &FilmStock,
     latent: &LatentPlanes,
@@ -25,13 +47,11 @@ pub fn develop(
     pixel_pitch_um: f32,
 ) -> DyePlanes {
     let mut kappas = Vec::new();
-    let mut crystal_sizes = Vec::new();
     for (layer_idx, layer) in stock.layers.iter().enumerate() {
         if layer.kind != LayerKind::Emulsion {
             continue;
         }
-        kappas.push(stock.grain_kappa[layer_idx].unwrap_or(0.0));
-        crystal_sizes.push(layer.crystal_size.clone());
+        kappas.push(stock.grain_kappa[layer_idx].expect("emulsion grain kappa finalized"));
     }
 
     let mut dyes = reduce(stock, latent);
@@ -40,27 +60,29 @@ pub fn develop(
         .emulsion_layers()
         .map(|(_, layer)| layer.coupler.as_ref().unwrap().d_max)
         .collect();
-    let gammas: Vec<f32> = stock
-        .emulsion_layers()
-        .map(|(_, layer)| layer.gamma_contrast)
-        .collect();
-
-    let sigma_dir_px = stock.dir_diffusion_length.0 / pixel_pitch_um.max(1e-6);
-    let sigma_px = stock.developer_diffusion_length.0 / pixel_pitch_um.max(1e-6);
-
-    apply_particle_grain_overwrite(
+    let record_sublayers = stock_record_sublayers(stock);
+    apply_particle_grain_overwrite_with_sublayers(
         &mut dyes,
         &d_max,
         &kappas,
-        &gammas,
         pixel_pitch_um,
         seed,
-        &crystal_sizes,
-        sigma_dir_px,
-        &stock.dir_inhibition_matrix,
-        sigma_px,
-        stock.adjacency_beta,
+        Some(&record_sublayers),
     );
+    let sigma_px = stock.developer_diffusion_length.0 / pixel_pitch_um.max(1e-6);
+    let matrix = stock.adjacency_matrix();
+    crate::film::development::diffusion::apply_cross_layer_adjacency(
+        &mut dyes,
+        sigma_px,
+        &matrix,
+    );
+    for plane in &mut dyes.image_dye {
+        // Optical dye density cannot be negative. Positive Poisson site-density
+        // fluctuations may physically exceed the nominal mean d_max and survive.
+        plane
+            .par_iter_mut()
+            .for_each(|density| *density = density.max(0.0));
+    }
 
     dyes
 }
@@ -69,7 +91,8 @@ pub fn develop(
 mod tests {
     use super::*;
     use crate::film::blur::gaussian_blur_separable;
-    use crate::film::development::diffusion::{apply_adjacency, apply_dir_inhibition};
+    use crate::film::development::diffusion::{apply_adjacency, apply_cross_layer_adjacency};
+    use crate::film::development::grain::apply_particle_grain_overwrite;
     use crate::film::types::DyePlanes;
     use crate::film::StockId;
 
@@ -96,25 +119,15 @@ mod tests {
             .fold(0.0f32, f32::max)
     }
 
-    fn stock_kappas_and_crystals(
-        stock: &crate::film::stock::FilmStock,
-    ) -> (
-        Vec<f32>,
-        Vec<f32>,
-        Vec<Option<crate::film::stock::LogNormalDist>>,
-    ) {
+    fn stock_kappas(stock: &crate::film::stock::FilmStock) -> Vec<f32> {
         let mut kappas = Vec::new();
-        let mut gammas = Vec::new();
-        let mut crystal_sizes = Vec::new();
         for (layer_idx, layer) in stock.layers.iter().enumerate() {
             if layer.kind != LayerKind::Emulsion {
                 continue;
             }
             kappas.push(stock.grain_kappa[layer_idx].unwrap_or(0.0));
-            gammas.push(layer.gamma_contrast);
-            crystal_sizes.push(layer.crystal_size.clone());
         }
-        (kappas, gammas, crystal_sizes)
+        kappas
     }
 
     /// Forbidden cheat: adjacency residual from reduced guide added onto particles.
@@ -145,27 +158,29 @@ mod tests {
         seed: u64,
     ) -> DyePlanes {
         let reduced = reduce(stock, latent);
-        let (kappas, gammas, crystal_sizes) = stock_kappas_and_crystals(stock);
+        let kappas = stock_kappas(stock);
         let d_max: Vec<f32> = stock
             .emulsion_layers()
             .map(|(_, layer)| layer.coupler.as_ref().unwrap().d_max)
             .collect();
         let mut reference = reduced;
-        let sigma_dir_px = stock.dir_diffusion_length.0 / pitch_um.max(1e-6);
-        let sigma_px = stock.developer_diffusion_length.0 / pitch_um.max(1e-6);
-        apply_particle_grain_overwrite(
+        let record_sublayers = stock_record_sublayers(stock);
+        apply_particle_grain_overwrite_with_sublayers(
             &mut reference,
             &d_max,
             &kappas,
-            &gammas,
             pitch_um,
             seed,
-            &crystal_sizes,
-            sigma_dir_px,
-            &stock.dir_inhibition_matrix,
-            sigma_px,
-            stock.adjacency_beta,
+            Some(&record_sublayers),
         );
+        let sigma_px = stock.developer_diffusion_length.0 / pitch_um.max(1e-6);
+        let matrix = stock.adjacency_matrix();
+        apply_cross_layer_adjacency(&mut reference, sigma_px, &matrix);
+        for plane in &mut reference.image_dye {
+            for density in plane {
+                *density = density.max(0.0);
+            }
+        }
         reference
     }
 
@@ -184,7 +199,7 @@ mod tests {
     }
 
     #[test]
-    fn develop_fine_pitch_matches_overwrite_only() {
+    fn develop_fine_pitch_matches_realized_population_and_adjacency() {
         let stock = StockId::BwStub.load().unwrap();
         let latent = gradient_latent(64, 64);
         let pitch_um = 0.25;
@@ -193,65 +208,74 @@ mod tests {
         let produced = develop(&stock, &latent, seed, pitch_um);
         let reference = fine_pitch_reference(&stock, &latent, pitch_um, seed);
         assert_eq!(
-            produced.image_dye,
-            reference.image_dye,
-            "fine develop must equal particle overwrite-only path (DIR/adj skipped)"
+            produced.image_dye, reference.image_dye,
+            "fine develop must equal realized population plus adjacency (DIR off)"
         );
 
         let reduced = reduce(&stock, &latent);
-        let (kappas, gammas, crystal_sizes) = stock_kappas_and_crystals(&stock);
+        let kappas = stock_kappas(&stock);
         let d_max: Vec<f32> = stock
             .emulsion_layers()
             .map(|(_, layer)| layer.coupler.as_ref().unwrap().d_max)
             .collect();
-        let sigma_dir_px = stock.dir_diffusion_length.0 / pitch_um;
         let sigma_px = stock.developer_diffusion_length.0 / pitch_um;
 
-        // DIR/adjacency now run inside `apply_particle_grain_overwrite` on the
-        // realized population, so a separate "overwrite then continuum DIR/adj"
-        // pass no longer exists in production. With a smooth realized field and
-        // BwStub's no-op DIR matrix the two orderings are exactly equivalent
-        // (linear adjacency commutes with the d_max scaling), so the old
-        // carve-voids ordering check is vacuous here. The meaningful guards
-        // are the two assertions below: particles must matter (reduce_only)
-        // and adjacency must not come from a smooth pre-realization guide.
+        // Production adjacency acts on the realized population, never this
+        // smooth reduced field.
         let mut reduce_only = reduced.clone();
-        apply_dir_inhibition(
-            &mut reduce_only,
-            sigma_dir_px,
-            &stock.dir_inhibition_matrix,
-        );
         apply_adjacency(&mut reduce_only, sigma_px, stock.adjacency_beta);
         assert!(
             max_plane_diff(&produced, &reduce_only) > 1e-4,
-            "fine develop must differ from reduce+DIR+adj without particles"
+            "fine develop must differ from reduce+adj without particles"
         );
 
         // Cheat: smooth guide
         let mut cheat_adj = reduced.clone();
-        apply_dir_inhibition(
-            &mut cheat_adj,
-            sigma_dir_px,
-            &stock.dir_inhibition_matrix,
-        );
         apply_adjacency_expected_guide_cheat(
             &mut cheat_adj,
             &reduced,
             sigma_px,
             stock.adjacency_beta,
         );
-        apply_particle_grain_overwrite(
-            &mut cheat_adj,
-            &d_max,
-            &kappas,
-            &gammas,
-            pitch_um,
-            seed,
-            &crystal_sizes, 0.0, &[], 0.0, 0.0);
+        apply_particle_grain_overwrite(&mut cheat_adj, &d_max, &kappas, pitch_um, seed);
         assert!(
             max_plane_diff(&produced, &cheat_adj) > 1e-4,
             "production adjacency must not equal pre-realization smooth guide"
         );
+    }
+
+    #[test]
+    fn adjacency_clamps_only_negative_density() {
+        let mut stock = StockId::BwStub.load().unwrap();
+        stock.adjacency_beta = 10.0;
+        let latent = gradient_latent(64, 64);
+        let pitch_um = 0.25;
+        let seed = 23;
+        let d_max = stock
+            .emulsion_layers()
+            .next()
+            .unwrap()
+            .1
+            .coupler
+            .as_ref()
+            .unwrap()
+            .d_max;
+
+        let mut unclamped = reduce(&stock, &latent);
+        let kappas = stock_kappas(&stock);
+        apply_particle_grain_overwrite(&mut unclamped, &[d_max], &kappas, pitch_um, seed);
+        let sigma_px = stock.developer_diffusion_length.0 / pitch_um;
+        apply_adjacency(&mut unclamped, sigma_px, stock.adjacency_beta);
+        assert!(unclamped.image_dye[0].iter().any(|&density| density < 0.0));
+        assert!(unclamped.image_dye[0]
+            .iter()
+            .any(|&density| density > d_max * 1.05));
+
+        let developed = develop(&stock, &latent, seed, pitch_um);
+        assert!(developed.image_dye[0].iter().all(|&density| density >= 0.0));
+        assert!(developed.image_dye[0]
+            .iter()
+            .any(|&density| density > d_max * 1.05));
     }
 
     #[test]
@@ -279,14 +303,15 @@ mod tests {
             .enumerate()
         {
             let d_max = layer.coupler.as_ref().unwrap().d_max;
-            let gamma = layer.gamma_contrast.max(1e-6);
-            let f_fog = (FOG_OFFSET / d_max).clamp(0.0, 1.0);
-            let expected = d_max * f_fog.powf(1.0 / gamma);
+            let expected = FOG_OFFSET.min(d_max);
             let mean = plane.iter().sum::<f32>() / plane.len() as f32;
-            assert!(mean > 0.0, "layer {layer_i}: reduce fog floor must be nonzero");
+            assert!(
+                mean > 0.0,
+                "layer {layer_i}: reduce fog floor must be nonzero"
+            );
             assert!(
                 (mean - expected).abs() < 1e-5,
-                "layer {layer_i}: mean {mean} != expected H&D fog floor {expected}"
+                "layer {layer_i}: mean {mean} != additive fog density {expected}"
             );
         }
 
@@ -323,8 +348,7 @@ mod tests {
         let produced = develop(&stock, &latent, seed, pitch);
         let reference = fine_pitch_reference(&stock, &latent, pitch, seed);
         assert_eq!(
-            produced.image_dye,
-            reference.image_dye,
+            produced.image_dye, reference.image_dye,
             "half-plane fine develop must match reference"
         );
     }
@@ -346,7 +370,12 @@ mod tests {
         assert_eq!(produced.image_dye, reference.image_dye);
 
         let reduced = reduce(&stock, &latent);
-        for (i, (plane, red)) in produced.image_dye.iter().zip(reduced.image_dye.iter()).enumerate() {
+        for (i, (plane, red)) in produced
+            .image_dye
+            .iter()
+            .zip(reduced.image_dye.iter())
+            .enumerate()
+        {
             let mean_p: f64 = plane.iter().map(|&v| v as f64).sum::<f64>() / plane.len() as f64;
             let mean_r: f64 = red.iter().map(|&v| v as f64).sum::<f64>() / red.len() as f64;
             let rel = (mean_p - mean_r).abs() / mean_r.max(1e-6);
@@ -355,7 +384,10 @@ mod tests {
                 "layer {i}: coarse develop mean {mean_p:.4} deviates {:.1}% from reduced H&D {mean_r:.4}",
                 rel * 100.0
             );
-            assert!(plane_std(plane) > 0.0, "layer {i}: coarse develop must retain grain variation");
+            assert!(
+                plane_std(plane) > 0.0,
+                "layer {i}: coarse develop must retain grain variation"
+            );
         }
     }
 

@@ -1,6 +1,8 @@
 //! Separable Gaussian blur for halation, grain footprint, and adjacency.
 //!
 //! Horizontal then vertical 1D convolutions. Used wherever a Gaussian PSF is justified.
+//! [`exponential_blur_separable`] approximates an isotropic exponential PSF as a
+//! two-Gaussian mixture (spektrafilm `fast_gaussian_filter.py`).
 
 use rayon::prelude::*;
 
@@ -34,6 +36,39 @@ pub fn gaussian_blur_separable(buf: &mut [f32], width: usize, height: usize, sig
                 out_row[x] = acc;
             }
         });
+}
+
+/// Approximate the 2D isotropic exponential `exp(−r/λ)/(2πλ²)` as a two-Gaussian
+/// mixture (YAGNI vs n=3). Fit from spektrafilm `fast_gaussian_filter.py`:
+/// `(a, σ/λ) = (0.6235, 0.9401), (0.3765, 2.5177)` (amplitudes already sum to 1).
+///
+/// A component with `σ_px < 1e-3` is the Gaussian identity (same floor as
+/// [`gaussian_blur_separable`]), so its amplitude stays on `Φ`.
+pub fn exponential_blur_separable(buf: &mut [f32], width: usize, height: usize, lambda_px: f32) {
+    assert_eq!(buf.len(), width * height);
+    if lambda_px <= 0.0 || width == 0 || height == 0 {
+        return;
+    }
+    // spektrafilm `fast_gaussian_filter.py` published 2-Gaussian fit.
+    const MIX: [(f32, f32); 2] = [(0.6235, 0.9401), (0.3765, 2.5177)];
+
+    let orig = buf.to_vec();
+    // `gaussian_blur_separable` is identity for σ < 1e-3, so a skipped-narrow
+    // component still contributes `amp · Φ` instead of dropping that mass.
+    for (i, &(amp, sigma_over_lambda)) in MIX.iter().enumerate() {
+        let sigma_px = sigma_over_lambda * lambda_px;
+        let mut component = orig.clone();
+        gaussian_blur_separable(&mut component, width, height, sigma_px);
+        if i == 0 {
+            for (dst, &src) in buf.iter_mut().zip(component.iter()) {
+                *dst = amp * src;
+            }
+        } else {
+            for (dst, &src) in buf.iter_mut().zip(component.iter()) {
+                *dst += amp * src;
+            }
+        }
+    }
 }
 
 /// Exact Gaussian kernel radius covering ~99.7% of mass using `ceil(3σ)`.
@@ -164,5 +199,38 @@ mod tests {
             // Radial: |dx|,|dy| swap should match for isotropic kernel.
             assert!((a - c).abs() < 1e-5, "axis swap fail {a} vs {c}");
         }
+    }
+
+    #[test]
+    fn exponential_blur_impulse_energy_conservation() {
+        let width = 64;
+        let height = 64;
+        let mut buf = vec![0.0f32; width * height];
+        buf[(height / 2) * width + width / 2] = 1.0;
+        exponential_blur_separable(&mut buf, width, height, 4.0);
+        let sum: f64 = buf.iter().map(|&v| v as f64).sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-3,
+            "exponential mixture should conserve impulse energy, sum={sum}"
+        );
+    }
+
+    #[test]
+    fn exponential_blur_partial_skip_conserves_energy() {
+        // 0.9401·λ < 1e-3 ≤ 2.5177·λ → compact mix term is a Gaussian no-op
+        // (identity), wide term still blurs. Mass must stay 1, not 0.3765.
+        let lambda_px = 0.0008;
+        assert!(0.9401 * lambda_px < 1e-3);
+        assert!(2.5177 * lambda_px >= 1e-3);
+        let width = 16;
+        let height = 16;
+        let mut buf = vec![0.0f32; width * height];
+        buf[(height / 2) * width + width / 2] = 1.0;
+        exponential_blur_separable(&mut buf, width, height, lambda_px);
+        let sum: f64 = buf.iter().map(|&v| v as f64).sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-3,
+            "partial-skip mixture must conserve impulse energy, sum={sum}"
+        );
     }
 }

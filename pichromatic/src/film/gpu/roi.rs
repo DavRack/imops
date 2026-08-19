@@ -83,7 +83,6 @@ impl RoiPlan {
     ) -> Self {
         let pitch = film_format.pixel_pitch_um(image_width as usize);
 
-        let sigma_local = sigma_px_from_um(stock.antihalation.psf_local_um, pitch);
         let sigma_wide = sigma_px_from_um(stock.antihalation.psf_halation_um, pitch);
         // CPU multi-bounce halation blurs at σ√(k+1); the widest bounce (k=2) is σ√3.
         let sigma_wide = if sigma_wide >= 1e-3 {
@@ -91,15 +90,14 @@ impl RoiPlan {
         } else {
             sigma_wide
         };
-        let sigma_dir = stock.dir_diffusion_length.0 / pitch.max(1e-6);
         let sigma_adj = stock.developer_diffusion_length.0 / pitch.max(1e-6);
 
         let grain_sigma = (DYE_CLOUD_CORRELATION_UM / pitch.max(1e-6)).max(1.0);
 
-        let local_radius = Self::sigma_to_radius(sigma_local);
+        // GPU scatter/DIR not ported; halo is wide bounce + adjacency + grain.
+        let local_radius = 0u32;
         let wide_radius = Self::sigma_to_radius(sigma_wide);
-        let dir_radius =
-            if !stock.dir_inhibition_matrix.is_empty() { Self::sigma_to_radius(sigma_dir) } else { 0 };
+        let dir_radius = 0u32;
         let adjacency_radius = if stock.adjacency_beta.abs() >= 1e-8 {
             Self::sigma_to_radius(sigma_adj)
         } else {
@@ -107,7 +105,7 @@ impl RoiPlan {
         };
         let grain_radius = Self::sigma_to_radius(grain_sigma);
 
-        // Content dependency halo: max(local + wide halation + DIR + adjacency, grain_radius).
+        // Content dependency halo: max(wide bounce + adjacency, grain_radius).
         // Back-propagated through blurs and pointwise stages.
         let blur_halo = local_radius + wide_radius + dir_radius + adjacency_radius;
         let halo_radius = blur_halo.max(grain_radius);
@@ -140,7 +138,13 @@ pub(super) fn reflect_global_index(gx: i32, len: u32) -> u32 {
 ///
 /// Panics if `(gx, gy)` lies outside `root` to prevent silent u32 wrapping/truncation.
 #[inline]
-pub(super) fn global_to_root_local(gx: i32, gy: i32, root: RectI, img_w: u32, img_h: u32) -> (u32, u32, u32, u32) {
+pub(super) fn global_to_root_local(
+    gx: i32,
+    gy: i32,
+    root: RectI,
+    img_w: u32,
+    img_h: u32,
+) -> (u32, u32, u32, u32) {
     assert!(
         root.contains(gx, gy),
         "Global coordinate ({gx}, {gy}) outside root bounds {:?}",
@@ -199,7 +203,8 @@ mod tests {
         let stock = StockId::ColorNeg200.load().unwrap(); // Stock has non-zero halo radii
         let plan = RoiPlan::build(core, &stock, FilmFormat::Film35mm, 4032);
 
-        let blur_halo = plan.local_radius + plan.wide_radius + plan.dir_radius + plan.adjacency_radius;
+        let blur_halo =
+            plan.local_radius + plan.wide_radius + plan.dir_radius + plan.adjacency_radius;
         let total_halo = blur_halo.max(plan.grain_radius);
         assert_eq!(plan.root.x, core.x - total_halo as i32);
         assert_eq!(plan.root.y, core.y - total_halo as i32);
@@ -240,7 +245,10 @@ mod tests {
         let result = std::panic::catch_unwind(|| {
             global_to_root_local(-11, 3, root, 4000, 3000);
         });
-        assert!(result.is_err(), "Expected panic on global_to_root_local out-of-bounds x");
+        assert!(
+            result.is_err(),
+            "Expected panic on global_to_root_local out-of-bounds x"
+        );
     }
 
     #[test]
@@ -290,7 +298,8 @@ mod tests {
                 let gy = root.y + ry as i32;
                 for rx in 0..root.width {
                     let gx = root.x + rx as i32;
-                    let (px, py, lx, ly) = global_to_root_local(gx, gy, root, img_w as u32, img_h as u32);
+                    let (px, py, lx, ly) =
+                        global_to_root_local(gx, gy, root, img_w as u32, img_h as u32);
                     let root_idx = (ly * root.width + lx) as usize;
                     let img_idx = (py * img_w as u32 + px) as usize;
                     root_buf[root_idx] = full_image[img_idx];

@@ -1,8 +1,8 @@
 //! CineStill 50D class color-negative stock definition.
 //!
-//! Kodak VISION3 50D (5203) motion-picture ECN-2 negative repackaged by
-//! CineStill with the remjet backing removed (which also removes the remjet's
-//! antihalation protection, exposing the film's known red-halation signature).
+//! This is CineStill's stated no-AH product: Kodak VISION3 50D (5203) ECN-2 as
+//! sold by CineStill, made without the anti-halation layer, which CineStill
+//! attributes to the red-halation signature. Acetate base (not PET).
 //!
 //! All spectral data — sensitivity curves, dye-ε curves, mid-region H&D gamma,
 //! midscale-neutral dye density (0.70 / 0.73 / 0.63 above D-min), rms
@@ -16,6 +16,11 @@
 //! layers to daylight-gray neutrality at mid-gray). Status M D-min:
 //! B 0.82 / G 0.55 / R 0.13; diffuse D-min spectrum peaks ~455 nm at
 //! 0.63 density (blue-heavy base cast).
+//!
+//! Kodak's March 2026 sheet also describes an AHU undercoat on current
+//! VISION3 50D; that absorber is omitted here because it is not part of
+//! CineStill's no-AH product. Do not mix Kodak AHU stack properties into
+//! this stock.
 //!
 //! # Known MVP gaps
 //! - No D-min parameter exists in the model: the real film's blue-heavy base
@@ -32,14 +37,14 @@
 //! - Sensitivity is zeroed outside the wavelength range the datasheet plots
 //!   (blue ≤ 480 nm, green 480-580 nm, red 580-660 nm): long-wave leakage
 //!   tails are not modeled.
-//! - Halation model amplitude is a qualitative representation of the known
-//!   CineStill halation signature (not a measured PSF).
+//! - No in-stack anti-halation absorber (CineStill construction). Backing uses
+//!   the frozen kit Fresnel `R`; halation PSF (90 µm) is the existing
+//!   uncalibrated interface model, not measured CineStill optical data.
 
 use crate::film::error::FilmError;
 use crate::film::spectrum::{SpectralCurve, WavelengthGrid};
-use crate::film::stock::{
-    AntihalationModel, DyeCoupler, EmulsionLayer, FilmStock, LayerKind, LogNormalDist,
-};
+use crate::film::stock::kit;
+use crate::film::stock::{DyeCoupler, EmulsionLayer, FilmStock, LayerKind, LogNormalDist};
 use crate::film::units::{IsoSpeed, Microns};
 
 fn gaussian_curve(peak_nm: f64, sigma_nm: f64, amplitude: f64) -> SpectralCurve {
@@ -84,20 +89,7 @@ const CYAN_EPSILON: [f64; 16] = [
 ];
 
 pub fn load() -> Result<FilmStock, FilmError> {
-    let overcoat = EmulsionLayer {
-        name: "overcoat",
-        depth_from_surface: Microns(0.0),
-        thickness: Microns(1.0),
-        kind: LayerKind::Overcoat,
-        spectral_sensitivity: Some(SpectralCurve::constant(0.01)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
-        reciprocity_p: 1.0,
-        is_reversal: false,
-    };
+    let overcoat = kit::overcoat(0.0);
 
     // --- BLUE FAST & SLOW ---
     // ISO-50 T-grain, finer than Ektar (100-speed); blue crystals ~2x the
@@ -121,13 +113,13 @@ pub fn load() -> Result<FilmStock, FilmError> {
             d_max: 1.82, // total 3.65 split 50/50 fast/slow
         }),
         gamma_contrast: 0.58,
-        capture_k: 4.31,
+        capture_k: 2.00,
         reciprocity_p: 0.99,
         is_reversal: false,
     };
     let blue_slow = EmulsionLayer {
         name: "blue_slow",
-        // capture_k is large (16.9 here, up to 52.4 for green/red slow) because
+        // capture_k is large (16.9 here, up to 29.76 for green/red slow) because
         // the physical quantity is λ = k·s²·Φ and these slow-layer crystals are
         // ~1/4 the fast-layer diameter; k is not directly comparable across
         // stocks with different crystal sizes.
@@ -147,25 +139,12 @@ pub fn load() -> Result<FilmStock, FilmError> {
             d_max: 1.82,
         }),
         gamma_contrast: 0.42,
-        capture_k: 16.92,
+        capture_k: 6.80,
         reciprocity_p: 0.99,
         is_reversal: false,
     };
 
-    let yellow_filter = EmulsionLayer {
-        name: "yellow_filter",
-        depth_from_surface: Microns(6.0),
-        thickness: Microns(2.0),
-        kind: LayerKind::Filter,
-        spectral_sensitivity: Some(gaussian_curve(430.0, 40.0, 1.3)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
-        reciprocity_p: 1.0,
-        is_reversal: false,
-    };
+    let yellow_filter = kit::yellow_filter(6.0, 2.0, gaussian_curve(430.0, 40.0, 1.3));
 
     // --- GREEN FAST & SLOW ---
     let green_fast = EmulsionLayer {
@@ -186,7 +165,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
             d_max: 1.82, // total 3.64
         }),
         gamma_contrast: 0.60,
-        capture_k: 15.73,
+        capture_k: 7.10,
         reciprocity_p: 0.99,
         is_reversal: false,
     };
@@ -208,7 +187,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
             d_max: 1.82,
         }),
         gamma_contrast: 0.44,
-        capture_k: 52.39,
+        capture_k: 12.00,
         reciprocity_p: 0.99,
         is_reversal: false,
     };
@@ -232,7 +211,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
             d_max: 1.88, // total 3.76
         }),
         gamma_contrast: 0.52,
-        capture_k: 12.30,
+        capture_k: 5.55,
         reciprocity_p: 0.99,
         is_reversal: false,
     };
@@ -253,37 +232,11 @@ pub fn load() -> Result<FilmStock, FilmError> {
             mask_epsilon: None,
             d_max: 1.88,
         }),
-        gamma_contrast: 0.38,
-        capture_k: 42.31,
+        gamma_contrast: 0.36,
+        capture_k: 10.50,
         reciprocity_p: 0.99,
         is_reversal: false,
     };
-
-    let antihalation = EmulsionLayer {
-        name: "antihalation",
-        depth_from_surface: Microns(21.0),
-        thickness: Microns(2.0),
-        kind: LayerKind::Antihalation,
-        spectral_sensitivity: Some(gaussian_curve(650.0, 80.0, 0.3)),
-        crystal_size: None,
-        silver_halide_fraction: 0.0,
-        coupler: None,
-        gamma_contrast: 1.0,
-        capture_k: 1.0,
-        reciprocity_p: 1.0,
-        is_reversal: false,
-    };
-
-    // 6 emulsion layers: [BF, BS, GF, GS, RF, RS]
-    // Portra-class interlayer inhibition (max ~0.05, red slightly stronger).
-    let dir_matrix = vec![
-        vec![0.03, 0.01, 0.04, 0.02, 0.04, 0.02],
-        vec![0.01, 0.01, 0.02, 0.01, 0.02, 0.01],
-        vec![0.04, 0.02, 0.03, 0.01, 0.05, 0.02],
-        vec![0.02, 0.01, 0.01, 0.01, 0.02, 0.01],
-        vec![0.04, 0.02, 0.05, 0.02, 0.03, 0.01],
-        vec![0.02, 0.01, 0.02, 0.01, 0.01, 0.01],
-    ];
 
     let stock = FilmStock {
         name: "CineStill50D",
@@ -297,25 +250,18 @@ pub fn load() -> Result<FilmStock, FilmError> {
             green_slow,
             red_fast,
             red_slow,
-            antihalation,
         ],
-        // Stronger red halation than the C-41 stocks (Portra 0.06 / 70 µm,
-        // Ektar 0.08 / 55 µm) — remjet removal exposes the halation signature.
-        antihalation: AntihalationModel {
-            reflectance: gaussian_curve(680.0, 60.0, 0.10),
-            psf_local_um: 3.0,
-            psf_halation_um: 90.0,
-        },
+        // No in-stack AH (CineStill product). Kit Fresnel R + existing halation PSF.
+        antihalation: kit::backing(90.0),
+        irradiation_response: None,
         developer_diffusion_length: Microns(7.0),
         adjacency_beta: 0.30,
-        dir_diffusion_length: Microns(16.0),
-        dir_inhibition_matrix: dir_matrix,
+        adjacency_beta_record: 0.0,
+        adjacency_beta_cross: 0.0,
         scanner_light: SpectralCurve::d50(),
         capture_luts: vec![],
         grain_kappa: vec![],
-        // Kodak T-grain (tabular) morphology: plate thickness ~0.15 µm
-        // (published T-grain range 0.1-0.2 µm).
-        tabular_grain_thickness_um: Some(0.15),
+        tabular_grain_thickness_um: Some(kit::T_GRAIN_THICKNESS_UM),
     };
     stock.finalize()
 }
