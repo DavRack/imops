@@ -4,18 +4,21 @@
 //! dye field. Adjacency and interlayer inhibitor coupling are applied to the
 //! realized image-bearing planes (particle realizations convolved with dye cloud PSF):
 //!
+//! Single-component (backwards compat):
 //! ```text
 //! D_i' = D_i + sum_j M_ij * (D_j − (D_j ⊛ G_σ))
 //! ```
-//!
+//! Two-component physical split (exhaustion broad + DIR narrow):
+//! ```text
+//! D_i' = D_i + sum_j M_ex_ij * (D_j − G_σ_ex ⊛ D_j) + sum_j M_dir_ij * (D_j − G_σ_dir ⊛ D_j)
+//! ```
 //! where:
-//! - M_ii = β_self (intra-layer acutance / exhaustion)
-//! - M_ij = β_record for fast/slow layers of the same color record
-//! - M_ij = β_cross for layers across different color records (Y <-> M <-> C)
-//! - σ = developer_diffusion_length in pixels.
+//! - M_ex: diag β_self, same-record β_record, cross +β_cross (exhaustion, σ_ex broad)
+//! - M_dir: cross −β_dir, diag 0, same-record 0 (DIR inhibitor, σ_dir narrow)
+//! - σ_ex = developer_diffusion_length, σ_dir = inhibitor_diffusion_length.
 //!
 //! Because the spatial expectation of (D_j − (D_j ⊛ G_σ)) is zero, total mean
-//! density is conserved: ⟨D_i'⟩ = ⟨D_i⟩.
+//! density is conserved: ⟨D_i'⟩ = ⟨D_i⟩ for each component.
 
 use crate::film::blur::gaussian_blur_separable;
 use crate::film::types::DyePlanes;
@@ -91,6 +94,124 @@ pub fn apply_cross_layer_adjacency(
                 for (j, &m_ij) in row.iter().enumerate() {
                     if m_ij.abs() > 1e-8 && j < deltas.len() {
                         sum += m_ij * deltas[j][p];
+                    }
+                }
+                plane[p] += sum;
+            }
+        });
+}
+
+/// Two-component physical adjacency: broad exhaustion (+) and narrow DIR inhibitor (−).
+///
+/// ```text
+/// D_i' = D_i + sum_j M_ex_ij * (D_j − G_σ_ex ⊛ D_j) + sum_j M_dir_ij * (D_j − G_σ_dir ⊛ D_j)
+/// ```
+/// Both deltas are computed from the original realized field, then summed. Each
+/// component is mean-preserving (⟨Δ⟩=0), so ⟨D'⟩=⟨D⟩. No smooth D_exp field is
+/// referenced — adjacency acts only on the realized particle population.
+pub fn apply_two_component_adjacency(
+    dyes: &mut DyePlanes,
+    sigma_ex_px: f32,
+    matrix_ex: &[Vec<f32>],
+    sigma_dir_px: f32,
+    matrix_dir: &[Vec<f32>],
+) {
+    if dyes.image_dye.is_empty() {
+        return;
+    }
+    let width = dyes.width;
+    let height = dyes.height;
+    let n = dyes.image_dye.len();
+
+    let ex_active = sigma_ex_px >= 1e-3
+        && !matrix_ex.is_empty()
+        && !matrix_ex
+            .iter()
+            .all(|row| row.iter().all(|&v| v.abs() < 1e-8));
+    let dir_active = sigma_dir_px >= 1e-3
+        && !matrix_dir.is_empty()
+        && !matrix_dir
+            .iter()
+            .all(|row| row.iter().all(|&v| v.abs() < 1e-8));
+
+    if !ex_active && !dir_active {
+        return;
+    }
+    if ex_active {
+        assert_eq!(
+            matrix_ex.len(),
+            n,
+            "exhaustion matrix row count must match planes"
+        );
+    }
+    if dir_active {
+        assert_eq!(
+            matrix_dir.len(),
+            n,
+            "inhibitor matrix row count must match planes"
+        );
+    }
+
+    // Compute deltas for each active sigma from the original field.
+    let deltas_ex: Option<Vec<Vec<f32>>> = if ex_active {
+        Some(
+            dyes.image_dye
+                .par_iter()
+                .map(|plane| {
+                    let mut blurred = plane.clone();
+                    gaussian_blur_separable(&mut blurred, width, height, sigma_ex_px);
+                    plane
+                        .iter()
+                        .zip(blurred.iter())
+                        .map(|(&d, &b)| d - b)
+                        .collect()
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+    let deltas_dir: Option<Vec<Vec<f32>>> = if dir_active {
+        Some(
+            dyes.image_dye
+                .par_iter()
+                .map(|plane| {
+                    let mut blurred = plane.clone();
+                    gaussian_blur_separable(&mut blurred, width, height, sigma_dir_px);
+                    plane
+                        .iter()
+                        .zip(blurred.iter())
+                        .map(|(&d, &b)| d - b)
+                        .collect()
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+
+    // Combine: D_i' = D_i + sum_j M_ex_ij*Δ_ex_j + sum_j M_dir_ij*Δ_dir_j
+    dyes.image_dye
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, plane)| {
+            let row_ex = if ex_active { Some(&matrix_ex[i]) } else { None };
+            let row_dir = if dir_active { Some(&matrix_dir[i]) } else { None };
+            let num_pixels = plane.len();
+            for p in 0..num_pixels {
+                let mut sum = 0.0f32;
+                if let (Some(row), Some(deltas)) = (row_ex, deltas_ex.as_ref()) {
+                    for (j, &m_ij) in row.iter().enumerate() {
+                        if m_ij.abs() > 1e-8 && j < deltas.len() {
+                            sum += m_ij * deltas[j][p];
+                        }
+                    }
+                }
+                if let (Some(row), Some(deltas)) = (row_dir, deltas_dir.as_ref()) {
+                    for (j, &m_ij) in row.iter().enumerate() {
+                        if m_ij.abs() > 1e-8 && j < deltas.len() {
+                            sum += m_ij * deltas[j][p];
+                        }
                     }
                 }
                 plane[p] += sum;

@@ -69,12 +69,31 @@ pub fn develop(
         seed,
         Some(&record_sublayers),
     );
-    let sigma_px = stock.developer_diffusion_length.0 / pixel_pitch_um.max(1e-6);
-    let matrix = stock.adjacency_matrix();
-    crate::film::development::diffusion::apply_cross_layer_adjacency(
+    let sigma_ex_px = stock.developer_diffusion_length.0 / pixel_pitch_um.max(1e-6);
+    let sigma_dir_px = stock.inhibitor_diffusion_length.0 / pixel_pitch_um.max(1e-6);
+    let mut matrix_ex = stock.adjacency_exhaustion_matrix();
+    let mut matrix_dir = stock.adjacency_inhibitor_matrix();
+    // Pitch-dependent coupling: below cloud saturation p_sat, chemical exchange
+    // per pixel scales with p/p_sat (mass ∝ p² vs diffusion area ∝ σ²).
+    // Keeps 35mm (p≈8.9) at scale 1, softens 8mm (p≈1.2) to 0.27.
+    let p_sat = 2.0 * std::f32::consts::PI.sqrt() * 1.25;
+    let scale = (pixel_pitch_um / p_sat).clamp(0.15, 1.0);
+    for row in &mut matrix_ex {
+        for v in row.iter_mut() {
+            *v *= scale;
+        }
+    }
+    for row in &mut matrix_dir {
+        for v in row.iter_mut() {
+            *v *= scale;
+        }
+    }
+    crate::film::development::diffusion::apply_two_component_adjacency(
         &mut dyes,
-        sigma_px,
-        &matrix,
+        sigma_ex_px,
+        &matrix_ex,
+        sigma_dir_px,
+        &matrix_dir,
     );
     for plane in &mut dyes.image_dye {
         // Optical dye density cannot be negative. Positive Poisson site-density
@@ -173,9 +192,29 @@ mod tests {
             seed,
             Some(&record_sublayers),
         );
-        let sigma_px = stock.developer_diffusion_length.0 / pitch_um.max(1e-6);
-        let matrix = stock.adjacency_matrix();
-        apply_cross_layer_adjacency(&mut reference, sigma_px, &matrix);
+        let sigma_ex_px = stock.developer_diffusion_length.0 / pitch_um.max(1e-6);
+        let sigma_dir_px = stock.inhibitor_diffusion_length.0 / pitch_um.max(1e-6);
+        let mut matrix_ex = stock.adjacency_exhaustion_matrix();
+        let mut matrix_dir = stock.adjacency_inhibitor_matrix();
+        let p_sat = 2.0 * std::f32::consts::PI.sqrt() * 1.25;
+        let scale = (pitch_um / p_sat).clamp(0.15, 1.0);
+        for row in &mut matrix_ex {
+            for v in row.iter_mut() {
+                *v *= scale;
+            }
+        }
+        for row in &mut matrix_dir {
+            for v in row.iter_mut() {
+                *v *= scale;
+            }
+        }
+        crate::film::development::diffusion::apply_two_component_adjacency(
+            &mut reference,
+            sigma_ex_px,
+            &matrix_ex,
+            sigma_dir_px,
+            &matrix_dir,
+        );
         for plane in &mut reference.image_dye {
             for density in plane {
                 *density = density.max(0.0);

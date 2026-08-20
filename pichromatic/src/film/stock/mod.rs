@@ -126,9 +126,14 @@ pub struct FilmStock {
     /// fit; cloud formation and adjacency remain separate model components.
     pub irradiation_response: Option<IrradiationResponse>,
     pub developer_diffusion_length: Microns,
+    /// Narrow DIR inhibitor diffusion length (C-41 DIR coupler). When zero,
+    /// only the single broad exhaustion component is active (backwards compat).
+    pub inhibitor_diffusion_length: Microns,
     pub adjacency_beta: f32,
     pub adjacency_beta_record: f32,
     pub adjacency_beta_cross: f32,
+    /// DIR inhibitor cross-record magnitude (negative coupling at narrow sigma).
+    pub adjacency_beta_dir: f32,
     pub scanner_light: SpectralCurve,
     /// Precomputed at load: per-layer capture LUT (None for non-emulsion).
     pub capture_luts: Vec<Option<DevelopableFractionLut>>,
@@ -314,6 +319,54 @@ impl FilmStock {
         }
         m
     }
+
+    /// Exhaustion (broad, positive) adjacency matrix for two-component physical model.
+    ///
+    /// Diagonal = beta_self, same-record = beta_record, cross-record = +beta_cross.
+    pub fn adjacency_exhaustion_matrix(&self) -> Vec<Vec<f32>> {
+        let emulsions: Vec<_> = self.emulsion_layers().map(|(_, l)| l).collect();
+        let n = emulsions.len();
+        let mut m = vec![vec![0.0f32; n]; n];
+        for i in 0..n {
+            let coupler_i = emulsions[i].coupler.as_ref().map(|c| c.name);
+            for j in 0..n {
+                if i == j {
+                    m[i][j] = self.adjacency_beta;
+                } else if coupler_i.is_some()
+                    && coupler_i == emulsions[j].coupler.as_ref().map(|c| c.name)
+                {
+                    m[i][j] = self.adjacency_beta_record;
+                } else {
+                    m[i][j] = self.adjacency_beta_cross;
+                }
+            }
+        }
+        m
+    }
+
+    /// DIR inhibitor (narrow, negative) cross-record matrix for two-component model.
+    ///
+    /// Only cross-record entries are non-zero: M_ij = -beta_dir for i,j across different couplers.
+    pub fn adjacency_inhibitor_matrix(&self) -> Vec<Vec<f32>> {
+        let emulsions: Vec<_> = self.emulsion_layers().map(|(_, l)| l).collect();
+        let n = emulsions.len();
+        let mut m = vec![vec![0.0f32; n]; n];
+        for i in 0..n {
+            let coupler_i = emulsions[i].coupler.as_ref().map(|c| c.name);
+            for j in 0..n {
+                if i == j {
+                    m[i][j] = 0.0;
+                } else if coupler_i.is_some()
+                    && coupler_i == emulsions[j].coupler.as_ref().map(|c| c.name)
+                {
+                    m[i][j] = 0.0;
+                } else {
+                    m[i][j] = -self.adjacency_beta_dir;
+                }
+            }
+        }
+        m
+    }
 }
 
 #[cfg(test)]
@@ -396,9 +449,11 @@ mod tests {
             },
             irradiation_response: None,
             developer_diffusion_length: Microns(5.0),
+            inhibitor_diffusion_length: Microns(0.0),
             adjacency_beta: 0.0,
             adjacency_beta_record: 0.0,
             adjacency_beta_cross: 0.0,
+            adjacency_beta_dir: 0.0,
             scanner_light: SpectralCurve::constant(1.0),
             capture_luts: vec![],
             grain_kappa: vec![],

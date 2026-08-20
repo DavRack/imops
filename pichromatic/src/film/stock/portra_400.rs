@@ -29,7 +29,10 @@ fn gaussian_curve(peak_nm: f64, sigma_nm: f64, amplitude: f64) -> SpectralCurve 
 // "Spectral-Dye-Density Curves". Values are the spektrafilm digitization of
 // that official plot (`kodak_portra_400.json`, `data.channel_density`), sampled
 // at 400:20:700 nm. Small negative unmixing artifacts are clamped to zero and
-// each C/M/Y channel is peak-normalized so the existing d_max scale is unchanged.
+// each C/M/Y channel was peak-normalized so the existing d_max scale is unchanged.
+// For physics-correct color, the three dyes are rescaled to a common trapezoidal
+// integral (average 80.0909 nm) so image-density color bias from bandwidth differences
+// does not leak into the scan (Y integral 76.62 vs M 81.84 vs C 81.81).
 const E4050_CYAN: [f64; 16] = [
     0.2141127157,
     0.0884377415,
@@ -85,8 +88,30 @@ const E4050_YELLOW: [f64; 16] = [
     0.0,
 ];
 
+fn trapezoid_integral_20nm(samples: &[f64; 16]) -> f64 {
+    let mut acc = 0.0;
+    for i in 0..15 {
+        acc += 0.5 * (samples[i] + samples[i + 1]) * 20.0;
+    }
+    acc
+}
+
+const E4050_TARGET_INTEGRAL: f64 = 80.09092549066666;
+
 fn e4050_image_dye(samples: [f64; 16]) -> SpectralCurve {
+    // Peak-normalized raw digitization (historical, used only by legacy probe).
     SpectralCurve::new(WavelengthGrid::mvp(), samples.to_vec())
+}
+
+fn e4050_image_dye_integral_normalized(samples: [f64; 16]) -> SpectralCurve {
+    let integral = trapezoid_integral_20nm(&samples);
+    let scale = if integral > 1e-12 {
+        E4050_TARGET_INTEGRAL / integral
+    } else {
+        1.0
+    };
+    let scaled: Vec<f64> = samples.iter().map(|&v| v * scale).collect();
+    SpectralCurve::new(WavelengthGrid::mvp(), scaled)
 }
 
 fn orange_mask_epsilon() -> SpectralCurve {
@@ -175,7 +200,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "yellow",
-            epsilon: e4050_image_dye(E4050_YELLOW),
+            epsilon: e4050_image_dye_integral_normalized(E4050_YELLOW),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.575, // total 1.15 split fast/slow
         }),
@@ -197,7 +222,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.20,
         coupler: Some(DyeCoupler {
             name: "yellow",
-            epsilon: e4050_image_dye(E4050_YELLOW),
+            epsilon: e4050_image_dye_integral_normalized(E4050_YELLOW),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.575, // yellow slow
         }),
@@ -227,7 +252,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "magenta",
-            epsilon: e4050_image_dye(E4050_MAGENTA),
+            epsilon: e4050_image_dye_integral_normalized(E4050_MAGENTA),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.666,
         }),
@@ -249,7 +274,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.20,
         coupler: Some(DyeCoupler {
             name: "magenta",
-            epsilon: e4050_image_dye(E4050_MAGENTA),
+            epsilon: e4050_image_dye_integral_normalized(E4050_MAGENTA),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.666, // magenta slow
         }),
@@ -274,7 +299,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.16,
         coupler: Some(DyeCoupler {
             name: "cyan",
-            epsilon: e4050_image_dye(E4050_CYAN),
+            epsilon: e4050_image_dye_integral_normalized(E4050_CYAN),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.704,
         }),
@@ -296,7 +321,7 @@ pub fn load() -> Result<FilmStock, FilmError> {
         silver_halide_fraction: 0.20,
         coupler: Some(DyeCoupler {
             name: "cyan",
-            epsilon: e4050_image_dye(E4050_CYAN),
+            epsilon: e4050_image_dye_integral_normalized(E4050_CYAN),
             mask_epsilon: Some(orange_mask_epsilon()),
             d_max: 0.704, // cyan slow
         }),
@@ -337,9 +362,11 @@ pub fn load() -> Result<FilmStock, FilmError> {
             tail_weight_bgr: [0.55, 0.58, 0.79],
         }),
         developer_diffusion_length: Microns(20.2),
-        adjacency_beta: 0.66,
-        adjacency_beta_record: 0.45,
-        adjacency_beta_cross: 0.22,
+        inhibitor_diffusion_length: Microns(7.0),
+        adjacency_beta: 0.40,
+        adjacency_beta_record: 0.20,
+        adjacency_beta_cross: 0.35,
+        adjacency_beta_dir: 0.15,
         scanner_light: SpectralCurve::d50(),
         capture_luts: vec![],
         grain_kappa: vec![],
@@ -371,9 +398,55 @@ mod runtime_calibration_tests {
         ];
         for ((_, layer), samples) in stock.emulsion_layers().zip(expected) {
             let epsilon = &layer.coupler.as_ref().unwrap().epsilon.samples;
-            assert_eq!(epsilon.as_slice(), samples.as_slice(), "{}", layer.name);
+            // Expected is integral-normalized to common target (avg 80.0909 nm)
+            let integral = trapezoid_integral_20nm(&samples);
+            let scale = E4050_TARGET_INTEGRAL / integral;
+            let expected_scaled: Vec<f64> = samples.iter().map(|&v| v * scale).collect();
+            assert_eq!(epsilon.len(), expected_scaled.len(), "{}", layer.name);
+            for (got, exp) in epsilon.iter().zip(expected_scaled.iter()) {
+                assert!(
+                    (got - exp).abs() < 1e-12,
+                    "{} epsilon mismatch got {got} exp {exp}",
+                    layer.name
+                );
+            }
             assert!(epsilon.iter().all(|&value| value >= 0.0));
-            assert_eq!(epsilon.iter().copied().fold(0.0, f64::max), 1.0);
+            // Peak is now scaled, not 1.0 — check it equals scale within tolerance.
+            let peak = epsilon.iter().copied().fold(0.0, f64::max);
+            assert!(
+                (peak - scale).abs() < 1e-12,
+                "{} peak {peak} != scale {scale}",
+                layer.name
+            );
+            // Integral should be target within 1e-9.
+            let got_integral: f64 = {
+                let mut acc = 0.0;
+                for i in 0..epsilon.len() - 1 {
+                    acc += 0.5 * (epsilon[i] + epsilon[i + 1]) * 20.0;
+                }
+                acc
+            };
+            assert!(
+                (got_integral - E4050_TARGET_INTEGRAL).abs() < 1e-9,
+                "{} integral {got_integral} != target {}",
+                layer.name,
+                E4050_TARGET_INTEGRAL
+            );
+        }
+        // All three dyes share the same integral (color-balanced).
+        let integrals: Vec<f64> = stock
+            .emulsion_layers()
+            .map(|(_, l)| {
+                let s = &l.coupler.as_ref().unwrap().epsilon.samples;
+                let mut acc = 0.0;
+                for i in 0..s.len() - 1 {
+                    acc += 0.5 * (s[i] + s[i + 1]) * 20.0;
+                }
+                acc
+            })
+            .collect();
+        for &integ in &integrals {
+            assert!((integ - E4050_TARGET_INTEGRAL).abs() < 1e-9);
         }
     }
 

@@ -69,6 +69,7 @@ fn portra(adjacency: bool) -> FilmStock {
         stock.adjacency_beta = 0.0;
         stock.adjacency_beta_record = 0.0;
         stock.adjacency_beta_cross = 0.0;
+        stock.adjacency_beta_dir = 0.0;
     }
     stock
 }
