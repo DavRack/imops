@@ -29,11 +29,15 @@ pub const WAVELENGTH_SAMPLE_COUNT: usize = 16;
 /// latent-image speck. Standard AgX photographic-science assumption (T = 4).
 pub const DEVELOPABILITY_THRESHOLD_ATOMS: u32 = 4;
 
-/// Typical chromogenic dye-cloud physical extent (µm).
+/// Physical chromogenic dye cloud radius (µm).
+/// Matches Kodak C-41 oxidized developer diffusion radius in gelatin (5.0 µm diameter).
+pub const DYE_CLOUD_RADIUS_UM: f32 = 2.5;
+
+/// Typical chromogenic dye-cloud physical extent / diameter (µm).
 /// Order-of-magnitude from published chromogenic emulsion surveys. The CPU
-/// particle path treats this as an effective cloud diameter and converts it to
-/// a Gaussian footprint from the circular-area second moment.
-pub const DYE_CLOUD_CORRELATION_UM: f32 = 3.0;
+/// particle path treats this as an effective cloud diameter (2 * DYE_CLOUD_RADIUS_UM = 5.0 µm)
+/// and converts it to a Gaussian footprint from the circular-area second moment.
+pub const DYE_CLOUD_CORRELATION_UM: f32 = 2.0 * DYE_CLOUD_RADIUS_UM;
 
 /// Relative absorption cross-section scale (1/µm) for Beer–Lambert in
 /// [`crate::film::exposure::absorption::absorb_stack`].

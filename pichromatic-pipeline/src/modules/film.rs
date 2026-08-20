@@ -37,6 +37,8 @@ fn parse_film_format(s: &str) -> Option<FilmFormat> {
         "Film35mm" => FilmFormat::Film35mm,
         "Film6x6" => FilmFormat::Film6x6,
         "Film4x5" => FilmFormat::Film4x5,
+        "FilmSuper16" | "Super16" => FilmFormat::FilmSuper16,
+        "FilmStandard16" | "Standard16" | "Film16mm" | "16mm" => FilmFormat::FilmStandard16,
         "FilmSuper8" => FilmFormat::FilmSuper8,
         "FilmStandard8" => FilmFormat::FilmStandard8,
         "Film1mmDebug" => FilmFormat::Film1mmDebug,
@@ -128,6 +130,8 @@ impl Default for Film {
                     "Film35mm".to_string(),
                     "Film6x6".to_string(),
                     "Film4x5".to_string(),
+                    "FilmSuper16".to_string(),
+                    "FilmStandard16".to_string(),
                     "FilmSuper8".to_string(),
                     "FilmStandard8".to_string(),
                     "Film1mmDebug".to_string(),
@@ -425,6 +429,20 @@ mod tests {
             let params = film_params_from_config(&film).unwrap();
             assert_eq!(params.output, FilmOutput::PositiveInverseHd);
             assert_eq!(params.scanner_s_curve, 1.5);
+        }
+
+        for (name, expected) in [
+            ("FilmSuper16", FilmFormat::FilmSuper16),
+            ("Super16", FilmFormat::FilmSuper16),
+            ("FilmStandard16", FilmFormat::FilmStandard16),
+            ("Standard16", FilmFormat::FilmStandard16),
+            ("Film16mm", FilmFormat::FilmStandard16),
+            ("16mm", FilmFormat::FilmStandard16),
+        ] {
+            let json = format!(r#"{{"film_format": "{name}"}}"#);
+            let film: Film = serde_json::from_str(&json).unwrap();
+            let params = film_params_from_config(&film).unwrap();
+            assert_eq!(params.film_format, expected);
         }
     }
 }

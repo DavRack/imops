@@ -476,6 +476,18 @@ mod tests {
         assert_eq!(normal.width_mm, 36.0);
         assert_eq!(normal.pixel_pitch_um, 36.0);
 
+        let mut super16 = params.clone();
+        super16.film_format = FilmFormat::FilmSuper16;
+        let super16_g = super16.render_geometry(1000, 2).unwrap();
+        assert_eq!(super16_g.width_mm, 12.52);
+        assert_eq!(super16_g.pixel_pitch_um, 12.52);
+
+        let mut standard16 = params.clone();
+        standard16.film_format = FilmFormat::FilmStandard16;
+        let standard16_g = standard16.render_geometry(1000, 2).unwrap();
+        assert_eq!(standard16_g.width_mm, 10.26);
+        assert_eq!(standard16_g.pixel_pitch_um, 10.26);
+
         let mut super8 = params.clone();
         super8.film_format = FilmFormat::FilmSuper8;
         let super8_g = super8.render_geometry(1000, 2).unwrap();

@@ -308,7 +308,7 @@ impl FilmStock {
                 } else if coupler_i.is_some() && coupler_i == emulsions[j].coupler.as_ref().map(|c| c.name) {
                     m[i][j] = self.adjacency_beta_record;
                 } else {
-                    m[i][j] = self.adjacency_beta_cross;
+                    m[i][j] = -self.adjacency_beta_cross;
                 }
             }
         }

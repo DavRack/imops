@@ -153,9 +153,9 @@ pub fn apply_scanner_scurve(x: f32, s: f32) -> f32 {
     if s <= 0.0 {
         return x;
     }
-    const BASE_GAMMA: f32 = 2.234;
-    const K: f32 = 0.216;
-    const Y_MAX: f32 = 0.926;
+    const BASE_GAMMA: f32 = 2.38;
+    const K: f32 = 0.218;
+    const Y_MAX: f32 = 0.940;
 
     let gamma = if s <= 1.0 { BASE_GAMMA } else { BASE_GAMMA * s };
     let k_gamma = K.powf(gamma);
@@ -360,9 +360,9 @@ mod tests {
             assert!(pair[1] >= pair[0]);
         }
 
-        // s = 1.0 should compress high values below Y_MAX = 0.926
+        // s = 1.0 should compress high values below Y_MAX = 0.940
         let high = apply_scanner_scurve(100.0, 1.0);
-        assert!(high <= 0.926 && high > 0.92);
+        assert!(high <= 0.940 && high > 0.92);
     }
 
     #[test]
@@ -393,8 +393,8 @@ mod tests {
         let highlight_px = buf.last().unwrap();
         for c in 0..3 {
             assert!(
-                highlight_px[c] <= 0.926 + 1e-5,
-                "s=1.0 curve should compress highlights <= 0.926, got {}",
+                highlight_px[c] <= 0.940 + 1e-5,
+                "s=1.0 curve should compress highlights <= 0.940, got {}",
                 highlight_px[c]
             );
         }

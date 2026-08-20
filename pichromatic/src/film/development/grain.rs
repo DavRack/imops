@@ -266,13 +266,8 @@ fn particle_field(
             let x = index % width;
             let y = index / width;
             let probability = probabilities[index].clamp(0.0, 1.0);
-            let mut rng = Philox4x32::per_pixel(seed, record_i, sublayer_i, x as u32, y as u32);
-            // Independent Poisson counts in disjoint pixel apertures are
-            // distributionally the exact restriction of a homogeneous physical
-            // Poisson point process. Depositing each aperture's count at its
-            // pixel center is the finite-aperture approximation: it omits the
-            // sites' subpixel coordinates, not their count statistics.
-            // Counts and thresholds remain deterministic for this seed/layer/pixel.
+            let mut rng =
+                Philox4x32::per_pixel(seed, record_i + 1, sublayer_i + 1, x as u32, y as u32);
             let sites = sample_poisson(&mut rng, expected_sites);
             let developed = sample_binomial(&mut rng, sites, probability);
             *slot = developed as f32 / expected_sites;
@@ -448,6 +443,25 @@ mod tests {
 
         let mut other = Philox4x32::per_pixel(1, 2, 0, 11, 20);
         assert_ne!(a.next_u32(), other.next_u32());
+    }
+
+    #[test]
+    fn philox_streams_differ_across_layers_and_sublayers() {
+        let mut base = Philox4x32::per_pixel(1, 1, 1, 10, 20);
+        let mut diff_layer = Philox4x32::per_pixel(1, 2, 1, 10, 20);
+        let mut diff_sublayer = Philox4x32::per_pixel(1, 1, 2, 10, 20);
+        assert_ne!(base.next_u32(), diff_layer.next_u32());
+        assert_ne!(base.next_u32(), diff_sublayer.next_u32());
+    }
+
+    #[test]
+    fn particle_field_differs_across_layers_and_sublayers() {
+        let probs = vec![0.5f32; 64 * 64];
+        let f1 = particle_field(&probs, 64, 64, 0.2, 1.0, 42, 0, 0);
+        let f2 = particle_field(&probs, 64, 64, 0.2, 1.0, 42, 1, 0);
+        let f3 = particle_field(&probs, 64, 64, 0.2, 1.0, 42, 0, 1);
+        assert_ne!(f1, f2, "particle field must be independent across records");
+        assert_ne!(f1, f3, "particle field must be independent across sublayers");
     }
 
     fn flat_dyes(d: f32, d_max: f32, w: usize, h: usize) -> DyePlanes {
