@@ -7,15 +7,12 @@
 //!
 //! Run: cargo run --release -p pichromatic --example halation_whatif
 
-use pichromatic::color::ColorSpaceTag;
 use pichromatic::film::development::develop;
 use pichromatic::film::exposure::expose_with_pitch_and_shutter;
-use pichromatic::film::exposure::radiance::{absolute_luminance_gain, sunny16_exposure};
 use pichromatic::film::scan::{scan, scanner_calibration_acescg, ScanMode};
 use pichromatic::film::spectrum::{SpectralCurve, WavelengthGrid};
 use pichromatic::film::stock::{LayerKind, StockId};
 use pichromatic::film::types::LatentPlanes;
-use pichromatic::film::units::IsoSpeed;
 
 const WIDTH: usize = 1500;
 const HEIGHT: usize = 1000;
@@ -52,6 +49,7 @@ fn run_stock(
             dmin: calibration.dmin,
             mid: calibration.mid,
         },
+        pitch,
     ))
 }
 

@@ -270,6 +270,7 @@ fn main() {
         output: FilmOutput::PositiveLinear,
         enable_halation: true,
         compensate_box_speed: true,
+        scanner_s_curve: 0.0,
     };
     let meta = ImageMetadata {
         width,

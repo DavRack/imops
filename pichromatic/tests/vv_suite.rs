@@ -198,6 +198,7 @@ fn vv_macbeth_colorchecker_delta_e00_gate() {
         output: FilmOutput::PositiveLinear,
         enable_halation: true,
         compensate_box_speed: true,
+        scanner_s_curve: 0.0,
     };
 
     process(&mut img, &params).expect("Process failed");

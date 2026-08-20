@@ -69,6 +69,7 @@ fn main() {
                             enable_halation: Parameter::new(enable_hal, ""),
                             output: Parameter::new("PositiveLinear".to_string(), ""),
                             compensate_box_speed: Parameter::new(true, ""),
+                            scanner_s_curve: Parameter::new(0.0, ""),
                         },
                     }),
                 ]

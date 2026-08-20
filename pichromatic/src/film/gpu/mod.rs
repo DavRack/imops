@@ -2136,6 +2136,7 @@ mod tests {
             output: crate::film::FilmOutput::NegativeLinear,
             enable_halation: false,
             compensate_box_speed: true,
+            scanner_s_curve: 0.0,
         };
 
         let result = pollster::block_on(process_gpu(&ctx, &gpu_buf, &meta, &params));
@@ -2235,6 +2236,7 @@ mod tests {
                 output,
                 enable_halation: true,
                 compensate_box_speed: true,
+                scanner_s_curve: 0.0,
             };
 
             let gpu_buf_ff = ctx.create_output_buffer(width, height);
@@ -2334,6 +2336,7 @@ mod tests {
                 output,
                 enable_halation: true,
                 compensate_box_speed: true,
+                scanner_s_curve: 0.0,
             };
 
             for &v in &[0.18f32, 10.0, 100.0, 300.0, 500.0] {
@@ -2427,6 +2430,7 @@ mod tests {
                 output,
                 enable_halation: true,
                 compensate_box_speed: true,
+                scanner_s_curve: 0.0,
             };
 
             // CPU run

@@ -46,6 +46,8 @@ pub enum FilmOutput {
     NegativeLinear,
     /// Bounded scanner invert from processed Dmin and a neutral mid-gray scan.
     PositiveLinear,
+    /// Scene-referred HDR inverse-H&D reconstruction from processed Dmin and neutral mid-gray scan.
+    PositiveInverseHd,
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +69,8 @@ pub struct FilmParams {
     /// more fluence for the same input — the "shot with the same camera
     /// settings" look.
     pub compensate_box_speed: bool,
+    /// Contrast tuning factor for the scanner S-curve (0.0 = linear HDR, 1.0 = standard S-curve).
+    pub scanner_s_curve: f32,
 }
 
 impl FilmParams {
@@ -117,6 +121,7 @@ impl Default for FilmParams {
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
             compensate_box_speed: true,
+            scanner_s_curve: 0.0,
         }
     }
 }
@@ -175,15 +180,19 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
         scan(&stock, &dyes, ScanMode::NegativeLinear, pitch)
     } else {
         let calibration = crate::film::scan::scanner_calibration_acescg(&stock, pitch, shutter)?;
-        scan(
-            &stock,
-            &dyes,
-            ScanMode::PositiveLinear {
+        let mode = match params.output {
+            FilmOutput::PositiveInverseHd => ScanMode::PositiveInverseHd {
+                dmin: calibration.dmin,
+                mid: calibration.mid,
+                scanner_s_curve: params.scanner_s_curve,
+            },
+            FilmOutput::PositiveLinear => ScanMode::PositiveLinear {
                 dmin: calibration.dmin,
                 mid: calibration.mid,
             },
-            pitch,
-        )
+            FilmOutput::NegativeLinear => ScanMode::NegativeLinear,
+        };
+        scan(&stock, &dyes, mode, pitch)
     };
     image.metadata.color_space = Some(ColorSpaceTag::AcesCg);
     Ok(())
@@ -442,6 +451,7 @@ mod tests {
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
             compensate_box_speed: true,
+            scanner_s_curve: 0.0,
         }
     }
 
@@ -454,6 +464,7 @@ mod tests {
             output,
             enable_halation: true,
             compensate_box_speed: true,
+            scanner_s_curve: 0.0,
         }
     }
 
@@ -670,6 +681,7 @@ mod tests {
             output: FilmOutput::PositiveLinear,
             enable_halation: true,
             compensate_box_speed: true,
+            scanner_s_curve: 0.0,
         };
         let mut img = make_image(64, 64, [0.0, 0.0, 0.0], 200.0);
         process(&mut img, &params).unwrap();
@@ -686,7 +698,11 @@ mod tests {
             let v = ((i * 1103515245 + 12345) % 1000) as f32 / 1000.0;
             *px = to_absolute_rgb([v * 0.5, v * 0.4, v * 0.3], 200.0);
         }
-        for output in [FilmOutput::NegativeLinear, FilmOutput::PositiveLinear] {
+        for output in [
+            FilmOutput::NegativeLinear,
+            FilmOutput::PositiveLinear,
+            FilmOutput::PositiveInverseHd,
+        ] {
             let params = FilmParams {
                 stock: StockId::ColorNeg200,
                 film_format: FilmFormat::Film35mm,
@@ -695,6 +711,7 @@ mod tests {
                 output,
                 enable_halation: true,
                 compensate_box_speed: true,
+                scanner_s_curve: 0.0,
             };
             let mut copy = img.clone();
             process(&mut copy, &params).unwrap();
@@ -716,6 +733,7 @@ mod tests {
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
             compensate_box_speed: true,
+            scanner_s_curve: 0.0,
         };
         let mut img = make_image(32, 32, [0.185, 0.185, 0.185], 200.0);
         process(&mut img, &params).unwrap();
@@ -907,6 +925,7 @@ mod tests {
             output: FilmOutput::PositiveLinear, // ignored for reversal
             enable_halation: true,
             compensate_box_speed: true,
+            scanner_s_curve: 0.0,
         };
         let mut img = make_image(16, 16, [MIDDLE_GRAY, MIDDLE_GRAY, MIDDLE_GRAY], 100.0);
         process(&mut img, &params).unwrap();
@@ -955,6 +974,7 @@ mod tests {
             output: FilmOutput::PositiveLinear,
             enable_halation: false,
             compensate_box_speed: true,
+            scanner_s_curve: 0.0,
         };
 
         process(&mut image, &params).unwrap();
@@ -966,5 +986,18 @@ mod tests {
                 .all(|value| value.is_finite()),
             "production-state PositiveLinear output must remain finite"
         );
+    }
+
+    #[test]
+    fn positive_inverse_hd_scanner_s_curve_pipeline() {
+        let mut image = make_image(16, 16, [0.185, 0.185, 0.185], 200.0);
+        let mut params = color_params(FilmOutput::PositiveInverseHd);
+        params.scanner_s_curve = 1.0;
+        process(&mut image, &params).unwrap();
+        for px in &image.rgb_data {
+            for &c in px {
+                assert!(c.is_finite() && c >= 0.0);
+            }
+        }
     }
 }

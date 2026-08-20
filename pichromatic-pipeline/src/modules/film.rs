@@ -14,6 +14,7 @@ pub struct Film {
     pub enable_halation: Parameter<bool>,
     pub output: Parameter<String>,
     pub compensate_box_speed: Parameter<bool>,
+    pub scanner_s_curve: Parameter<f32>,
 }
 
 fn parse_stock(s: &str) -> Option<StockId> {
@@ -47,6 +48,9 @@ fn parse_output(s: &str) -> Option<FilmOutput> {
     Some(match s {
         "NegativeLinear" => FilmOutput::NegativeLinear,
         "PositiveLinear" => FilmOutput::PositiveLinear,
+        "PositiveInverseHd" | "PositiveInverseHD" | "PositiveSceneLinear" => {
+            FilmOutput::PositiveInverseHd
+        }
         _ => return None,
     })
 }
@@ -84,6 +88,7 @@ fn film_params_from_config(config: &Film) -> Option<FilmParams> {
         output,
         enable_halation: config.enable_halation.value,
         compensate_box_speed: config.compensate_box_speed.value,
+        scanner_s_curve: config.scanner_s_curve.value,
     })
 }
 
@@ -139,12 +144,22 @@ impl Default for Film {
             ),
             output: Parameter::new_with_choices(
                 "NegativeLinear".to_string(),
-                "NegativeLinear: densitometric scanned negative. PositiveLinear: bounded invert from processed Dmin + neutral mid-gray scan.",
-                vec!["NegativeLinear".to_string(), "PositiveLinear".to_string()],
+                "NegativeLinear: densitometric scanned negative. PositiveLinear: bounded invert from processed Dmin + neutral mid-gray scan. PositiveInverseHd: scene-referred HDR inverse-H&D reconstruction.",
+                vec![
+                    "NegativeLinear".to_string(),
+                    "PositiveLinear".to_string(),
+                    "PositiveInverseHd".to_string(),
+                ],
             ),
             compensate_box_speed: Parameter::new(
                 true,
                 "Normalize exposure across stocks to the capture ISO (scene-relative fluence, independent of stock box speed). Off keeps the raw box-speed difference: faster stocks look brighter for the same input.",
+            ),
+            scanner_s_curve: Parameter::new_ranged(
+                0.0,
+                0.0,
+                3.0,
+                "Scanner S-curve contrast tune factor (0.0 = linear HDR, 1.0 = standard scanner S-curve).",
             ),
         }
     }
@@ -403,5 +418,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(default.render_width_mm.value, None);
+
+        for alias in ["PositiveInverseHd", "PositiveInverseHD", "PositiveSceneLinear"] {
+            let json = format!(r#"{{"output": "{alias}", "scanner_s_curve": 1.5}}"#);
+            let film: Film = serde_json::from_str(&json).unwrap();
+            let params = film_params_from_config(&film).unwrap();
+            assert_eq!(params.output, FilmOutput::PositiveInverseHd);
+            assert_eq!(params.scanner_s_curve, 1.5);
+        }
     }
 }

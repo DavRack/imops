@@ -124,6 +124,7 @@ fn film_stage_run(
         output: FilmOutput::PositiveLinear,
         enable_halation: halation,
         compensate_box_speed: true,
+        scanner_s_curve: 0.0,
     };
     process(&mut img, &params).expect("film process");
     (img, (cx, cy))

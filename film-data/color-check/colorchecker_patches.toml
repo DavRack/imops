@@ -101,7 +101,7 @@ rgb_norm = [
 
 [[stocks.C200-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -165,7 +165,7 @@ rgb_norm = [
 
 [[stocks.C200-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -229,7 +229,7 @@ rgb_norm = [
 
 [[stocks.C200-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -293,7 +293,7 @@ rgb_norm = [
 
 [[stocks.C200-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -490,7 +490,7 @@ rgb_norm = [
 
 [[stocks.Colorplus-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -554,7 +554,7 @@ rgb_norm = [
 
 [[stocks.Colorplus-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -618,7 +618,7 @@ rgb_norm = [
 
 [[stocks.Colorplus-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -682,7 +682,7 @@ rgb_norm = [
 
 [[stocks.Colorplus-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -879,7 +879,7 @@ rgb_norm = [
 
 [[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -943,7 +943,7 @@ rgb_norm = [
 
 [[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -1007,7 +1007,7 @@ rgb_norm = [
 
 [[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -1071,7 +1071,7 @@ rgb_norm = [
 
 [[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -1268,7 +1268,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -1332,7 +1332,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -1396,7 +1396,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -1460,7 +1460,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -1657,7 +1657,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -1721,7 +1721,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -1785,7 +1785,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -1849,7 +1849,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -2046,7 +2046,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -2110,7 +2110,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -2174,7 +2174,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -2238,7 +2238,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -2435,7 +2435,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -2499,7 +2499,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -2563,7 +2563,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -2627,7 +2627,7 @@ rgb_norm = [
 
 [[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -2824,7 +2824,7 @@ rgb_norm = [
 
 [[stocks.Ektar-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -2888,7 +2888,7 @@ rgb_norm = [
 
 [[stocks.Ektar-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -2952,7 +2952,7 @@ rgb_norm = [
 
 [[stocks.Ektar-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -3016,7 +3016,7 @@ rgb_norm = [
 
 [[stocks.Ektar-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -3213,7 +3213,7 @@ rgb_norm = [
 
 [[stocks.Ektar-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -3277,7 +3277,7 @@ rgb_norm = [
 
 [[stocks.Ektar-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -3341,7 +3341,7 @@ rgb_norm = [
 
 [[stocks.Ektar-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -3405,7 +3405,7 @@ rgb_norm = [
 
 [[stocks.Ektar-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -3602,7 +3602,7 @@ rgb_norm = [
 
 [[stocks.Fuji-200-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -3666,7 +3666,7 @@ rgb_norm = [
 
 [[stocks.Fuji-200-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -3730,7 +3730,7 @@ rgb_norm = [
 
 [[stocks.Fuji-200-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -3794,7 +3794,7 @@ rgb_norm = [
 
 [[stocks.Fuji-200-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -3991,7 +3991,7 @@ rgb_norm = [
 
 [[stocks.Fuji-400-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -4055,7 +4055,7 @@ rgb_norm = [
 
 [[stocks.Fuji-400-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -4119,7 +4119,7 @@ rgb_norm = [
 
 [[stocks.Fuji-400-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -4183,7 +4183,7 @@ rgb_norm = [
 
 [[stocks.Fuji-400-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -4380,7 +4380,7 @@ rgb_norm = [
 
 [[stocks.Gold-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -4444,7 +4444,7 @@ rgb_norm = [
 
 [[stocks.Gold-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -4508,7 +4508,7 @@ rgb_norm = [
 
 [[stocks.Gold-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -4572,7 +4572,7 @@ rgb_norm = [
 
 [[stocks.Gold-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -4769,7 +4769,7 @@ rgb_norm = [
 
 [[stocks.Gold-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -4833,7 +4833,7 @@ rgb_norm = [
 
 [[stocks.Gold-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -4897,7 +4897,7 @@ rgb_norm = [
 
 [[stocks.Gold-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -4961,7 +4961,7 @@ rgb_norm = [
 
 [[stocks.Gold-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -5158,7 +5158,7 @@ rgb_norm = [
 
 [[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -5222,7 +5222,7 @@ rgb_norm = [
 
 [[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -5286,7 +5286,7 @@ rgb_norm = [
 
 [[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -5350,7 +5350,7 @@ rgb_norm = [
 
 [[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -5547,7 +5547,7 @@ rgb_norm = [
 
 [[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -5611,7 +5611,7 @@ rgb_norm = [
 
 [[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -5675,7 +5675,7 @@ rgb_norm = [
 
 [[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -5739,7 +5739,7 @@ rgb_norm = [
 
 [[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -5936,7 +5936,7 @@ rgb_norm = [
 
 [[stocks.NGH-II-800-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -6000,7 +6000,7 @@ rgb_norm = [
 
 [[stocks.NGH-II-800-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -6064,7 +6064,7 @@ rgb_norm = [
 
 [[stocks.NGH-II-800-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -6128,7 +6128,7 @@ rgb_norm = [
 
 [[stocks.NGH-II-800-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -6325,7 +6325,7 @@ rgb_norm = [
 
 [[stocks.NPS-160-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -6389,7 +6389,7 @@ rgb_norm = [
 
 [[stocks.NPS-160-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -6453,7 +6453,7 @@ rgb_norm = [
 
 [[stocks.NPS-160-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -6517,7 +6517,7 @@ rgb_norm = [
 
 [[stocks.NPS-160-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -6714,7 +6714,7 @@ rgb_norm = [
 
 [[stocks.Natura-1600-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -6778,7 +6778,7 @@ rgb_norm = [
 
 [[stocks.Natura-1600-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -6842,7 +6842,7 @@ rgb_norm = [
 
 [[stocks.Natura-1600-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -6906,7 +6906,7 @@ rgb_norm = [
 
 [[stocks.Natura-1600-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -7103,7 +7103,7 @@ rgb_norm = [
 
 [[stocks.Portra-160-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -7167,7 +7167,7 @@ rgb_norm = [
 
 [[stocks.Portra-160-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -7231,7 +7231,7 @@ rgb_norm = [
 
 [[stocks.Portra-160-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -7295,7 +7295,7 @@ rgb_norm = [
 
 [[stocks.Portra-160-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -7492,7 +7492,7 @@ rgb_norm = [
 
 [[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -7556,7 +7556,7 @@ rgb_norm = [
 
 [[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -7620,7 +7620,7 @@ rgb_norm = [
 
 [[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -7684,7 +7684,7 @@ rgb_norm = [
 
 [[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -7881,7 +7881,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -7945,7 +7945,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -8009,7 +8009,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -8073,7 +8073,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -8270,7 +8270,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -8334,7 +8334,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -8398,7 +8398,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -8462,7 +8462,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -8659,7 +8659,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -8723,7 +8723,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -8787,7 +8787,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -8851,7 +8851,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -9048,7 +9048,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -9112,7 +9112,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -9176,7 +9176,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -9240,7 +9240,7 @@ rgb_norm = [
 
 [[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -9437,7 +9437,7 @@ rgb_norm = [
 
 [[stocks.Portra-800-0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -9501,7 +9501,7 @@ rgb_norm = [
 
 [[stocks.Portra-800-0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -9565,7 +9565,7 @@ rgb_norm = [
 
 [[stocks.Portra-800-0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -9629,7 +9629,7 @@ rgb_norm = [
 
 [[stocks.Portra-800-0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -9826,7 +9826,7 @@ rgb_norm = [
 
 [[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -9890,7 +9890,7 @@ rgb_norm = [
 
 [[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -9954,7 +9954,7 @@ rgb_norm = [
 
 [[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -10018,7 +10018,7 @@ rgb_norm = [
 
 [[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -10215,7 +10215,7 @@ rgb_norm = [
 
 [[stocks.Pro-160S-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -10279,7 +10279,7 @@ rgb_norm = [
 
 [[stocks.Pro-160S-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -10343,7 +10343,7 @@ rgb_norm = [
 
 [[stocks.Pro-160S-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -10407,7 +10407,7 @@ rgb_norm = [
 
 [[stocks.Pro-160S-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -10604,7 +10604,7 @@ rgb_norm = [
 
 [[stocks.Pro-400H-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -10668,7 +10668,7 @@ rgb_norm = [
 
 [[stocks.Pro-400H-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -10732,7 +10732,7 @@ rgb_norm = [
 
 [[stocks.Pro-400H-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -10796,7 +10796,7 @@ rgb_norm = [
 
 [[stocks.Pro-400H-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -10993,7 +10993,7 @@ rgb_norm = [
 
 [[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -11057,7 +11057,7 @@ rgb_norm = [
 
 [[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -11121,7 +11121,7 @@ rgb_norm = [
 
 [[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -11185,7 +11185,7 @@ rgb_norm = [
 
 [[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [
@@ -11382,7 +11382,7 @@ rgb_norm = [
 
 [[stocks.Provia-100F-plus0EV-Frontier.patches]]
 index = 7
-name = "Yellow Green"
+name = "Purplish Blue"
 row = 2
 col = 3
 rgb_u8 = [
@@ -11446,7 +11446,7 @@ rgb_norm = [
 
 [[stocks.Provia-100F-plus0EV-Frontier.patches]]
 index = 11
-name = "Purple"
+name = "Moderate Red"
 row = 3
 col = 3
 rgb_u8 = [
@@ -11510,7 +11510,7 @@ rgb_norm = [
 
 [[stocks.Provia-100F-plus0EV-Frontier.patches]]
 index = 15
-name = "Moderate Red"
+name = "Purple"
 row = 4
 col = 3
 rgb_u8 = [
@@ -11574,7 +11574,7 @@ rgb_norm = [
 
 [[stocks.Provia-100F-plus0EV-Frontier.patches]]
 index = 19
-name = "Purplish Blue"
+name = "Yellow Green"
 row = 5
 col = 3
 rgb_u8 = [

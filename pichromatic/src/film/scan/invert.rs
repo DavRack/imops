@@ -143,6 +143,84 @@ pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_ne
     });
 }
 
+/// Apply scanner S-curve contrast mapping.
+///
+/// If `s <= 0.0`, returns linear `x`.
+/// For `0.0 < s <= 1.0`, blends linearly between `x` and standard scanner S-curve `f(x)`.
+/// For `s > 1.0`, scales gamma to increase S-curve contrast.
+#[inline]
+pub fn apply_scanner_scurve(x: f32, s: f32) -> f32 {
+    if s <= 0.0 {
+        return x;
+    }
+    const BASE_GAMMA: f32 = 2.234;
+    const K: f32 = 0.216;
+    const Y_MAX: f32 = 0.926;
+
+    let gamma = if s <= 1.0 { BASE_GAMMA } else { BASE_GAMMA * s };
+    let k_gamma = K.powf(gamma);
+    let x_pos = x.max(0.0);
+    let x_gamma = x_pos.powf(gamma);
+    let f_x = Y_MAX * x_gamma / (x_gamma + k_gamma);
+
+    if s <= 1.0 {
+        (1.0 - s) * x + s * f_x
+    } else {
+        f_x
+    }
+}
+
+/// Scene-referred HDR inverse-H&D invert for PositiveInverseHd.
+///
+/// Reconstructs unbounded HDR scene exposure in ACEScg from scanned negative transmission:
+/// - $t_{\text{rel}} = \frac{T}{D_{\min}} \in (0, 1]$
+/// - $e_{\text{raw}} = (t_{\text{rel}}^{-1/\gamma} - 1.0)^+$ where $\gamma = \text{GAMMA\_EFF} = 0.6$
+/// - $g_c = \frac{\text{MIDDLE\_GRAY}}{e_{\text{mid}, c}}$ where $e_{\text{mid}, c} = \left(\left(\frac{\text{mid\_negative}[c]}{D_{\min}[c]}\right)^{-1/\gamma} - 1.0\right)^+$
+/// - $px[c] = e_{\text{raw}, c} \cdot g_c$
+/// - Result: Unexposed $T = D_{\min} \to 0.0$, Neutral Midtone $T = \text{mid} \to \text{MIDDLE\_GRAY} = 0.18$, Highlights $T \ll D_{\min} \to [0, \infty)$ in ACEScg.
+/// - If `scanner_s_curve > 0.0`, applies [`apply_scanner_scurve`] per channel.
+pub fn invert_negative_inverse_hd(
+    buffer: &mut ImageBuffer,
+    mid_negative: [f32; 3],
+    dmin_negative: [f32; 3],
+    scanner_s_curve: f32,
+) {
+    let eps = 1e-6f32;
+    let inv_gamma = 1.0 / GAMMA_EFF;
+    let inv_dmin = [
+        1.0 / dmin_negative[0].max(eps),
+        1.0 / dmin_negative[1].max(eps),
+        1.0 / dmin_negative[2].max(eps),
+    ];
+
+    let mut gain = [0.0f32; 3];
+    for c in 0..3 {
+        let t_mid = (mid_negative[c] * inv_dmin[c]).max(eps);
+        let e_mid = (t_mid.powf(-inv_gamma) - 1.0).max(0.0);
+        gain[c] = if e_mid > eps {
+            MIDDLE_GRAY / e_mid
+        } else {
+            0.0
+        };
+    }
+
+    buffer.par_iter_mut().for_each(|px| {
+        *px = [
+            ((px[0] * inv_dmin[0]).max(eps).powf(-inv_gamma) - 1.0).max(0.0) * gain[0],
+            ((px[1] * inv_dmin[1]).max(eps).powf(-inv_gamma) - 1.0).max(0.0) * gain[1],
+            ((px[2] * inv_dmin[2]).max(eps).powf(-inv_gamma) - 1.0).max(0.0) * gain[2],
+        ];
+    });
+
+    if scanner_s_curve > 0.0 {
+        buffer.par_iter_mut().for_each(|px| {
+            for c in 0..3 {
+                px[c] = apply_scanner_scurve(px[c], scanner_s_curve);
+            }
+        });
+    }
+}
+
 /// Mean RGB of a buffer (flat-field mid / Dmin probes).
 pub fn mean_rgb(buffer: &ImageBuffer) -> [f32; 3] {
     let n = buffer.len().max(1) as f64;
@@ -184,6 +262,26 @@ mod tests {
     }
 
     #[test]
+    fn inverse_hd_dmin_maps_to_zero_mid_to_middle_gray() {
+        let dmin = [1.0f32, 0.45, 0.13];
+        let mid = [0.23f32, 0.15, 0.10];
+        let mut buf = vec![dmin, mid];
+        invert_negative_inverse_hd(&mut buf, mid, dmin, 0.0);
+        for c in 0..3 {
+            assert!(
+                buf[0][c] < 1e-5,
+                "Dmin channel {c} should be ~0, got {}",
+                buf[0][c]
+            );
+            assert!(
+                (buf[1][c] - MIDDLE_GRAY).abs() < 1e-4,
+                "mid channel {c} should be MIDDLE_GRAY, got {}",
+                buf[1][c]
+            );
+        }
+    }
+
+    #[test]
     fn output_is_monotonic_and_bounded() {
         let dmin = [1.0f32, 0.45, 0.13];
         let mid = [0.23f32, 0.15, 0.10];
@@ -207,6 +305,98 @@ mod tests {
                     "denser negative must produce brighter positive: {pair:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn inverse_hd_output_is_monotonic_and_unbounded_hdr() {
+        let dmin = [1.0f32, 0.45, 0.13];
+        let mid = [0.23f32, 0.15, 0.10];
+        let fractions = [1.0, 0.75, 0.5, 0.25, 0.1, 0.01, 0.001];
+        let mut buf: ImageBuffer = fractions
+            .into_iter()
+            .map(|t| [dmin[0] * t, dmin[1] * t, dmin[2] * t])
+            .collect();
+        invert_negative_inverse_hd(&mut buf, mid, dmin, 0.0);
+
+        for px in &buf {
+            assert!(
+                px.iter().all(|&v| v.is_finite() && v >= 0.0),
+                "inverse_hd invert produced negative or non-finite {px:?}"
+            );
+        }
+        for pair in buf.windows(2) {
+            for c in 0..3 {
+                assert!(
+                    pair[1][c] > pair[0][c],
+                    "denser negative must produce strictly brighter positive exposure: {pair:?}"
+                );
+            }
+        }
+        // Highlights (small transmission fractions) should exceed 1.0 (HDR unbounded)
+        let highlight_px = buf.last().unwrap();
+        for c in 0..3 {
+            assert!(
+                highlight_px[c] > 1.0,
+                "highlights should be HDR (> 1.0), got {}",
+                highlight_px[c]
+            );
+        }
+    }
+
+    #[test]
+    fn scanner_scurve_properties() {
+        // s <= 0.0 is identity
+        assert_eq!(apply_scanner_scurve(0.0, 0.0), 0.0);
+        assert_eq!(apply_scanner_scurve(0.5, 0.0), 0.5);
+        assert_eq!(apply_scanner_scurve(1.5, -1.0), 1.5);
+
+        // s = 1.0 should map 0 to 0 and be monotonic
+        assert_eq!(apply_scanner_scurve(0.0, 1.0), 0.0);
+        let vals: Vec<f32> = (0..=100)
+            .map(|i| apply_scanner_scurve(i as f32 / 10.0, 1.0))
+            .collect();
+        for pair in vals.windows(2) {
+            assert!(pair[1] >= pair[0]);
+        }
+
+        // s = 1.0 should compress high values below Y_MAX = 0.926
+        let high = apply_scanner_scurve(100.0, 1.0);
+        assert!(high <= 0.926 && high > 0.92);
+    }
+
+    #[test]
+    fn inverse_hd_with_scanner_scurve_compresses_highlights() {
+        let dmin = [1.0f32, 0.45, 0.13];
+        let mid = [0.23f32, 0.15, 0.10];
+        let fractions = [1.0, 0.75, 0.5, 0.25, 0.1, 0.01, 0.001];
+        let mut buf: ImageBuffer = fractions
+            .into_iter()
+            .map(|t| [dmin[0] * t, dmin[1] * t, dmin[2] * t])
+            .collect();
+        invert_negative_inverse_hd(&mut buf, mid, dmin, 1.0);
+
+        for px in &buf {
+            assert!(
+                px.iter().all(|&v| v.is_finite() && v >= 0.0),
+                "inverse_hd with scurve produced non-finite or negative {px:?}"
+            );
+        }
+        for pair in buf.windows(2) {
+            for c in 0..3 {
+                assert!(
+                    pair[1][c] >= pair[0][c],
+                    "denser negative must produce brighter positive exposure with scurve: {pair:?}"
+                );
+            }
+        }
+        let highlight_px = buf.last().unwrap();
+        for c in 0..3 {
+            assert!(
+                highlight_px[c] <= 0.926 + 1e-5,
+                "s=1.0 curve should compress highlights <= 0.926, got {}",
+                highlight_px[c]
+            );
         }
     }
 

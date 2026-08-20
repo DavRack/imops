@@ -14,34 +14,34 @@ use crate::pixel::Image;
 /// Classic ColorChecker sRGB 8-bit centres (approx), row-major 6×4.
 /// Source: published ColorChecker Classic patch sRGB values (X-Rite / BabelColor).
 const COLORCHECKER_SRGB_U8: [[u8; 3]; 24] = [
-    // Row 1 — natural colours
-    [115, 82, 68],
-    [194, 150, 130],
-    [98, 122, 157],
-    [87, 108, 67],
-    [133, 128, 177],
-    [103, 189, 170],
-    // Row 2 — miscellaneous
-    [214, 126, 44],
-    [80, 91, 166],
-    [193, 90, 99],
-    [94, 60, 108],
-    [157, 188, 64],
-    [224, 163, 46],
-    // Row 3 — primary/secondary
-    [56, 61, 150],
-    [70, 148, 73],
-    [175, 54, 60],
-    [231, 199, 31],
-    [187, 86, 149],
-    [8, 133, 161],
-    // Row 4 — neutrals (19–24)
-    [243, 243, 242],
-    [200, 200, 200],
-    [160, 160, 160],
-    [122, 122, 121],
-    [85, 85, 85],
-    [52, 52, 52],
+    // Row 1: Bluish Green, Blue Flower, Foliage, Blue Sky, Light Skin, Dark Skin
+    [103, 189, 170], // Col 1: Bluish Green
+    [133, 128, 177], // Col 2: Blue Flower
+    [87, 108, 67],   // Col 3: Foliage
+    [98, 122, 157],  // Col 4: Blue Sky
+    [194, 150, 130], // Col 5: Light Skin
+    [115, 82, 68],   // Col 6: Dark Skin
+    // Row 2: Orange Yellow, Purplish Blue, Moderate Red, Purple, Yellow Green, Orange
+    [224, 163, 46],  // Col 1: Orange Yellow
+    [80, 91, 166],   // Col 2: Purplish Blue
+    [193, 90, 99],   // Col 3: Moderate Red
+    [94, 60, 108],   // Col 4: Purple
+    [157, 188, 64],  // Col 5: Yellow Green
+    [214, 126, 44],  // Col 6: Orange
+    // Row 3: Cyan, Magenta, Yellow, Red, Green, Blue
+    [8, 133, 161],   // Col 1: Cyan
+    [187, 86, 149],  // Col 2: Magenta
+    [231, 199, 31],  // Col 3: Yellow
+    [175, 54, 60],   // Col 4: Red
+    [70, 148, 73],   // Col 5: Green
+    [56, 61, 150],   // Col 6: Blue
+    // Row 4: White 9.5, Neutral 8, Neutral 6.5, Neutral 5, Neutral 3.5, Black 2
+    [243, 243, 242], // Col 1: White 9.5
+    [200, 200, 200], // Col 2: Neutral 8
+    [160, 160, 160], // Col 3: Neutral 6.5
+    [122, 122, 121], // Col 4: Neutral 5
+    [85, 85, 85],    // Col 5: Neutral 3.5
+    [52, 52, 52],    // Col 6: Black 2
 ];
 
 fn srgb_u8_to_acescg(rgb: [u8; 3]) -> [f32; 3] {
