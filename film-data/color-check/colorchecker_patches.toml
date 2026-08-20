@@ -1,0 +1,11669 @@
+[stocks.C200-plus0EV-Frontier]
+source_image = "film-data/color-check/data/C200-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    239,
+    244,
+    248,
+]
+rgb_norm = [
+    0.9383999705314636,
+    0.957099974155426,
+    0.973800003528595,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    40,
+    184,
+    224,
+]
+rgb_norm = [
+    0.1573999971151352,
+    0.7199000120162964,
+    0.8799999952316284,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    206,
+    164,
+    67,
+]
+rgb_norm = [
+    0.809499979019165,
+    0.6432999968528748,
+    0.2612999975681305,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    193,
+    223,
+    231,
+]
+rgb_norm = [
+    0.7559000253677368,
+    0.8733999729156494,
+    0.9049000144004822,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    228,
+    233,
+    240,
+]
+rgb_norm = [
+    0.8959000110626221,
+    0.9136999845504761,
+    0.9423999786376953,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    206,
+    110,
+    186,
+]
+rgb_norm = [
+    0.8090000152587891,
+    0.43059998750686646,
+    0.7307999730110168,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    64,
+    121,
+    205,
+]
+rgb_norm = [
+    0.25200000405311584,
+    0.4745999872684479,
+    0.8027999997138977,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    190,
+    186,
+    222,
+]
+rgb_norm = [
+    0.746999979019165,
+    0.7297999858856201,
+    0.8695999979972839,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    209,
+    210,
+    216,
+]
+rgb_norm = [
+    0.8194000124931335,
+    0.8237000107765198,
+    0.8464999794960022,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    212,
+    225,
+    104,
+]
+rgb_norm = [
+    0.8299000263214111,
+    0.8819000124931335,
+    0.4092000126838684,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    195,
+    93,
+    113,
+]
+rgb_norm = [
+    0.7660999894142151,
+    0.36640000343322754,
+    0.44119998812675476,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    93,
+    125,
+    76,
+]
+rgb_norm = [
+    0.3634999990463257,
+    0.4903999865055084,
+    0.29739999771118164,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    164,
+    163,
+    165,
+]
+rgb_norm = [
+    0.6449000239372253,
+    0.6384999752044678,
+    0.6482999920845032,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    197,
+    50,
+    50,
+]
+rgb_norm = [
+    0.7717999815940857,
+    0.19550000131130219,
+    0.19679999351501465,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    106,
+    66,
+    111,
+]
+rgb_norm = [
+    0.4153999984264374,
+    0.2596000134944916,
+    0.43549999594688416,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    113,
+    157,
+    195,
+]
+rgb_norm = [
+    0.44279998540878296,
+    0.6144000291824341,
+    0.7631000280380249,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    80,
+    81,
+    82,
+]
+rgb_norm = [
+    0.3140000104904175,
+    0.31859999895095825,
+    0.3231000006198883,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    81,
+    174,
+    104,
+]
+rgb_norm = [
+    0.31949999928474426,
+    0.6819000244140625,
+    0.40630000829696655,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    197,
+    218,
+    106,
+]
+rgb_norm = [
+    0.770799994468689,
+    0.8536999821662903,
+    0.4174000024795532,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    215,
+    191,
+    176,
+]
+rgb_norm = [
+    0.8416000008583069,
+    0.7480999827384949,
+    0.6883000135421753,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    17,
+    25,
+    27,
+]
+rgb_norm = [
+    0.06710000336170197,
+    0.09650000184774399,
+    0.1071000024676323,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    0,
+    63,
+    172,
+]
+rgb_norm = [
+    0.0017000000225380063,
+    0.24529999494552612,
+    0.6758000254631042,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    207,
+    198,
+    76,
+]
+rgb_norm = [
+    0.8134999871253967,
+    0.7764000296592712,
+    0.2964000105857849,
+]
+
+[[stocks.C200-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    137,
+    79,
+    63,
+]
+rgb_norm = [
+    0.5382000207901001,
+    0.3100999891757965,
+    0.2467000037431717,
+]
+
+[stocks.Colorplus-0EV-Frontier]
+source_image = "film-data/color-check/data/Colorplus-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    238,
+    236,
+    237,
+]
+rgb_norm = [
+    0.9340000152587891,
+    0.9240000247955322,
+    0.9287999868392944,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    48,
+    181,
+    205,
+]
+rgb_norm = [
+    0.19020000100135803,
+    0.7084000110626221,
+    0.8058000206947327,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    209,
+    168,
+    59,
+]
+rgb_norm = [
+    0.821399986743927,
+    0.6570000052452087,
+    0.23070000112056732,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    183,
+    210,
+    214,
+]
+rgb_norm = [
+    0.7192999720573425,
+    0.8251000046730042,
+    0.8374999761581421,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    230,
+    224,
+    227,
+]
+rgb_norm = [
+    0.9009000062942505,
+    0.878600001335144,
+    0.8909000158309937,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    223,
+    146,
+    192,
+]
+rgb_norm = [
+    0.8755000233650208,
+    0.5708000063896179,
+    0.7530999779701233,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    94,
+    143,
+    199,
+]
+rgb_norm = [
+    0.3700000047683716,
+    0.5590999722480774,
+    0.7797999978065491,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    199,
+    186,
+    211,
+]
+rgb_norm = [
+    0.7788000106811523,
+    0.7279000282287598,
+    0.8273000121116638,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    213,
+    203,
+    206,
+]
+rgb_norm = [
+    0.8342999815940857,
+    0.7949000000953674,
+    0.8062999844551086,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    221,
+    216,
+    65,
+]
+rgb_norm = [
+    0.8683000206947327,
+    0.847000002861023,
+    0.25679999589920044,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    213,
+    124,
+    134,
+]
+rgb_norm = [
+    0.8342000246047974,
+    0.48750001192092896,
+    0.5260000228881836,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    109,
+    128,
+    57,
+]
+rgb_norm = [
+    0.4293999969959259,
+    0.5027999877929688,
+    0.22259999811649323,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    180,
+    166,
+    163,
+]
+rgb_norm = [
+    0.7057999968528748,
+    0.6527000069618225,
+    0.6410999894142151,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    191,
+    69,
+    51,
+]
+rgb_norm = [
+    0.7479000091552734,
+    0.2696000039577484,
+    0.20029999315738678,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    148,
+    83,
+    127,
+]
+rgb_norm = [
+    0.579800009727478,
+    0.3240000009536743,
+    0.4997999966144562,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    125,
+    160,
+    188,
+]
+rgb_norm = [
+    0.4921000003814697,
+    0.6258000135421753,
+    0.7364000082015991,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    108,
+    103,
+    89,
+]
+rgb_norm = [
+    0.4223000109195709,
+    0.4043999910354614,
+    0.35089999437332153,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    109,
+    169,
+    87,
+]
+rgb_norm = [
+    0.42669999599456787,
+    0.6639999747276306,
+    0.3416000008583069,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    204,
+    206,
+    73,
+]
+rgb_norm = [
+    0.8008999824523926,
+    0.8082000017166138,
+    0.2874999940395355,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    225,
+    191,
+    175,
+]
+rgb_norm = [
+    0.883899986743927,
+    0.7494999766349792,
+    0.6873000264167786,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    21,
+    21,
+    18,
+]
+rgb_norm = [
+    0.08079999685287476,
+    0.08070000261068344,
+    0.07190000265836716,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    9,
+    94,
+    182,
+]
+rgb_norm = [
+    0.03500000014901161,
+    0.36730000376701355,
+    0.7142000198364258,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    215,
+    195,
+    63,
+]
+rgb_norm = [
+    0.8432000279426575,
+    0.7649000287055969,
+    0.2475000023841858,
+]
+
+[[stocks.Colorplus-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    152,
+    91,
+    45,
+]
+rgb_norm = [
+    0.5967000126838684,
+    0.3553999960422516,
+    0.17659999430179596,
+]
+
+[stocks.Colorplus-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Colorplus-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    245,
+    242,
+    236,
+]
+rgb_norm = [
+    0.9621000289916992,
+    0.9484999775886536,
+    0.9251999855041504,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    84,
+    165,
+    169,
+]
+rgb_norm = [
+    0.32839998602867126,
+    0.6455000042915344,
+    0.6625999808311462,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    228,
+    181,
+    62,
+]
+rgb_norm = [
+    0.8931999802589417,
+    0.7087000012397766,
+    0.2433999925851822,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    199,
+    216,
+    195,
+]
+rgb_norm = [
+    0.7792999744415283,
+    0.8482999801635742,
+    0.7646999955177307,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    239,
+    231,
+    218,
+]
+rgb_norm = [
+    0.9355999827384949,
+    0.9045000076293945,
+    0.8547999858856201,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    230,
+    143,
+    168,
+]
+rgb_norm = [
+    0.9017000198364258,
+    0.559499979019165,
+    0.6599000096321106,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    117,
+    125,
+    169,
+]
+rgb_norm = [
+    0.4569000005722046,
+    0.49129998683929443,
+    0.6610000133514404,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    214,
+    187,
+    194,
+]
+rgb_norm = [
+    0.8391000032424927,
+    0.7343999743461609,
+    0.7594000101089478,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    224,
+    208,
+    179,
+]
+rgb_norm = [
+    0.8802000284194946,
+    0.815500020980835,
+    0.7035999894142151,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    234,
+    230,
+    79,
+]
+rgb_norm = [
+    0.9193000197410583,
+    0.9021000266075134,
+    0.30959999561309814,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    220,
+    124,
+    100,
+]
+rgb_norm = [
+    0.8622000217437744,
+    0.48809999227523804,
+    0.3910999894142151,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    108,
+    128,
+    50,
+]
+rgb_norm = [
+    0.4244000017642975,
+    0.5005000233650208,
+    0.195700004696846,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    184,
+    167,
+    113,
+]
+rgb_norm = [
+    0.7197999954223633,
+    0.6556000113487244,
+    0.44429999589920044,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    214,
+    71,
+    56,
+]
+rgb_norm = [
+    0.839900016784668,
+    0.2786000072956085,
+    0.218299999833107,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    167,
+    82,
+    91,
+]
+rgb_norm = [
+    0.6535999774932861,
+    0.32010000944137573,
+    0.3562999963760376,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    152,
+    164,
+    164,
+]
+rgb_norm = [
+    0.5967000126838684,
+    0.6431999802589417,
+    0.6438999772071838,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    106,
+    91,
+    58,
+]
+rgb_norm = [
+    0.4172999858856201,
+    0.35670000314712524,
+    0.22859999537467957,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    104,
+    169,
+    69,
+]
+rgb_norm = [
+    0.40689998865127563,
+    0.6640999913215637,
+    0.26980000734329224,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    216,
+    222,
+    69,
+]
+rgb_norm = [
+    0.847599983215332,
+    0.8712999820709229,
+    0.26919999718666077,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    231,
+    196,
+    140,
+]
+rgb_norm = [
+    0.9045000076293945,
+    0.7685999870300293,
+    0.5472999811172485,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    44,
+    38,
+    34,
+]
+rgb_norm = [
+    0.17110000550746918,
+    0.15070000290870667,
+    0.13359999656677246,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    41,
+    65,
+    134,
+]
+rgb_norm = [
+    0.15929999947547913,
+    0.2533999979496002,
+    0.5266000032424927,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    230,
+    209,
+    69,
+]
+rgb_norm = [
+    0.9007999897003174,
+    0.8206999897956848,
+    0.27090001106262207,
+]
+
+[[stocks.Colorplus-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    165,
+    91,
+    51,
+]
+rgb_norm = [
+    0.646399974822998,
+    0.35690000653266907,
+    0.19900000095367432,
+]
+
+[stocks.Ektachrome-0EV-Frontier]
+source_image = "film-data/color-check/data/Ektachrome-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    242,
+    248,
+    236,
+]
+rgb_norm = [
+    0.9492999911308289,
+    0.9728000164031982,
+    0.9235000014305115,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    100,
+    181,
+    213,
+]
+rgb_norm = [
+    0.3901999890804291,
+    0.7113999724388123,
+    0.8371999859809875,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    244,
+    157,
+    86,
+]
+rgb_norm = [
+    0.9569000005722046,
+    0.6166999936103821,
+    0.33889999985694885,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    173,
+    231,
+    218,
+]
+rgb_norm = [
+    0.6783999800682068,
+    0.9075000286102295,
+    0.8539999723434448,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    235,
+    244,
+    232,
+]
+rgb_norm = [
+    0.9225999712944031,
+    0.9556000232696533,
+    0.9104999899864197,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    230,
+    126,
+    192,
+]
+rgb_norm = [
+    0.9004999995231628,
+    0.492900013923645,
+    0.7542999982833862,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    84,
+    116,
+    191,
+]
+rgb_norm = [
+    0.32829999923706055,
+    0.4562999904155731,
+    0.7477999925613403,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    180,
+    178,
+    215,
+]
+rgb_norm = [
+    0.7045000195503235,
+    0.6978999972343445,
+    0.8420000076293945,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    209,
+    218,
+    223,
+]
+rgb_norm = [
+    0.8205000162124634,
+    0.8540999889373779,
+    0.8730999827384949,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    242,
+    249,
+    135,
+]
+rgb_norm = [
+    0.9495000243186951,
+    0.9758999943733215,
+    0.5307000279426575,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    238,
+    104,
+    112,
+]
+rgb_norm = [
+    0.9323999881744385,
+    0.40639999508857727,
+    0.43790000677108765,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    84,
+    125,
+    77,
+]
+rgb_norm = [
+    0.3292999863624573,
+    0.4909999966621399,
+    0.3027999997138977,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    155,
+    165,
+    173,
+]
+rgb_norm = [
+    0.6078000068664551,
+    0.6456000208854675,
+    0.6780999898910522,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    224,
+    44,
+    15,
+]
+rgb_norm = [
+    0.8791999816894531,
+    0.17139999568462372,
+    0.0575999990105629,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    73,
+    65,
+    110,
+]
+rgb_norm = [
+    0.28700000047683716,
+    0.2540999948978424,
+    0.429500013589859,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    125,
+    162,
+    205,
+]
+rgb_norm = [
+    0.4903999865055084,
+    0.6370000243186951,
+    0.8044999837875366,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    74,
+    83,
+    89,
+]
+rgb_norm = [
+    0.289000004529953,
+    0.3255999982357025,
+    0.34860000014305115,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    90,
+    204,
+    107,
+]
+rgb_norm = [
+    0.3529999852180481,
+    0.8004000186920166,
+    0.4196999967098236,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    177,
+    228,
+    125,
+]
+rgb_norm = [
+    0.6930000185966492,
+    0.8935999870300293,
+    0.48919999599456787,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    236,
+    188,
+    183,
+]
+rgb_norm = [
+    0.9235000014305115,
+    0.7376000285148621,
+    0.7157999873161316,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    13,
+    15,
+    18,
+]
+rgb_norm = [
+    0.050599999725818634,
+    0.05820000171661377,
+    0.07100000232458115,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    10,
+    52,
+    141,
+]
+rgb_norm = [
+    0.041099999099969864,
+    0.2037999927997589,
+    0.5526000261306763,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    237,
+    212,
+    111,
+]
+rgb_norm = [
+    0.9276000261306763,
+    0.8327000141143799,
+    0.4368000030517578,
+]
+
+[[stocks.Ektachrome-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    116,
+    71,
+    54,
+]
+rgb_norm = [
+    0.453000009059906,
+    0.2791000008583069,
+    0.20999999344348907,
+]
+
+[stocks.Ektachrome-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Ektachrome-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    250,
+    250,
+    224,
+]
+rgb_norm = [
+    0.9805999994277954,
+    0.9819999933242798,
+    0.8799999952316284,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    120,
+    159,
+    144,
+]
+rgb_norm = [
+    0.47099998593330383,
+    0.6220999956130981,
+    0.5652999877929688,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    254,
+    149,
+    57,
+]
+rgb_norm = [
+    0.9966999888420105,
+    0.5859000086784363,
+    0.2232999950647354,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    194,
+    227,
+    163,
+]
+rgb_norm = [
+    0.7605999708175659,
+    0.8913999795913696,
+    0.6406000256538391,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    251,
+    242,
+    200,
+]
+rgb_norm = [
+    0.9840999841690063,
+    0.949400007724762,
+    0.782800018787384,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    254,
+    93,
+    88,
+]
+rgb_norm = [
+    0.9968000054359436,
+    0.3637999892234802,
+    0.3467000126838684,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    114,
+    95,
+    120,
+]
+rgb_norm = [
+    0.44699999690055847,
+    0.3707999885082245,
+    0.47110000252723694,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    227,
+    158,
+    151,
+]
+rgb_norm = [
+    0.8899000287055969,
+    0.6202999949455261,
+    0.5927000045776367,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    236,
+    206,
+    154,
+]
+rgb_norm = [
+    0.926800012588501,
+    0.8062999844551086,
+    0.6040999889373779,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    241,
+    249,
+    96,
+]
+rgb_norm = [
+    0.9462000131607056,
+    0.9782999753952026,
+    0.3781000077724457,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    254,
+    74,
+    52,
+]
+rgb_norm = [
+    0.9968000054359436,
+    0.29170000553131104,
+    0.2029999941587448,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    126,
+    105,
+    41,
+]
+rgb_norm = [
+    0.49399998784065247,
+    0.41200000047683716,
+    0.1589999943971634,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    201,
+    141,
+    88,
+]
+rgb_norm = [
+    0.786300003528595,
+    0.5521000027656555,
+    0.3463999927043915,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    254,
+    58,
+    25,
+]
+rgb_norm = [
+    0.9975000023841858,
+    0.22699999809265137,
+    0.0982000008225441,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    130,
+    51,
+    50,
+]
+rgb_norm = [
+    0.5116000175476074,
+    0.19869999587535858,
+    0.19670000672340393,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    166,
+    145,
+    133,
+]
+rgb_norm = [
+    0.6525999903678894,
+    0.5697000026702881,
+    0.5228999853134155,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    114,
+    72,
+    39,
+]
+rgb_norm = [
+    0.44780001044273376,
+    0.2833000123500824,
+    0.15219999849796295,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    106,
+    181,
+    45,
+]
+rgb_norm = [
+    0.41620001196861267,
+    0.7092999815940857,
+    0.17839999496936798,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    225,
+    228,
+    93,
+]
+rgb_norm = [
+    0.883400022983551,
+    0.8921999931335449,
+    0.3628000020980835,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    254,
+    167,
+    112,
+]
+rgb_norm = [
+    0.9958999752998352,
+    0.6550999879837036,
+    0.43810001015663147,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    52,
+    27,
+    21,
+]
+rgb_norm = [
+    0.2053000032901764,
+    0.1046999990940094,
+    0.08139999955892563,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    45,
+    36,
+    68,
+]
+rgb_norm = [
+    0.17749999463558197,
+    0.1395999938249588,
+    0.26510000228881836,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    254,
+    204,
+    63,
+]
+rgb_norm = [
+    0.9958000183105469,
+    0.7986999750137329,
+    0.24699999392032623,
+]
+
+[[stocks.Ektachrome-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    156,
+    53,
+    29,
+]
+rgb_norm = [
+    0.6115000247955322,
+    0.20819999277591705,
+    0.11219999939203262,
+]
+
+[stocks.Ektachrome-cross-processed-0EV-Frontier]
+source_image = "film-data/color-check/data/Ektachrome-cross-processed-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    254,
+    254,
+    255,
+]
+rgb_norm = [
+    0.9944000244140625,
+    0.9970999956130981,
+    0.9986000061035156,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    1,
+    163,
+    249,
+]
+rgb_norm = [
+    0.005499999970197678,
+    0.6373999714851379,
+    0.9757000207901001,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    241,
+    149,
+    7,
+]
+rgb_norm = [
+    0.9455999732017517,
+    0.5839999914169312,
+    0.028200000524520874,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    164,
+    247,
+    251,
+]
+rgb_norm = [
+    0.644599974155426,
+    0.9674000144004822,
+    0.984000027179718,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    243,
+    250,
+    253,
+]
+rgb_norm = [
+    0.9527000188827515,
+    0.982200026512146,
+    0.9940000176429749,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    245,
+    141,
+    206,
+]
+rgb_norm = [
+    0.9625999927520752,
+    0.5529999732971191,
+    0.8093000054359436,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    1,
+    71,
+    237,
+]
+rgb_norm = [
+    0.004999999888241291,
+    0.2802000045776367,
+    0.9307000041007996,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    173,
+    195,
+    250,
+]
+rgb_norm = [
+    0.6784999966621399,
+    0.7633000016212463,
+    0.9815000295639038,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    212,
+    233,
+    242,
+]
+rgb_norm = [
+    0.8324000239372253,
+    0.9143999814987183,
+    0.9472000002861023,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    247,
+    242,
+    83,
+]
+rgb_norm = [
+    0.9706000089645386,
+    0.9488000273704529,
+    0.3260999917984009,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    242,
+    78,
+    112,
+]
+rgb_norm = [
+    0.9509000182151794,
+    0.3043999969959259,
+    0.4406000077724457,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    26,
+    64,
+    13,
+]
+rgb_norm = [
+    0.10029999911785126,
+    0.24940000474452972,
+    0.05050000175833702,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    114,
+    164,
+    191,
+]
+rgb_norm = [
+    0.4487000107765198,
+    0.6412000060081482,
+    0.7488999962806702,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    188,
+    6,
+    1,
+]
+rgb_norm = [
+    0.7376999855041504,
+    0.02250000089406967,
+    0.004699999932199717,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    61,
+    2,
+    86,
+]
+rgb_norm = [
+    0.23800000548362732,
+    0.006399999838322401,
+    0.33559998869895935,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    18,
+    155,
+    244,
+]
+rgb_norm = [
+    0.07150000333786011,
+    0.6087999939918518,
+    0.9578999876976013,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    30,
+    30,
+    43,
+]
+rgb_norm = [
+    0.1160999983549118,
+    0.11779999732971191,
+    0.16760000586509705,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    2,
+    145,
+    69,
+]
+rgb_norm = [
+    0.007600000128149986,
+    0.5698999762535095,
+    0.271699994802475,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    168,
+    246,
+    80,
+]
+rgb_norm = [
+    0.6592000126838684,
+    0.9634000062942505,
+    0.3125999867916107,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    230,
+    214,
+    206,
+]
+rgb_norm = [
+    0.9004999995231628,
+    0.8373000025749207,
+    0.8083999752998352,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    11,
+    1,
+    0,
+]
+rgb_norm = [
+    0.04390000179409981,
+    0.005200000014156103,
+    0.000699999975040555,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    3,
+    0,
+    125,
+]
+rgb_norm = [
+    0.012600000016391277,
+    0.00139999995008111,
+    0.49000000953674316,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    244,
+    205,
+    30,
+]
+rgb_norm = [
+    0.957099974155426,
+    0.8026999831199646,
+    0.11840000003576279,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    69,
+    22,
+    2,
+]
+rgb_norm = [
+    0.27079999446868896,
+    0.0843999981880188,
+    0.00860000029206276,
+]
+
+[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Ektachrome-cross-processed-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    255,
+    255,
+    255,
+]
+rgb_norm = [
+    1.0,
+    1.0,
+    1.0,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    81,
+    172,
+    235,
+]
+rgb_norm = [
+    0.3172999918460846,
+    0.6735000014305115,
+    0.9217000007629395,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    255,
+    163,
+    41,
+]
+rgb_norm = [
+    0.9986000061035156,
+    0.6378999948501587,
+    0.16120000183582306,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    217,
+    252,
+    245,
+]
+rgb_norm = [
+    0.8507000207901001,
+    0.9894000291824341,
+    0.9606999754905701,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    254,
+    254,
+    254,
+]
+rgb_norm = [
+    0.9948999881744385,
+    0.9948999881744385,
+    0.9947999715805054,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    254,
+    157,
+    191,
+]
+rgb_norm = [
+    0.995199978351593,
+    0.6152999997138977,
+    0.7505000233650208,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    83,
+    79,
+    210,
+]
+rgb_norm = [
+    0.3237999975681305,
+    0.31060001254081726,
+    0.8226000070571899,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    233,
+    216,
+    242,
+]
+rgb_norm = [
+    0.9140999913215637,
+    0.847000002861023,
+    0.9473000168800354,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    244,
+    245,
+    240,
+]
+rgb_norm = [
+    0.9585000276565552,
+    0.958899974822998,
+    0.9397000074386597,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    254,
+    235,
+    83,
+]
+rgb_norm = [
+    0.9962999820709229,
+    0.9225000143051147,
+    0.32589998841285706,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    254,
+    94,
+    82,
+]
+rgb_norm = [
+    0.9957000017166138,
+    0.36970001459121704,
+    0.3197000026702881,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    69,
+    72,
+    1,
+]
+rgb_norm = [
+    0.27059999108314514,
+    0.2833000123500824,
+    0.004399999976158142,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    199,
+    168,
+    134,
+]
+rgb_norm = [
+    0.7802000045776367,
+    0.65829998254776,
+    0.5257999897003174,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    213,
+    28,
+    10,
+]
+rgb_norm = [
+    0.8370000123977661,
+    0.11010000109672546,
+    0.03909999877214432,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    124,
+    3,
+    64,
+]
+rgb_norm = [
+    0.487199991941452,
+    0.010999999940395355,
+    0.25060001015663147,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    139,
+    171,
+    222,
+]
+rgb_norm = [
+    0.5455999970436096,
+    0.6723999977111816,
+    0.8690000176429749,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    69,
+    34,
+    4,
+]
+rgb_norm = [
+    0.2703000009059906,
+    0.13169999420642853,
+    0.01720000058412552,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    34,
+    173,
+    27,
+]
+rgb_norm = [
+    0.13519999384880066,
+    0.6766999959945679,
+    0.10530000180006027,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    235,
+    253,
+    82,
+]
+rgb_norm = [
+    0.9222999811172485,
+    0.9914000034332275,
+    0.3221000134944916,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    254,
+    224,
+    198,
+]
+rgb_norm = [
+    0.9955999851226807,
+    0.8788999915122986,
+    0.7777000069618225,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    33,
+    9,
+    5,
+]
+rgb_norm = [
+    0.13109999895095825,
+    0.03420000150799751,
+    0.01769999973475933,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    32,
+    1,
+    114,
+]
+rgb_norm = [
+    0.12540000677108765,
+    0.003599999938160181,
+    0.44769999384880066,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    254,
+    204,
+    48,
+]
+rgb_norm = [
+    0.9965999722480774,
+    0.8012999892234802,
+    0.1899999976158142,
+]
+
+[[stocks.Ektachrome-cross-processed-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    127,
+    41,
+    1,
+]
+rgb_norm = [
+    0.49939998984336853,
+    0.16259999573230743,
+    0.0035000001080334187,
+]
+
+[stocks.Ektar-0EV-Frontier]
+source_image = "film-data/color-check/data/Ektar-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    244,
+    244,
+    243,
+]
+rgb_norm = [
+    0.958299994468689,
+    0.958299994468689,
+    0.9535999894142151,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    2,
+    204,
+    227,
+]
+rgb_norm = [
+    0.006800000090152025,
+    0.7994999885559082,
+    0.8917999863624573,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    228,
+    153,
+    3,
+]
+rgb_norm = [
+    0.8937000036239624,
+    0.6011000275611877,
+    0.013199999928474426,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    169,
+    220,
+    217,
+]
+rgb_norm = [
+    0.6632000207901001,
+    0.8626000285148621,
+    0.8490999937057495,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    235,
+    234,
+    231,
+]
+rgb_norm = [
+    0.9230999946594238,
+    0.9158999919891357,
+    0.9052000045776367,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    227,
+    111,
+    175,
+]
+rgb_norm = [
+    0.8914999961853027,
+    0.4359999895095825,
+    0.6858000159263611,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    51,
+    144,
+    214,
+]
+rgb_norm = [
+    0.1996999979019165,
+    0.5666000247001648,
+    0.8396999835968018,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    197,
+    188,
+    212,
+]
+rgb_norm = [
+    0.7717999815940857,
+    0.7390000224113464,
+    0.8323000073432922,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    218,
+    210,
+    204,
+]
+rgb_norm = [
+    0.8535000085830688,
+    0.8234999775886536,
+    0.8001000285148621,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    232,
+    232,
+    4,
+]
+rgb_norm = [
+    0.9089000225067139,
+    0.9114999771118164,
+    0.01720000058412552,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    215,
+    88,
+    90,
+]
+rgb_norm = [
+    0.8432000279426575,
+    0.3433000147342682,
+    0.3538999855518341,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    49,
+    107,
+    44,
+]
+rgb_norm = [
+    0.19110000133514404,
+    0.4178999960422516,
+    0.17260000109672546,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    168,
+    164,
+    152,
+]
+rgb_norm = [
+    0.6593999862670898,
+    0.6439999938011169,
+    0.5947999954223633,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    220,
+    50,
+    17,
+]
+rgb_norm = [
+    0.8622999787330627,
+    0.19529999792575836,
+    0.06530000269412994,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    115,
+    74,
+    121,
+]
+rgb_norm = [
+    0.4528000056743622,
+    0.2890999913215637,
+    0.4726000130176544,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    87,
+    162,
+    193,
+]
+rgb_norm = [
+    0.34119999408721924,
+    0.6344000101089478,
+    0.7576000094413757,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    54,
+    74,
+    68,
+]
+rgb_norm = [
+    0.21199999749660492,
+    0.29010000824928284,
+    0.26499998569488525,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    14,
+    186,
+    109,
+]
+rgb_norm = [
+    0.05299999937415123,
+    0.7289000153541565,
+    0.42669999599456787,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    204,
+    223,
+    47,
+]
+rgb_norm = [
+    0.8001999855041504,
+    0.8745999932289124,
+    0.1860000044107437,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    230,
+    184,
+    150,
+]
+rgb_norm = [
+    0.9038000106811523,
+    0.7222999930381775,
+    0.5891000032424927,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    7,
+    16,
+    10,
+]
+rgb_norm = [
+    0.027899999171495438,
+    0.061500001698732376,
+    0.03840000182390213,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    1,
+    88,
+    189,
+]
+rgb_norm = [
+    0.0035000001080334187,
+    0.34459999203681946,
+    0.7421000003814697,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    232,
+    201,
+    2,
+]
+rgb_norm = [
+    0.9108999967575073,
+    0.7870000004768372,
+    0.006500000134110451,
+]
+
+[[stocks.Ektar-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    140,
+    69,
+    24,
+]
+rgb_norm = [
+    0.5485000014305115,
+    0.27250000834465027,
+    0.09480000287294388,
+]
+
+[stocks.Ektar-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Ektar-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    228,
+    224,
+    213,
+]
+rgb_norm = [
+    0.892799973487854,
+    0.878600001335144,
+    0.8364999890327454,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    1,
+    157,
+    182,
+]
+rgb_norm = [
+    0.005100000184029341,
+    0.6137999892234802,
+    0.7150999903678894,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    167,
+    113,
+    18,
+]
+rgb_norm = [
+    0.6567000150680542,
+    0.44359999895095825,
+    0.0689999982714653,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    152,
+    186,
+    170,
+]
+rgb_norm = [
+    0.5942000150680542,
+    0.7307000160217285,
+    0.6657999753952026,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    218,
+    207,
+    191,
+]
+rgb_norm = [
+    0.8543000221252441,
+    0.8098000288009644,
+    0.7473999857902527,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    174,
+    60,
+    127,
+]
+rgb_norm = [
+    0.682699978351593,
+    0.2345000058412552,
+    0.4984999895095825,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    42,
+    91,
+    157,
+]
+rgb_norm = [
+    0.1647000014781952,
+    0.35600000619888306,
+    0.6148999929428101,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    188,
+    139,
+    168,
+]
+rgb_norm = [
+    0.7373999953269958,
+    0.5432000160217285,
+    0.6603999733924866,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    196,
+    170,
+    146,
+]
+rgb_norm = [
+    0.7688000202178955,
+    0.6651999950408936,
+    0.5724999904632568,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    199,
+    196,
+    4,
+]
+rgb_norm = [
+    0.7793999910354614,
+    0.7671999931335449,
+    0.015799999237060547,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    157,
+    54,
+    65,
+]
+rgb_norm = [
+    0.6162999868392944,
+    0.2134000062942505,
+    0.25450000166893005,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    56,
+    76,
+    40,
+]
+rgb_norm = [
+    0.21940000355243683,
+    0.2962999939918518,
+    0.15790000557899475,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    147,
+    112,
+    91,
+]
+rgb_norm = [
+    0.5769000053405762,
+    0.4375,
+    0.35519999265670776,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    149,
+    24,
+    21,
+]
+rgb_norm = [
+    0.5845999717712402,
+    0.09319999814033508,
+    0.08380000293254852,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    115,
+    45,
+    75,
+]
+rgb_norm = [
+    0.45190000534057617,
+    0.1776999980211258,
+    0.29589998722076416,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    89,
+    112,
+    137,
+]
+rgb_norm = [
+    0.3490000069141388,
+    0.4377000033855438,
+    0.5370000004768372,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    57,
+    52,
+    48,
+]
+rgb_norm = [
+    0.22550000250339508,
+    0.2054000049829483,
+    0.18799999356269836,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    5,
+    132,
+    78,
+]
+rgb_norm = [
+    0.020899999886751175,
+    0.5180000066757202,
+    0.3050000071525574,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    180,
+    183,
+    12,
+]
+rgb_norm = [
+    0.7074999809265137,
+    0.7184000015258789,
+    0.04600000008940697,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    195,
+    141,
+    99,
+]
+rgb_norm = [
+    0.7638999819755554,
+    0.5511999726295471,
+    0.3880999982357025,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    17,
+    23,
+    25,
+]
+rgb_norm = [
+    0.06639999896287918,
+    0.08900000154972076,
+    0.0982000008225441,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    1,
+    44,
+    120,
+]
+rgb_norm = [
+    0.003100000089034438,
+    0.17069999873638153,
+    0.47119998931884766,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    183,
+    158,
+    8,
+]
+rgb_norm = [
+    0.7177000045776367,
+    0.6194000244140625,
+    0.029400000348687172,
+]
+
+[[stocks.Ektar-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    121,
+    47,
+    25,
+]
+rgb_norm = [
+    0.47540000081062317,
+    0.18359999358654022,
+    0.09700000286102295,
+]
+
+[stocks.Fuji-200-plus0EV-Frontier]
+source_image = "film-data/color-check/data/Fuji-200-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    237,
+    242,
+    247,
+]
+rgb_norm = [
+    0.9279000163078308,
+    0.9473000168800354,
+    0.9688000082969666,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    37,
+    172,
+    212,
+]
+rgb_norm = [
+    0.14579999446868896,
+    0.67330002784729,
+    0.833299994468689,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    204,
+    175,
+    60,
+]
+rgb_norm = [
+    0.8012999892234802,
+    0.6866000294685364,
+    0.23569999635219574,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    184,
+    214,
+    223,
+]
+rgb_norm = [
+    0.72079998254776,
+    0.8409000039100647,
+    0.8751000165939331,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    224,
+    229,
+    238,
+]
+rgb_norm = [
+    0.8794000148773193,
+    0.8962000012397766,
+    0.9314000010490417,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    211,
+    137,
+    198,
+]
+rgb_norm = [
+    0.8291000127792358,
+    0.5371000170707703,
+    0.7781000137329102,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    78,
+    127,
+    205,
+]
+rgb_norm = [
+    0.30410000681877136,
+    0.4968999922275543,
+    0.8047000169754028,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    192,
+    187,
+    221,
+]
+rgb_norm = [
+    0.7520999908447266,
+    0.7348999977111816,
+    0.8672000169754028,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    205,
+    206,
+    213,
+]
+rgb_norm = [
+    0.8047000169754028,
+    0.8077999949455261,
+    0.8346999883651733,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    208,
+    226,
+    84,
+]
+rgb_norm = [
+    0.8147000074386597,
+    0.8871999979019165,
+    0.3310000002384186,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    200,
+    119,
+    126,
+]
+rgb_norm = [
+    0.7860000133514404,
+    0.4652999937534332,
+    0.49459999799728394,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    101,
+    131,
+    60,
+]
+rgb_norm = [
+    0.39480000734329224,
+    0.5138000249862671,
+    0.23690000176429749,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    165,
+    165,
+    161,
+]
+rgb_norm = [
+    0.6468999981880188,
+    0.6470000147819519,
+    0.6302000284194946,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    196,
+    67,
+    56,
+]
+rgb_norm = [
+    0.7681999802589417,
+    0.2637999951839447,
+    0.21799999475479126,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    132,
+    78,
+    118,
+]
+rgb_norm = [
+    0.51910001039505,
+    0.3061000108718872,
+    0.4629000127315521,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    122,
+    159,
+    196,
+]
+rgb_norm = [
+    0.4771000146865845,
+    0.6223999857902527,
+    0.7680000066757202,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    91,
+    91,
+    76,
+]
+rgb_norm = [
+    0.3553999960422516,
+    0.3580999970436096,
+    0.2980000078678131,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    83,
+    164,
+    80,
+]
+rgb_norm = [
+    0.3244999945163727,
+    0.6428999900817871,
+    0.31529998779296875,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    192,
+    218,
+    83,
+]
+rgb_norm = [
+    0.7523000240325928,
+    0.8567000031471252,
+    0.32510000467300415,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    213,
+    194,
+    175,
+]
+rgb_norm = [
+    0.8352000117301941,
+    0.7597000002861023,
+    0.6852999925613403,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    20,
+    24,
+    23,
+]
+rgb_norm = [
+    0.07670000195503235,
+    0.09480000287294388,
+    0.09109999984502792,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    1,
+    67,
+    182,
+]
+rgb_norm = [
+    0.0031999999191612005,
+    0.2621000111103058,
+    0.7135999798774719,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    204,
+    203,
+    61,
+]
+rgb_norm = [
+    0.8003000020980835,
+    0.7967000007629395,
+    0.23819999396800995,
+]
+
+[[stocks.Fuji-200-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    141,
+    89,
+    52,
+]
+rgb_norm = [
+    0.5540000200271606,
+    0.34940001368522644,
+    0.20270000398159027,
+]
+
+[stocks.Fuji-400-plus0EV-Frontier]
+source_image = "film-data/color-check/data/Fuji-400-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    233,
+    238,
+    242,
+]
+rgb_norm = [
+    0.9140999913215637,
+    0.9350000023841858,
+    0.9480999708175659,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    1,
+    190,
+    223,
+]
+rgb_norm = [
+    0.004100000020116568,
+    0.7457000017166138,
+    0.8736000061035156,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    200,
+    164,
+    34,
+]
+rgb_norm = [
+    0.785099983215332,
+    0.6421999931335449,
+    0.13369999825954437,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    180,
+    216,
+    219,
+]
+rgb_norm = [
+    0.7067999839782715,
+    0.8482999801635742,
+    0.8596000075340271,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    222,
+    227,
+    231,
+]
+rgb_norm = [
+    0.8695999979972839,
+    0.8910999894142151,
+    0.904699981212616,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    206,
+    121,
+    189,
+]
+rgb_norm = [
+    0.8084999918937683,
+    0.47530001401901245,
+    0.7419000267982483,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    67,
+    131,
+    206,
+]
+rgb_norm = [
+    0.2630999982357025,
+    0.5151000022888184,
+    0.8095999956130981,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    191,
+    187,
+    215,
+]
+rgb_norm = [
+    0.7495999932289124,
+    0.7337999939918518,
+    0.8425999879837036,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    204,
+    206,
+    208,
+]
+rgb_norm = [
+    0.7997000217437744,
+    0.8087000250816345,
+    0.8148000240325928,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    202,
+    227,
+    39,
+]
+rgb_norm = [
+    0.7930999994277954,
+    0.8892999887466431,
+    0.15240000188350677,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    193,
+    104,
+    112,
+]
+rgb_norm = [
+    0.7587000131607056,
+    0.4068000018596649,
+    0.4406000077724457,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    91,
+    125,
+    52,
+]
+rgb_norm = [
+    0.35600000619888306,
+    0.490200012922287,
+    0.20360000431537628,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    165,
+    163,
+    157,
+]
+rgb_norm = [
+    0.6456999778747559,
+    0.6384999752044678,
+    0.6154999732971191,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    192,
+    56,
+    39,
+]
+rgb_norm = [
+    0.7511000037193298,
+    0.21960000693798065,
+    0.15119999647140503,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    127,
+    72,
+    116,
+]
+rgb_norm = [
+    0.4975999891757965,
+    0.2831000089645386,
+    0.45590001344680786,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    111,
+    160,
+    193,
+]
+rgb_norm = [
+    0.4368000030517578,
+    0.6265000104904175,
+    0.7560999989509583,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    83,
+    84,
+    70,
+]
+rgb_norm = [
+    0.32600000500679016,
+    0.328900009393692,
+    0.2757999897003174,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    62,
+    164,
+    73,
+]
+rgb_norm = [
+    0.2442999929189682,
+    0.6442000269889832,
+    0.2847999930381775,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    188,
+    220,
+    60,
+]
+rgb_norm = [
+    0.7378000020980835,
+    0.8633000254631042,
+    0.23720000684261322,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    211,
+    192,
+    165,
+]
+rgb_norm = [
+    0.8291000127792358,
+    0.753000020980835,
+    0.6470999717712402,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    19,
+    25,
+    22,
+]
+rgb_norm = [
+    0.07289999723434448,
+    0.09640000015497208,
+    0.0860000029206276,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    1,
+    75,
+    186,
+]
+rgb_norm = [
+    0.0032999999821186066,
+    0.2939000129699707,
+    0.7307999730110168,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    201,
+    199,
+    20,
+]
+rgb_norm = [
+    0.7878999710083008,
+    0.779699981212616,
+    0.07859999686479568,
+]
+
+[[stocks.Fuji-400-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    137,
+    79,
+    41,
+]
+rgb_norm = [
+    0.5356000065803528,
+    0.3109999895095825,
+    0.15950000286102295,
+]
+
+[stocks.Gold-0EV-Frontier]
+source_image = "film-data/color-check/data/Gold-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    239,
+    236,
+    237,
+]
+rgb_norm = [
+    0.9359999895095825,
+    0.9265999794006348,
+    0.9308000206947327,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    35,
+    175,
+    202,
+]
+rgb_norm = [
+    0.1371999979019165,
+    0.6869000196456909,
+    0.7918000221252441,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    207,
+    161,
+    47,
+]
+rgb_norm = [
+    0.8136000037193298,
+    0.6309999823570251,
+    0.18619999289512634,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    181,
+    208,
+    211,
+]
+rgb_norm = [
+    0.7113000154495239,
+    0.816100001335144,
+    0.8277999758720398,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    230,
+    224,
+    227,
+]
+rgb_norm = [
+    0.901199996471405,
+    0.8777999877929688,
+    0.8901000022888184,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    220,
+    135,
+    185,
+]
+rgb_norm = [
+    0.8626000285148621,
+    0.5311999917030334,
+    0.7269999980926514,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    85,
+    134,
+    194,
+]
+rgb_norm = [
+    0.3321000039577484,
+    0.525600016117096,
+    0.7623999714851379,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    195,
+    179,
+    206,
+]
+rgb_norm = [
+    0.7638000249862671,
+    0.7037000060081482,
+    0.8093000054359436,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    212,
+    201,
+    205,
+]
+rgb_norm = [
+    0.8325999975204468,
+    0.7882000207901001,
+    0.8033000230789185,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    221,
+    215,
+    57,
+]
+rgb_norm = [
+    0.8655999898910522,
+    0.8434000015258789,
+    0.2240999937057495,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    210,
+    117,
+    126,
+]
+rgb_norm = [
+    0.8228999972343445,
+    0.4577000141143799,
+    0.4950000047683716,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    102,
+    120,
+    52,
+]
+rgb_norm = [
+    0.398499995470047,
+    0.4722000062465668,
+    0.2046000063419342,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    177,
+    163,
+    161,
+]
+rgb_norm = [
+    0.6927000284194946,
+    0.6388999819755554,
+    0.6295999884605408,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    191,
+    64,
+    44,
+]
+rgb_norm = [
+    0.7491000294685364,
+    0.25040000677108765,
+    0.1720999926328659,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    143,
+    78,
+    123,
+]
+rgb_norm = [
+    0.5616000294685364,
+    0.3061999976634979,
+    0.4830000102519989,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    119,
+    155,
+    186,
+]
+rgb_norm = [
+    0.4650999903678894,
+    0.6067000031471252,
+    0.7286999821662903,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    101,
+    97,
+    83,
+]
+rgb_norm = [
+    0.39649999141693115,
+    0.37860000133514404,
+    0.3253999948501587,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    103,
+    164,
+    83,
+]
+rgb_norm = [
+    0.4032000005245209,
+    0.6435999870300293,
+    0.3271999955177307,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    203,
+    205,
+    70,
+]
+rgb_norm = [
+    0.7965999841690063,
+    0.8029000163078308,
+    0.2754000127315521,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    225,
+    188,
+    171,
+]
+rgb_norm = [
+    0.8830999732017517,
+    0.7379000186920166,
+    0.6699000000953674,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    17,
+    18,
+    16,
+]
+rgb_norm = [
+    0.06830000132322311,
+    0.07069999724626541,
+    0.0632999986410141,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    7,
+    89,
+    180,
+]
+rgb_norm = [
+    0.028300000354647636,
+    0.3492000102996826,
+    0.7075999975204468,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    214,
+    193,
+    57,
+]
+rgb_norm = [
+    0.8399999737739563,
+    0.7555000185966492,
+    0.2223999947309494,
+]
+
+[[stocks.Gold-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    147,
+    86,
+    42,
+]
+rgb_norm = [
+    0.5776000022888184,
+    0.3361999988555908,
+    0.163100004196167,
+]
+
+[stocks.Gold-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Gold-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    244,
+    241,
+    236,
+]
+rgb_norm = [
+    0.9559000134468079,
+    0.9438999891281128,
+    0.9244999885559082,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    74,
+    161,
+    167,
+]
+rgb_norm = [
+    0.29100000858306885,
+    0.6309999823570251,
+    0.6565999984741211,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    219,
+    178,
+    68,
+]
+rgb_norm = [
+    0.8597000241279602,
+    0.6976000070571899,
+    0.26589998602867126,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    197,
+    214,
+    197,
+]
+rgb_norm = [
+    0.7716000080108643,
+    0.8396999835968018,
+    0.7709000110626221,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    237,
+    230,
+    220,
+]
+rgb_norm = [
+    0.9297999739646912,
+    0.9006999731063843,
+    0.8608999848365784,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    225,
+    140,
+    170,
+]
+rgb_norm = [
+    0.8827999830245972,
+    0.5494999885559082,
+    0.6654000282287598,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    110,
+    123,
+    167,
+]
+rgb_norm = [
+    0.4311000108718872,
+    0.48089998960494995,
+    0.6545000076293945,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    211,
+    185,
+    194,
+]
+rgb_norm = [
+    0.8256999850273132,
+    0.7245000004768372,
+    0.7599999904632568,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    221,
+    206,
+    181,
+]
+rgb_norm = [
+    0.8669000267982483,
+    0.8065000176429749,
+    0.7113999724388123,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    228,
+    223,
+    78,
+]
+rgb_norm = [
+    0.8944000005722046,
+    0.8756999969482422,
+    0.30570000410079956,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    215,
+    124,
+    102,
+]
+rgb_norm = [
+    0.8436999917030334,
+    0.48510000109672546,
+    0.39890000224113464,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    107,
+    126,
+    55,
+]
+rgb_norm = [
+    0.4189000129699707,
+    0.4936999976634979,
+    0.21699999272823334,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    181,
+    164,
+    113,
+]
+rgb_norm = [
+    0.7088000178337097,
+    0.6420000195503235,
+    0.4413999915122986,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    202,
+    69,
+    58,
+]
+rgb_norm = [
+    0.7904999852180481,
+    0.27070000767707825,
+    0.2264000028371811,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    163,
+    79,
+    95,
+]
+rgb_norm = [
+    0.6410999894142151,
+    0.31029999256134033,
+    0.37380000948905945,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    149,
+    161,
+    165,
+]
+rgb_norm = [
+    0.5824000239372253,
+    0.6312999725341797,
+    0.6481999754905701,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    105,
+    91,
+    61,
+]
+rgb_norm = [
+    0.41370001435279846,
+    0.358599990606308,
+    0.24079999327659607,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    106,
+    167,
+    69,
+]
+rgb_norm = [
+    0.41600000858306885,
+    0.654699981212616,
+    0.27129998803138733,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    212,
+    215,
+    69,
+]
+rgb_norm = [
+    0.8320000171661377,
+    0.8449000120162964,
+    0.2687000036239624,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    228,
+    195,
+    142,
+]
+rgb_norm = [
+    0.8934000134468079,
+    0.7649999856948853,
+    0.5583000183105469,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    44,
+    40,
+    38,
+]
+rgb_norm = [
+    0.1712999939918518,
+    0.15549999475479126,
+    0.1477999985218048,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    38,
+    64,
+    136,
+]
+rgb_norm = [
+    0.1501999944448471,
+    0.251800000667572,
+    0.5327000021934509,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    223,
+    204,
+    73,
+]
+rgb_norm = [
+    0.875,
+    0.7997999787330627,
+    0.28619998693466187,
+]
+
+[[stocks.Gold-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    162,
+    90,
+    54,
+]
+rgb_norm = [
+    0.6363000273704529,
+    0.35109999775886536,
+    0.21320000290870667,
+]
+
+[stocks.Gold-pushed-1-stop-0EV-Frontier]
+source_image = "film-data/color-check/data/Gold-pushed-1-stop-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    243,
+    241,
+    243,
+]
+rgb_norm = [
+    0.9528999924659729,
+    0.9458000063896179,
+    0.9524000287055969,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    42,
+    177,
+    213,
+]
+rgb_norm = [
+    0.16599999368190765,
+    0.6940000057220459,
+    0.8349000215530396,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    222,
+    169,
+    45,
+]
+rgb_norm = [
+    0.8716999888420105,
+    0.6643000245094299,
+    0.17479999363422394,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    192,
+    215,
+    218,
+]
+rgb_norm = [
+    0.7538999915122986,
+    0.8434000015258789,
+    0.8549000024795532,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    236,
+    230,
+    234,
+]
+rgb_norm = [
+    0.9243999719619751,
+    0.9039000272750854,
+    0.916100025177002,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    228,
+    143,
+    190,
+]
+rgb_norm = [
+    0.894599974155426,
+    0.5604000091552734,
+    0.7440999746322632,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    87,
+    134,
+    205,
+]
+rgb_norm = [
+    0.33980000019073486,
+    0.5239999890327454,
+    0.8047000169754028,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    206,
+    190,
+    215,
+]
+rgb_norm = [
+    0.8090999722480774,
+    0.7432000041007996,
+    0.8411999940872192,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    221,
+    210,
+    212,
+]
+rgb_norm = [
+    0.8664000034332275,
+    0.8235999941825867,
+    0.8305000066757202,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    231,
+    227,
+    65,
+]
+rgb_norm = [
+    0.9054999947547913,
+    0.8895000219345093,
+    0.2533000111579895,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    218,
+    121,
+    118,
+]
+rgb_norm = [
+    0.8564000129699707,
+    0.47290000319480896,
+    0.46140000224113464,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    91,
+    111,
+    44,
+]
+rgb_norm = [
+    0.3580000102519989,
+    0.4345000088214874,
+    0.17440000176429749,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    186,
+    168,
+    158,
+]
+rgb_norm = [
+    0.7310000061988831,
+    0.6596999764442444,
+    0.6190000176429749,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    211,
+    71,
+    44,
+]
+rgb_norm = [
+    0.8271999955177307,
+    0.27790001034736633,
+    0.1736000031232834,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    144,
+    77,
+    118,
+]
+rgb_norm = [
+    0.5666000247001648,
+    0.30390000343322754,
+    0.462799996137619,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    125,
+    159,
+    193,
+]
+rgb_norm = [
+    0.4921000003814697,
+    0.6237999796867371,
+    0.7549999952316284,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    88,
+    81,
+    67,
+]
+rgb_norm = [
+    0.3456999957561493,
+    0.3158000111579895,
+    0.26429998874664307,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    97,
+    162,
+    75,
+]
+rgb_norm = [
+    0.37929999828338623,
+    0.6351000070571899,
+    0.29440000653266907,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    215,
+    218,
+    70,
+]
+rgb_norm = [
+    0.8421000242233276,
+    0.8536999821662903,
+    0.2754000127315521,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    233,
+    197,
+    174,
+]
+rgb_norm = [
+    0.9128000140190125,
+    0.7738999724388123,
+    0.6819000244140625,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    15,
+    18,
+    18,
+]
+rgb_norm = [
+    0.05999999865889549,
+    0.07159999758005142,
+    0.07010000199079514,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    15,
+    72,
+    183,
+]
+rgb_norm = [
+    0.05700000002980232,
+    0.28119999170303345,
+    0.7178000211715698,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    226,
+    205,
+    57,
+]
+rgb_norm = [
+    0.8866999745368958,
+    0.8033000230789185,
+    0.2249000072479248,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    153,
+    82,
+    39,
+]
+rgb_norm = [
+    0.5982999801635742,
+    0.3222000002861023,
+    0.1534000039100647,
+]
+
+[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Gold-pushed-1-stop-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    248,
+    245,
+    231,
+]
+rgb_norm = [
+    0.9728999733924866,
+    0.9616000056266785,
+    0.906499981880188,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    109,
+    156,
+    135,
+]
+rgb_norm = [
+    0.42809998989105225,
+    0.6122999787330627,
+    0.5293999910354614,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    230,
+    182,
+    69,
+]
+rgb_norm = [
+    0.902999997138977,
+    0.7128999829292297,
+    0.271699994802475,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    216,
+    221,
+    160,
+]
+rgb_norm = [
+    0.8464999794960022,
+    0.864799976348877,
+    0.6273999810218811,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    242,
+    235,
+    203,
+]
+rgb_norm = [
+    0.9485999941825867,
+    0.920799970626831,
+    0.7958999872207642,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    231,
+    139,
+    133,
+]
+rgb_norm = [
+    0.9065999984741211,
+    0.5454000234603882,
+    0.5202999711036682,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    145,
+    122,
+    133,
+]
+rgb_norm = [
+    0.569100022315979,
+    0.4794999957084656,
+    0.519599974155426,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    226,
+    185,
+    158,
+]
+rgb_norm = [
+    0.885699987411499,
+    0.7264999747276306,
+    0.6179999709129333,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    229,
+    210,
+    143,
+]
+rgb_norm = [
+    0.8981000185012817,
+    0.824999988079071,
+    0.5598000288009644,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    236,
+    231,
+    84,
+]
+rgb_norm = [
+    0.9251999855041504,
+    0.9053000211715698,
+    0.328000009059906,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    219,
+    128,
+    82,
+]
+rgb_norm = [
+    0.8600000143051147,
+    0.5011000037193298,
+    0.3212999999523163,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    124,
+    122,
+    45,
+]
+rgb_norm = [
+    0.4860999882221222,
+    0.47679999470710754,
+    0.1753000020980835,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    202,
+    165,
+    76,
+]
+rgb_norm = [
+    0.7925999760627747,
+    0.6453999876976013,
+    0.29660001397132874,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    219,
+    85,
+    65,
+]
+rgb_norm = [
+    0.8579000234603882,
+    0.33500000834465027,
+    0.25589999556541443,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    185,
+    85,
+    67,
+]
+rgb_norm = [
+    0.7251999974250793,
+    0.33480000495910645,
+    0.263700008392334,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    178,
+    164,
+    124,
+]
+rgb_norm = [
+    0.6963000297546387,
+    0.6419000029563904,
+    0.484499990940094,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    120,
+    86,
+    50,
+]
+rgb_norm = [
+    0.46950000524520874,
+    0.3391000032424927,
+    0.19750000536441803,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    121,
+    167,
+    54,
+]
+rgb_norm = [
+    0.4758000075817108,
+    0.6568999886512756,
+    0.210999995470047,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    226,
+    227,
+    65,
+]
+rgb_norm = [
+    0.8880000114440918,
+    0.8920000195503235,
+    0.2556999921798706,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    231,
+    197,
+    108,
+]
+rgb_norm = [
+    0.9068999886512756,
+    0.7727000117301941,
+    0.42289999127388,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    43,
+    40,
+    33,
+]
+rgb_norm = [
+    0.1680999994277954,
+    0.15549999475479126,
+    0.131400004029274,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    39,
+    55,
+    88,
+]
+rgb_norm = [
+    0.15199999511241913,
+    0.21660000085830688,
+    0.34529998898506165,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    233,
+    211,
+    76,
+]
+rgb_norm = [
+    0.911899983882904,
+    0.828000009059906,
+    0.2987000048160553,
+]
+
+[[stocks.Gold-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    181,
+    91,
+    47,
+]
+rgb_norm = [
+    0.7107999920845032,
+    0.3560999929904938,
+    0.18289999663829803,
+]
+
+[stocks.NGH-II-800-plus0EV-Frontier]
+source_image = "film-data/color-check/data/NGH-II-800-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    237,
+    242,
+    245,
+]
+rgb_norm = [
+    0.9308000206947327,
+    0.9503999948501587,
+    0.9620000123977661,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    5,
+    201,
+    227,
+]
+rgb_norm = [
+    0.01940000057220459,
+    0.7882000207901001,
+    0.8888999819755554,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    208,
+    170,
+    84,
+]
+rgb_norm = [
+    0.8154000043869019,
+    0.6653000116348267,
+    0.33059999346733093,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    193,
+    227,
+    231,
+]
+rgb_norm = [
+    0.7573999762535095,
+    0.8907999992370605,
+    0.9046000242233276,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    227,
+    232,
+    236,
+]
+rgb_norm = [
+    0.8909000158309937,
+    0.9103999733924866,
+    0.9262999892234802,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    211,
+    110,
+    186,
+]
+rgb_norm = [
+    0.8263000249862671,
+    0.4316999912261963,
+    0.7283999919891357,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    67,
+    133,
+    202,
+]
+rgb_norm = [
+    0.2639000117778778,
+    0.5217000246047974,
+    0.7937999963760376,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    199,
+    194,
+    219,
+]
+rgb_norm = [
+    0.7803000211715698,
+    0.7591999769210815,
+    0.8582000136375427,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    212,
+    214,
+    217,
+]
+rgb_norm = [
+    0.8317000269889832,
+    0.8398000001907349,
+    0.8526999950408936,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    211,
+    228,
+    119,
+]
+rgb_norm = [
+    0.8256999850273132,
+    0.892799973487854,
+    0.46810001134872437,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    203,
+    99,
+    127,
+]
+rgb_norm = [
+    0.795199990272522,
+    0.38769999146461487,
+    0.49810001254081726,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    104,
+    153,
+    95,
+]
+rgb_norm = [
+    0.40880000591278076,
+    0.598800003528595,
+    0.3741999864578247,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    176,
+    176,
+    175,
+]
+rgb_norm = [
+    0.6917999982833862,
+    0.6912999749183655,
+    0.6847000122070313,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    199,
+    53,
+    52,
+]
+rgb_norm = [
+    0.7799999713897705,
+    0.2070000022649765,
+    0.2045000046491623,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    129,
+    81,
+    122,
+]
+rgb_norm = [
+    0.5042999982833862,
+    0.31859999895095825,
+    0.47769999504089355,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    121,
+    171,
+    200,
+]
+rgb_norm = [
+    0.4733999967575073,
+    0.6715999841690063,
+    0.7825999855995178,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    93,
+    105,
+    97,
+]
+rgb_norm = [
+    0.3634999990463257,
+    0.4099000096321106,
+    0.38029998540878296,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    66,
+    194,
+    131,
+]
+rgb_norm = [
+    0.26019999384880066,
+    0.7595000267028809,
+    0.5145000219345093,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    197,
+    223,
+    119,
+]
+rgb_norm = [
+    0.7727000117301941,
+    0.8733999729156494,
+    0.4683000147342682,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    222,
+    198,
+    187,
+]
+rgb_norm = [
+    0.8711000084877014,
+    0.776199996471405,
+    0.7335000038146973,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    23,
+    39,
+    39,
+]
+rgb_norm = [
+    0.09080000221729279,
+    0.15410000085830688,
+    0.1543000042438507,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    0,
+    80,
+    175,
+]
+rgb_norm = [
+    0.0017000000225380063,
+    0.3154999911785126,
+    0.6865000128746033,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    209,
+    202,
+    94,
+]
+rgb_norm = [
+    0.8184000253677368,
+    0.7914000153541565,
+    0.3675999939441681,
+]
+
+[[stocks.NGH-II-800-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    157,
+    95,
+    69,
+]
+rgb_norm = [
+    0.6154000163078308,
+    0.37310001254081726,
+    0.27000001072883606,
+]
+
+[stocks.NPS-160-plus0EV-Frontier]
+source_image = "film-data/color-check/data/NPS-160-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    241,
+    245,
+    248,
+]
+rgb_norm = [
+    0.9437999725341797,
+    0.9621000289916992,
+    0.9735999703407288,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    0,
+    198,
+    237,
+]
+rgb_norm = [
+    0.001500000013038516,
+    0.7763000130653381,
+    0.9294000267982483,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    212,
+    149,
+    65,
+]
+rgb_norm = [
+    0.8299000263214111,
+    0.5855000019073486,
+    0.25600001215934753,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    142,
+    222,
+    229,
+]
+rgb_norm = [
+    0.5569000244140625,
+    0.8687000274658203,
+    0.8996000289916992,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    230,
+    236,
+    239,
+]
+rgb_norm = [
+    0.9039000272750854,
+    0.9247999787330627,
+    0.935699999332428,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    213,
+    98,
+    174,
+]
+rgb_norm = [
+    0.8334000110626221,
+    0.38260000944137573,
+    0.6833000183105469,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    39,
+    121,
+    209,
+]
+rgb_norm = [
+    0.1509999930858612,
+    0.475600004196167,
+    0.8202000260353088,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    177,
+    185,
+    219,
+]
+rgb_norm = [
+    0.6947000026702881,
+    0.7239999771118164,
+    0.8582000136375427,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    212,
+    213,
+    214,
+]
+rgb_norm = [
+    0.8295000195503235,
+    0.8364999890327454,
+    0.8396999835968018,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    215,
+    232,
+    89,
+]
+rgb_norm = [
+    0.8411999940872192,
+    0.9115999937057495,
+    0.3499999940395355,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    205,
+    81,
+    99,
+]
+rgb_norm = [
+    0.805400013923645,
+    0.31790000200271606,
+    0.38940000534057617,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    76,
+    121,
+    75,
+]
+rgb_norm = [
+    0.299699991941452,
+    0.4749999940395355,
+    0.2946000099182129,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    162,
+    164,
+    166,
+]
+rgb_norm = [
+    0.6365000009536743,
+    0.6430000066757202,
+    0.649399995803833,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    211,
+    51,
+    45,
+]
+rgb_norm = [
+    0.8271999955177307,
+    0.19869999587535858,
+    0.1770000010728836,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    88,
+    63,
+    112,
+]
+rgb_norm = [
+    0.34689998626708984,
+    0.2483000010251999,
+    0.44110000133514404,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    77,
+    154,
+    193,
+]
+rgb_norm = [
+    0.30000001192092896,
+    0.6025999784469604,
+    0.7565000057220459,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    78,
+    77,
+    81,
+]
+rgb_norm = [
+    0.30720001459121704,
+    0.3019999861717224,
+    0.31619998812675476,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    3,
+    185,
+    128,
+]
+rgb_norm = [
+    0.011900000274181366,
+    0.7267000079154968,
+    0.5031999945640564,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    191,
+    228,
+    96,
+]
+rgb_norm = [
+    0.7501999735832214,
+    0.892799973487854,
+    0.37529999017715454,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    220,
+    187,
+    167,
+]
+rgb_norm = [
+    0.8637999892234802,
+    0.7343999743461609,
+    0.6545000076293945,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    21,
+    30,
+    32,
+]
+rgb_norm = [
+    0.08330000191926956,
+    0.11649999767541885,
+    0.12610000371932983,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    1,
+    62,
+    176,
+]
+rgb_norm = [
+    0.0038999998942017555,
+    0.24279999732971191,
+    0.6909999847412109,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    217,
+    192,
+    65,
+]
+rgb_norm = [
+    0.8529000282287598,
+    0.7526999711990356,
+    0.25369998812675476,
+]
+
+[[stocks.NPS-160-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    138,
+    76,
+    61,
+]
+rgb_norm = [
+    0.542900025844574,
+    0.2994000017642975,
+    0.23960000276565552,
+]
+
+[stocks.Natura-1600-plus0EV-Frontier]
+source_image = "film-data/color-check/data/Natura-1600-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    235,
+    240,
+    246,
+]
+rgb_norm = [
+    0.9232000112533569,
+    0.9424999952316284,
+    0.9642000198364258,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    16,
+    188,
+    220,
+]
+rgb_norm = [
+    0.0632999986410141,
+    0.7369999885559082,
+    0.8644999861717224,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    202,
+    154,
+    68,
+]
+rgb_norm = [
+    0.7906000018119812,
+    0.6032000184059143,
+    0.2685999870300293,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    185,
+    219,
+    228,
+]
+rgb_norm = [
+    0.7247999906539917,
+    0.8597000241279602,
+    0.8956000208854675,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    224,
+    229,
+    237,
+]
+rgb_norm = [
+    0.8792999982833862,
+    0.8967999815940857,
+    0.9301000237464905,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    201,
+    100,
+    165,
+]
+rgb_norm = [
+    0.7896999716758728,
+    0.3919000029563904,
+    0.6481999754905701,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    48,
+    116,
+    190,
+]
+rgb_norm = [
+    0.1891999989748001,
+    0.4542999863624573,
+    0.7457000017166138,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    182,
+    180,
+    214,
+]
+rgb_norm = [
+    0.7127000093460083,
+    0.7042999863624573,
+    0.838699996471405,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    205,
+    206,
+    213,
+]
+rgb_norm = [
+    0.8048999905586243,
+    0.8087999820709229,
+    0.8359000086784363,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    208,
+    221,
+    112,
+]
+rgb_norm = [
+    0.8167999982833862,
+    0.8658000230789185,
+    0.4404999911785126,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    191,
+    85,
+    96,
+]
+rgb_norm = [
+    0.7501999735832214,
+    0.33160001039505005,
+    0.3774000108242035,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    87,
+    126,
+    80,
+]
+rgb_norm = [
+    0.3398999869823456,
+    0.4943999946117401,
+    0.31189998984336853,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    161,
+    162,
+    161,
+]
+rgb_norm = [
+    0.6317999958992004,
+    0.6371999979019165,
+    0.6305000185966492,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    191,
+    44,
+    42,
+]
+rgb_norm = [
+    0.75,
+    0.17110000550746918,
+    0.16670000553131104,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    93,
+    64,
+    99,
+]
+rgb_norm = [
+    0.36550000309944153,
+    0.2498999983072281,
+    0.3882000148296356,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    104,
+    155,
+    190,
+]
+rgb_norm = [
+    0.4097000062465668,
+    0.6080999970436096,
+    0.7441999912261963,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    80,
+    84,
+    80,
+]
+rgb_norm = [
+    0.3149000108242035,
+    0.3303000032901764,
+    0.3149000108242035,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    54,
+    181,
+    128,
+]
+rgb_norm = [
+    0.21330000460147858,
+    0.7110999822616577,
+    0.5037000179290771,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    192,
+    215,
+    118,
+]
+rgb_norm = [
+    0.7531999945640564,
+    0.8432000279426575,
+    0.46230000257492065,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    213,
+    186,
+    172,
+]
+rgb_norm = [
+    0.8334000110626221,
+    0.7305999994277954,
+    0.6757000088691711,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    18,
+    25,
+    27,
+]
+rgb_norm = [
+    0.06939999759197235,
+    0.09960000216960907,
+    0.10740000009536743,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    1,
+    63,
+    152,
+]
+rgb_norm = [
+    0.0052999998442828655,
+    0.24580000340938568,
+    0.5963000059127808,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    205,
+    190,
+    86,
+]
+rgb_norm = [
+    0.8019999861717224,
+    0.7451000213623047,
+    0.3384999930858612,
+]
+
+[[stocks.Natura-1600-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    131,
+    77,
+    61,
+]
+rgb_norm = [
+    0.5149000287055969,
+    0.30309998989105225,
+    0.2409999966621399,
+]
+
+[stocks.Portra-160-0EV-Frontier]
+source_image = "film-data/color-check/data/Portra-160-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    241,
+    238,
+    238,
+]
+rgb_norm = [
+    0.9435999989509583,
+    0.9333999752998352,
+    0.9351000189781189,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    46,
+    200,
+    216,
+]
+rgb_norm = [
+    0.18140000104904175,
+    0.784500002861023,
+    0.8478000164031982,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    205,
+    143,
+    56,
+]
+rgb_norm = [
+    0.8032000064849854,
+    0.5616999864578247,
+    0.2206999957561493,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    185,
+    213,
+    212,
+]
+rgb_norm = [
+    0.725600004196167,
+    0.8356000185012817,
+    0.8319000005722046,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    231,
+    225,
+    227,
+]
+rgb_norm = [
+    0.9047999978065491,
+    0.8838000297546387,
+    0.8896999955177307,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    221,
+    136,
+    186,
+]
+rgb_norm = [
+    0.8669999837875366,
+    0.531499981880188,
+    0.7281000018119812,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    73,
+    153,
+    202,
+]
+rgb_norm = [
+    0.2858999967575073,
+    0.6014000177383423,
+    0.79339998960495,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    190,
+    187,
+    209,
+]
+rgb_norm = [
+    0.7440000176429749,
+    0.7329999804496765,
+    0.8212000131607056,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    213,
+    203,
+    204,
+]
+rgb_norm = [
+    0.8349000215530396,
+    0.7961999773979187,
+    0.800599992275238,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    220,
+    210,
+    71,
+]
+rgb_norm = [
+    0.8637999892234802,
+    0.8237000107765198,
+    0.27959999442100525,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    208,
+    104,
+    125,
+]
+rgb_norm = [
+    0.8173999786376953,
+    0.4081000089645386,
+    0.48919999599456787,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    83,
+    117,
+    67,
+]
+rgb_norm = [
+    0.3249000012874603,
+    0.4602000117301941,
+    0.26460000872612,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    173,
+    165,
+    162,
+]
+rgb_norm = [
+    0.6782000064849854,
+    0.6470999717712402,
+    0.6340000033378601,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    190,
+    53,
+    45,
+]
+rgb_norm = [
+    0.7439000010490417,
+    0.2094999998807907,
+    0.17659999430179596,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    97,
+    89,
+    132,
+]
+rgb_norm = [
+    0.3797999918460846,
+    0.34860000014305115,
+    0.515999972820282,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    119,
+    164,
+    187,
+]
+rgb_norm = [
+    0.4657999873161316,
+    0.6419000029563904,
+    0.7342000007629395,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    84,
+    95,
+    91,
+]
+rgb_norm = [
+    0.32989999651908875,
+    0.37369999289512634,
+    0.35659998655319214,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    84,
+    171,
+    103,
+]
+rgb_norm = [
+    0.33070001006126404,
+    0.6692000031471252,
+    0.4032000005245209,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    193,
+    200,
+    78,
+]
+rgb_norm = [
+    0.7559999823570251,
+    0.7825999855995178,
+    0.30649998784065247,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    226,
+    185,
+    167,
+]
+rgb_norm = [
+    0.8848000168800354,
+    0.7236999869346619,
+    0.6541000008583069,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    17,
+    18,
+    16,
+]
+rgb_norm = [
+    0.0681999996304512,
+    0.07169999927282333,
+    0.06400000303983688,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    1,
+    116,
+    193,
+]
+rgb_norm = [
+    0.00430000014603138,
+    0.45579999685287476,
+    0.7572000026702881,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    212,
+    179,
+    64,
+]
+rgb_norm = [
+    0.8324000239372253,
+    0.7001000046730042,
+    0.25,
+]
+
+[[stocks.Portra-160-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    122,
+    78,
+    54,
+]
+rgb_norm = [
+    0.4778999984264374,
+    0.304500013589859,
+    0.21279999613761902,
+]
+
+[stocks.Portra-160-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Portra-160-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    248,
+    243,
+    237,
+]
+rgb_norm = [
+    0.9735999703407288,
+    0.9524000287055969,
+    0.9301999807357788,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    106,
+    183,
+    182,
+]
+rgb_norm = [
+    0.4169999957084656,
+    0.7185999751091003,
+    0.7131999731063843,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    227,
+    161,
+    60,
+]
+rgb_norm = [
+    0.8912000060081482,
+    0.6294999718666077,
+    0.23350000381469727,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    216,
+    223,
+    202,
+]
+rgb_norm = [
+    0.8456000089645386,
+    0.8741999864578247,
+    0.7904999852180481,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    244,
+    232,
+    222,
+]
+rgb_norm = [
+    0.9555000066757202,
+    0.9104999899864197,
+    0.8690000176429749,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    232,
+    129,
+    176,
+]
+rgb_norm = [
+    0.9079999923706055,
+    0.5074999928474426,
+    0.6890000104904175,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    120,
+    142,
+    179,
+]
+rgb_norm = [
+    0.46880000829696655,
+    0.555899977684021,
+    0.7005000114440918,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    222,
+    193,
+    201,
+]
+rgb_norm = [
+    0.8725000023841858,
+    0.7580999732017517,
+    0.789900004863739,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    233,
+    209,
+    187,
+]
+rgb_norm = [
+    0.9120000004768372,
+    0.820900022983551,
+    0.7318999767303467,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    236,
+    223,
+    80,
+]
+rgb_norm = [
+    0.923799991607666,
+    0.8734999895095825,
+    0.3125,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    220,
+    107,
+    106,
+]
+rgb_norm = [
+    0.8619999885559082,
+    0.42100000381469727,
+    0.4171000123023987,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    113,
+    131,
+    50,
+]
+rgb_norm = [
+    0.44269999861717224,
+    0.5134999752044678,
+    0.19509999454021454,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    199,
+    168,
+    129,
+]
+rgb_norm = [
+    0.7789000272750854,
+    0.6582000255584717,
+    0.5052000284194946,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    216,
+    55,
+    46,
+]
+rgb_norm = [
+    0.8464000225067139,
+    0.2175000011920929,
+    0.18039999902248383,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    133,
+    85,
+    102,
+]
+rgb_norm = [
+    0.5227000117301941,
+    0.335099995136261,
+    0.4016999900341034,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    172,
+    177,
+    180,
+]
+rgb_norm = [
+    0.6754999756813049,
+    0.694100022315979,
+    0.7062000036239624,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    116,
+    96,
+    64,
+]
+rgb_norm = [
+    0.4562999904155731,
+    0.37770000100135803,
+    0.24959999322891235,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    127,
+    180,
+    71,
+]
+rgb_norm = [
+    0.49889999628067017,
+    0.70660001039505,
+    0.28029999136924744,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    221,
+    220,
+    75,
+]
+rgb_norm = [
+    0.866599977016449,
+    0.8614000082015991,
+    0.2930999994277954,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    237,
+    191,
+    152,
+]
+rgb_norm = [
+    0.9275000095367432,
+    0.7473999857902527,
+    0.5968999862670898,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    55,
+    46,
+    34,
+]
+rgb_norm = [
+    0.2143000066280365,
+    0.18129999935626984,
+    0.13529999554157257,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    45,
+    85,
+    148,
+]
+rgb_norm = [
+    0.17839999496936798,
+    0.3336000144481659,
+    0.5806999802589417,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    232,
+    197,
+    67,
+]
+rgb_norm = [
+    0.9089000225067139,
+    0.7717999815940857,
+    0.26080000400543213,
+]
+
+[[stocks.Portra-160-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    160,
+    87,
+    46,
+]
+rgb_norm = [
+    0.6288999915122986,
+    0.34310001134872437,
+    0.18140000104904175,
+]
+
+[stocks.Portra-400-0EV-Frontier]
+source_image = "film-data/color-check/data/Portra-400-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    241,
+    238,
+    238,
+]
+rgb_norm = [
+    0.9434000253677368,
+    0.9318000078201294,
+    0.934499979019165,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    21,
+    199,
+    219,
+]
+rgb_norm = [
+    0.0812000036239624,
+    0.7814000248908997,
+    0.8592000007629395,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    211,
+    158,
+    56,
+]
+rgb_norm = [
+    0.828000009059906,
+    0.6197999715805054,
+    0.21799999475479126,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    183,
+    214,
+    215,
+]
+rgb_norm = [
+    0.7164000272750854,
+    0.8399999737739563,
+    0.8449000120162964,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    231,
+    226,
+    228,
+]
+rgb_norm = [
+    0.9052000045776367,
+    0.8863000273704529,
+    0.8921999931335449,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    221,
+    137,
+    188,
+]
+rgb_norm = [
+    0.8648999929428101,
+    0.5376999974250793,
+    0.7354999780654907,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    80,
+    148,
+    204,
+]
+rgb_norm = [
+    0.31529998779296875,
+    0.5795000195503235,
+    0.7996000051498413,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    191,
+    187,
+    212,
+]
+rgb_norm = [
+    0.7501000165939331,
+    0.7329000234603882,
+    0.8313000202178955,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    214,
+    206,
+    207,
+]
+rgb_norm = [
+    0.8374000191688538,
+    0.807699978351593,
+    0.8127999901771545,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    223,
+    216,
+    73,
+]
+rgb_norm = [
+    0.8758000135421753,
+    0.8471999764442444,
+    0.28619998693466187,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    213,
+    117,
+    130,
+]
+rgb_norm = [
+    0.8360000252723694,
+    0.4580000042915344,
+    0.5083000063896179,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    103,
+    125,
+    63,
+]
+rgb_norm = [
+    0.40209999680519104,
+    0.49149999022483826,
+    0.24779999256134033,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    179,
+    169,
+    166,
+]
+rgb_norm = [
+    0.7024000287055969,
+    0.6617000102996826,
+    0.6503999829292297,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    196,
+    66,
+    45,
+]
+rgb_norm = [
+    0.766700029373169,
+    0.2572999894618988,
+    0.17710000276565552,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    124,
+    89,
+    135,
+]
+rgb_norm = [
+    0.4851999878883362,
+    0.3506999909877777,
+    0.5285000205039978,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    122,
+    163,
+    191,
+]
+rgb_norm = [
+    0.4771000146865845,
+    0.6402000188827515,
+    0.7487999796867371,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    104,
+    102,
+    90,
+]
+rgb_norm = [
+    0.40779998898506165,
+    0.40139999985694885,
+    0.35249999165534973,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    98,
+    174,
+    96,
+]
+rgb_norm = [
+    0.38589999079704285,
+    0.6834999918937683,
+    0.3779999911785126,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    202,
+    207,
+    78,
+]
+rgb_norm = [
+    0.7926999926567078,
+    0.8102999925613403,
+    0.30660000443458557,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    226,
+    191,
+    174,
+]
+rgb_norm = [
+    0.885699987411499,
+    0.7494000196456909,
+    0.6805999875068665,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    20,
+    22,
+    19,
+]
+rgb_norm = [
+    0.07729999721050262,
+    0.08810000121593475,
+    0.07360000163316727,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    5,
+    103,
+    187,
+]
+rgb_norm = [
+    0.01769999973475933,
+    0.4025999903678894,
+    0.7339000105857849,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    216,
+    189,
+    63,
+]
+rgb_norm = [
+    0.8489000201225281,
+    0.7408000230789185,
+    0.24879999458789825,
+]
+
+[[stocks.Portra-400-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    145,
+    90,
+    50,
+]
+rgb_norm = [
+    0.569100022315979,
+    0.3522000014781952,
+    0.195700004696846,
+]
+
+[stocks.Portra-400-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Portra-400-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    248,
+    244,
+    235,
+]
+rgb_norm = [
+    0.9728999733924866,
+    0.9559000134468079,
+    0.9229000210762024,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    90,
+    174,
+    179,
+]
+rgb_norm = [
+    0.3531999886035919,
+    0.6837999820709229,
+    0.7013999819755554,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    229,
+    172,
+    91,
+]
+rgb_norm = [
+    0.897599995136261,
+    0.67330002784729,
+    0.35659998655319214,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    207,
+    221,
+    200,
+]
+rgb_norm = [
+    0.8136000037193298,
+    0.8682000041007996,
+    0.7825999855995178,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    242,
+    233,
+    219,
+]
+rgb_norm = [
+    0.9496999979019165,
+    0.9150000214576721,
+    0.859000027179718,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    231,
+    140,
+    170,
+]
+rgb_norm = [
+    0.9039999842643738,
+    0.5472999811172485,
+    0.6685000061988831,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    121,
+    136,
+    176,
+]
+rgb_norm = [
+    0.474700003862381,
+    0.5329999923706055,
+    0.6919000148773193,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    215,
+    190,
+    198,
+]
+rgb_norm = [
+    0.8442999720573425,
+    0.7440999746322632,
+    0.7768999934196472,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    229,
+    210,
+    183,
+]
+rgb_norm = [
+    0.899399995803833,
+    0.8224999904632568,
+    0.7195000052452087,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    236,
+    224,
+    107,
+]
+rgb_norm = [
+    0.9243000149726868,
+    0.8783000111579895,
+    0.41850000619888306,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    223,
+    121,
+    113,
+]
+rgb_norm = [
+    0.8761000037193298,
+    0.4733000099658966,
+    0.4438000023365021,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    121,
+    133,
+    81,
+]
+rgb_norm = [
+    0.47450000047683716,
+    0.5206999778747559,
+    0.31630000472068787,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    196,
+    168,
+    132,
+]
+rgb_norm = [
+    0.7685999870300293,
+    0.6578999757766724,
+    0.5192000269889832,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    213,
+    73,
+    69,
+]
+rgb_norm = [
+    0.8367999792098999,
+    0.287200003862381,
+    0.2712000012397766,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    143,
+    88,
+    106,
+]
+rgb_norm = [
+    0.5590999722480774,
+    0.3456999957561493,
+    0.41679999232292175,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    164,
+    171,
+    175,
+]
+rgb_norm = [
+    0.6434000134468079,
+    0.6708999872207642,
+    0.6869999766349792,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    121,
+    100,
+    81,
+]
+rgb_norm = [
+    0.4742000102996826,
+    0.3928999900817871,
+    0.3174999952316284,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    117,
+    179,
+    104,
+]
+rgb_norm = [
+    0.4593000113964081,
+    0.7026000022888184,
+    0.4083000123500824,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    218,
+    216,
+    97,
+]
+rgb_norm = [
+    0.8555999994277954,
+    0.8489999771118164,
+    0.37929999828338623,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    235,
+    192,
+    150,
+]
+rgb_norm = [
+    0.9207000136375427,
+    0.7548999786376953,
+    0.5871999859809875,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    57,
+    54,
+    60,
+]
+rgb_norm = [
+    0.22169999778270721,
+    0.2110999971628189,
+    0.23389999568462372,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    43,
+    78,
+    141,
+]
+rgb_norm = [
+    0.1704999953508377,
+    0.3043000102043152,
+    0.5543000102043152,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    233,
+    201,
+    101,
+]
+rgb_norm = [
+    0.9142000079154968,
+    0.7872999906539917,
+    0.39750000834465027,
+]
+
+[[stocks.Portra-400-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    168,
+    98,
+    74,
+]
+rgb_norm = [
+    0.6597999930381775,
+    0.38530001044273376,
+    0.29089999198913574,
+]
+
+[stocks.Portra-400-pushed-1-stop-0EV-Frontier]
+source_image = "film-data/color-check/data/Portra-400-pushed-1-stop-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    242,
+    240,
+    241,
+]
+rgb_norm = [
+    0.9476000070571899,
+    0.9420999884605408,
+    0.9451000094413757,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    11,
+    194,
+    220,
+]
+rgb_norm = [
+    0.042100001126527786,
+    0.7623999714851379,
+    0.8639000058174133,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    216,
+    161,
+    55,
+]
+rgb_norm = [
+    0.8450999855995178,
+    0.6295999884605408,
+    0.21559999883174896,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    183,
+    216,
+    218,
+]
+rgb_norm = [
+    0.7181000113487244,
+    0.848800003528595,
+    0.8532000184059143,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    233,
+    229,
+    231,
+]
+rgb_norm = [
+    0.9121000170707703,
+    0.8981000185012817,
+    0.9064000248908997,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    223,
+    142,
+    187,
+]
+rgb_norm = [
+    0.8752999901771545,
+    0.5576000213623047,
+    0.7317000031471252,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    62,
+    141,
+    206,
+]
+rgb_norm = [
+    0.24160000681877136,
+    0.5526999831199646,
+    0.807200014591217,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    192,
+    187,
+    213,
+]
+rgb_norm = [
+    0.7547000050544739,
+    0.7318000197410583,
+    0.8342999815940857,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    216,
+    207,
+    208,
+]
+rgb_norm = [
+    0.8450999855995178,
+    0.8129000067710876,
+    0.8173999786376953,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    227,
+    220,
+    71,
+]
+rgb_norm = [
+    0.8883000016212463,
+    0.863099992275238,
+    0.2793999910354614,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    214,
+    118,
+    114,
+]
+rgb_norm = [
+    0.8395000100135803,
+    0.46149998903274536,
+    0.44670000672340393,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    82,
+    112,
+    56,
+]
+rgb_norm = [
+    0.3199000060558319,
+    0.4388999938964844,
+    0.22139999270439148,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    178,
+    167,
+    158,
+]
+rgb_norm = [
+    0.697700023651123,
+    0.6542999744415283,
+    0.6197999715805054,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    202,
+    75,
+    44,
+]
+rgb_norm = [
+    0.7901999950408936,
+    0.2937000095844269,
+    0.17409999668598175,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    112,
+    81,
+    119,
+]
+rgb_norm = [
+    0.44029998779296875,
+    0.31869998574256897,
+    0.4650000035762787,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    109,
+    159,
+    189,
+]
+rgb_norm = [
+    0.42809998989105225,
+    0.6223000288009644,
+    0.7423999905586243,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    81,
+    84,
+    71,
+]
+rgb_norm = [
+    0.3183000087738037,
+    0.32910001277923584,
+    0.2770000100135803,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    72,
+    168,
+    97,
+]
+rgb_norm = [
+    0.2809000015258789,
+    0.6593000292778015,
+    0.3815000057220459,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    207,
+    211,
+    75,
+]
+rgb_norm = [
+    0.8101000189781189,
+    0.8289999961853027,
+    0.2953999936580658,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    228,
+    192,
+    166,
+]
+rgb_norm = [
+    0.892799973487854,
+    0.7512999773025513,
+    0.6500999927520752,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    18,
+    23,
+    20,
+]
+rgb_norm = [
+    0.07039999961853027,
+    0.0908999964594841,
+    0.07689999788999557,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    12,
+    83,
+    179,
+]
+rgb_norm = [
+    0.046799998730421066,
+    0.3269999921321869,
+    0.7031999826431274,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    220,
+    192,
+    63,
+]
+rgb_norm = [
+    0.8637999892234802,
+    0.7531999945640564,
+    0.24580000340938568,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    140,
+    83,
+    47,
+]
+rgb_norm = [
+    0.5486000180244446,
+    0.3257000148296356,
+    0.18279999494552612,
+]
+
+[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Portra-400-pushed-1-stop-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    250,
+    247,
+    241,
+]
+rgb_norm = [
+    0.9810000061988831,
+    0.9682999849319458,
+    0.9438999891281128,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    77,
+    162,
+    167,
+]
+rgb_norm = [
+    0.30070000886917114,
+    0.636900007724762,
+    0.6535000205039978,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    236,
+    175,
+    111,
+]
+rgb_norm = [
+    0.9273999929428101,
+    0.6847000122070313,
+    0.4359000027179718,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    206,
+    222,
+    198,
+]
+rgb_norm = [
+    0.8097000122070313,
+    0.8723999857902527,
+    0.7767999768257141,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    245,
+    235,
+    221,
+]
+rgb_norm = [
+    0.9598000049591064,
+    0.9228000044822693,
+    0.867900013923645,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    234,
+    141,
+    159,
+]
+rgb_norm = [
+    0.916700005531311,
+    0.5514000058174133,
+    0.6240000128746033,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    111,
+    120,
+    163,
+]
+rgb_norm = [
+    0.436599999666214,
+    0.4713999927043915,
+    0.638700008392334,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    214,
+    186,
+    192,
+]
+rgb_norm = [
+    0.8409000039100647,
+    0.7311000227928162,
+    0.7512000203132629,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    232,
+    209,
+    180,
+]
+rgb_norm = [
+    0.9086999893188477,
+    0.8215000033378601,
+    0.7074000239372253,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    242,
+    228,
+    129,
+]
+rgb_norm = [
+    0.9495000243186951,
+    0.8931000232696533,
+    0.5070000290870667,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    228,
+    123,
+    115,
+]
+rgb_norm = [
+    0.8944000005722046,
+    0.4810999929904938,
+    0.45239999890327454,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    106,
+    116,
+    88,
+]
+rgb_norm = [
+    0.41609999537467957,
+    0.4546999931335449,
+    0.34369999170303345,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    189,
+    161,
+    123,
+]
+rgb_norm = [
+    0.7414000034332275,
+    0.6331999897956848,
+    0.4832000136375427,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    221,
+    88,
+    83,
+]
+rgb_norm = [
+    0.8650000095367432,
+    0.34380000829696655,
+    0.32690000534057617,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    141,
+    86,
+    97,
+]
+rgb_norm = [
+    0.5546000003814697,
+    0.33559998869895935,
+    0.3799999952316284,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    160,
+    164,
+    164,
+]
+rgb_norm = [
+    0.628000020980835,
+    0.6416000127792358,
+    0.6446999907493591,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    104,
+    86,
+    83,
+]
+rgb_norm = [
+    0.40939998626708984,
+    0.3391000032424927,
+    0.32580000162124634,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    89,
+    166,
+    116,
+]
+rgb_norm = [
+    0.35010001063346863,
+    0.6516000032424927,
+    0.4544999897480011,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    220,
+    218,
+    114,
+]
+rgb_norm = [
+    0.8608999848365784,
+    0.8547999858856201,
+    0.4471000134944916,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    237,
+    192,
+    143,
+]
+rgb_norm = [
+    0.9297000169754028,
+    0.7541999816894531,
+    0.5619999766349792,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    42,
+    54,
+    67,
+]
+rgb_norm = [
+    0.16369999945163727,
+    0.2117999941110611,
+    0.2630999982357025,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    33,
+    68,
+    122,
+]
+rgb_norm = [
+    0.12890000641345978,
+    0.2653000056743622,
+    0.47699999809265137,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    239,
+    202,
+    122,
+]
+rgb_norm = [
+    0.9375,
+    0.7925000190734863,
+    0.4771000146865845,
+]
+
+[[stocks.Portra-400-pushed-1-stop-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    166,
+    95,
+    86,
+]
+rgb_norm = [
+    0.6491000056266785,
+    0.3725000023841858,
+    0.3357999920845032,
+]
+
+[stocks.Portra-800-0EV-Frontier]
+source_image = "film-data/color-check/data/Portra-800-0EV-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    241,
+    239,
+    240,
+]
+rgb_norm = [
+    0.9466000199317932,
+    0.9372000098228455,
+    0.939300000667572,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    11,
+    201,
+    222,
+]
+rgb_norm = [
+    0.04270000010728836,
+    0.786899983882904,
+    0.8691999912261963,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    218,
+    164,
+    40,
+]
+rgb_norm = [
+    0.8544999957084656,
+    0.64410001039505,
+    0.15880000591278076,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    177,
+    216,
+    215,
+]
+rgb_norm = [
+    0.6944000124931335,
+    0.8463000059127808,
+    0.8424999713897705,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    234,
+    229,
+    229,
+]
+rgb_norm = [
+    0.9168999791145325,
+    0.8967999815940857,
+    0.8974999785423279,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    223,
+    131,
+    185,
+]
+rgb_norm = [
+    0.8758000135421753,
+    0.5121999979019165,
+    0.7261999845504761,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    46,
+    148,
+    210,
+]
+rgb_norm = [
+    0.17970000207424164,
+    0.5820000171661377,
+    0.8216999769210815,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    191,
+    188,
+    212,
+]
+rgb_norm = [
+    0.7484999895095825,
+    0.7354999780654907,
+    0.8327000141143799,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    216,
+    209,
+    208,
+]
+rgb_norm = [
+    0.8456000089645386,
+    0.8192999958992004,
+    0.8148000240325928,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    228,
+    223,
+    53,
+]
+rgb_norm = [
+    0.8949999809265137,
+    0.8762000203132629,
+    0.20600000023841858,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    213,
+    109,
+    117,
+]
+rgb_norm = [
+    0.833899974822998,
+    0.42559999227523804,
+    0.45910000801086426,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    80,
+    124,
+    65,
+]
+rgb_norm = [
+    0.31279999017715454,
+    0.4844000041484833,
+    0.2549999952316284,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    167,
+    169,
+    162,
+]
+rgb_norm = [
+    0.6559000015258789,
+    0.6640999913215637,
+    0.6349999904632568,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    204,
+    55,
+    37,
+]
+rgb_norm = [
+    0.7997000217437744,
+    0.2160000056028366,
+    0.1459999978542328,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    124,
+    80,
+    130,
+]
+rgb_norm = [
+    0.48590001463890076,
+    0.3125999867916107,
+    0.510699987411499,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    93,
+    168,
+    194,
+]
+rgb_norm = [
+    0.3662000000476837,
+    0.6575999855995178,
+    0.7617999911308289,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    77,
+    92,
+    83,
+]
+rgb_norm = [
+    0.3012999892234802,
+    0.3626999855041504,
+    0.32659998536109924,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    75,
+    180,
+    103,
+]
+rgb_norm = [
+    0.29580000042915344,
+    0.7038999795913696,
+    0.40459999442100525,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    209,
+    215,
+    67,
+]
+rgb_norm = [
+    0.8206999897956848,
+    0.8443999886512756,
+    0.2612000107765198,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    229,
+    194,
+    167,
+]
+rgb_norm = [
+    0.8992000222206116,
+    0.7612000107765198,
+    0.6531999707221985,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    21,
+    21,
+    21,
+]
+rgb_norm = [
+    0.0803999975323677,
+    0.08219999819993973,
+    0.08150000125169754,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    4,
+    95,
+    187,
+]
+rgb_norm = [
+    0.01759999990463257,
+    0.373199999332428,
+    0.7325000166893005,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    223,
+    199,
+    41,
+]
+rgb_norm = [
+    0.8727999925613403,
+    0.7813000082969666,
+    0.16189999878406525,
+]
+
+[[stocks.Portra-800-0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    141,
+    80,
+    48,
+]
+rgb_norm = [
+    0.5530999898910522,
+    0.31290000677108765,
+    0.1882999986410141,
+]
+
+[stocks.Portra-800-0EV-tungsten-Frontier]
+source_image = "film-data/color-check/data/Portra-800-0EV-tungsten-Frontier.png"
+image_width = 3128
+image_height = 2082
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    247,
+    244,
+    221,
+]
+rgb_norm = [
+    0.9678000211715698,
+    0.955299973487854,
+    0.8668000102043152,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    75,
+    172,
+    157,
+]
+rgb_norm = [
+    0.29420000314712524,
+    0.6725999712944031,
+    0.6166999936103821,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    230,
+    175,
+    56,
+]
+rgb_norm = [
+    0.9020000100135803,
+    0.6876000165939331,
+    0.2214999943971634,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    205,
+    222,
+    164,
+]
+rgb_norm = [
+    0.8034999966621399,
+    0.8687999844551086,
+    0.6434999704360962,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    240,
+    233,
+    194,
+]
+rgb_norm = [
+    0.9416999816894531,
+    0.9139999747276306,
+    0.7623000144958496,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    227,
+    126,
+    130,
+]
+rgb_norm = [
+    0.8909000158309937,
+    0.49410000443458557,
+    0.5085999965667725,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    109,
+    129,
+    145,
+]
+rgb_norm = [
+    0.42559999227523804,
+    0.5048999786376953,
+    0.5698000192642212,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    221,
+    186,
+    165,
+]
+rgb_norm = [
+    0.8669000267982483,
+    0.7297999858856201,
+    0.6481000185012817,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    227,
+    211,
+    145,
+]
+rgb_norm = [
+    0.8883000016212463,
+    0.8281999826431274,
+    0.5684000253677368,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    236,
+    233,
+    62,
+]
+rgb_norm = [
+    0.9257000088691711,
+    0.9122999906539917,
+    0.24369999766349792,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    219,
+    112,
+    79,
+]
+rgb_norm = [
+    0.8575000166893005,
+    0.43810001015663147,
+    0.3093000054359436,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    103,
+    129,
+    58,
+]
+rgb_norm = [
+    0.4052000045776367,
+    0.506600022315979,
+    0.22859999537467957,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    190,
+    165,
+    88,
+]
+rgb_norm = [
+    0.743399977684021,
+    0.6473000049591064,
+    0.34470000863075256,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    220,
+    65,
+    47,
+]
+rgb_norm = [
+    0.8614000082015991,
+    0.25369998812675476,
+    0.18559999763965607,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    168,
+    84,
+    78,
+]
+rgb_norm = [
+    0.659600019454956,
+    0.3310999870300293,
+    0.3052999973297119,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    155,
+    169,
+    145,
+]
+rgb_norm = [
+    0.6071000099182129,
+    0.663100004196167,
+    0.5680000185966492,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    99,
+    92,
+    58,
+]
+rgb_norm = [
+    0.3894999921321869,
+    0.3614000082015991,
+    0.22769999504089355,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    98,
+    178,
+    76,
+]
+rgb_norm = [
+    0.3831000030040741,
+    0.6987000107765198,
+    0.296999990940094,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    223,
+    228,
+    59,
+]
+rgb_norm = [
+    0.8755999803543091,
+    0.895799994468689,
+    0.2304999977350235,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    231,
+    193,
+    109,
+]
+rgb_norm = [
+    0.90420001745224,
+    0.7551000118255615,
+    0.4293000102043152,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    39,
+    41,
+    38,
+]
+rgb_norm = [
+    0.15459999442100525,
+    0.16269999742507935,
+    0.14720000326633453,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    35,
+    73,
+    108,
+]
+rgb_norm = [
+    0.13680000603199005,
+    0.28769999742507935,
+    0.423799991607666,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    233,
+    210,
+    59,
+]
+rgb_norm = [
+    0.9129999876022339,
+    0.8220999836921692,
+    0.2328999936580658,
+]
+
+[[stocks.Portra-800-0EV-tungsten-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    171,
+    87,
+    48,
+]
+rgb_norm = [
+    0.6707000136375427,
+    0.34279999136924744,
+    0.1889999955892563,
+]
+
+[stocks.Pro-160S-plus0EV-Frontier]
+source_image = "film-data/color-check/data/Pro-160S-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    230,
+    230,
+    237,
+]
+rgb_norm = [
+    0.9010000228881836,
+    0.902400016784668,
+    0.9297999739646912,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    47,
+    188,
+    220,
+]
+rgb_norm = [
+    0.1843000054359436,
+    0.7378000020980835,
+    0.8618999719619751,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    196,
+    150,
+    39,
+]
+rgb_norm = [
+    0.7682999968528748,
+    0.5900999903678894,
+    0.15139999985694885,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    190,
+    212,
+    221,
+]
+rgb_norm = [
+    0.7445999979972839,
+    0.8299000263214111,
+    0.8669999837875366,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    220,
+    219,
+    228,
+]
+rgb_norm = [
+    0.8633000254631042,
+    0.8593999743461609,
+    0.8934000134468079,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    195,
+    95,
+    172,
+]
+rgb_norm = [
+    0.7656000256538391,
+    0.37450000643730164,
+    0.6740999817848206,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    56,
+    125,
+    199,
+]
+rgb_norm = [
+    0.22139999270439148,
+    0.4909000098705292,
+    0.7807999849319458,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    179,
+    177,
+    211,
+]
+rgb_norm = [
+    0.7001000046730042,
+    0.6941999793052673,
+    0.8278999924659729,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    203,
+    199,
+    208,
+]
+rgb_norm = [
+    0.7947999835014343,
+    0.7793999910354614,
+    0.8138999938964844,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    208,
+    208,
+    75,
+]
+rgb_norm = [
+    0.8154000043869019,
+    0.8172000050544739,
+    0.2937999963760376,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    181,
+    82,
+    97,
+]
+rgb_norm = [
+    0.7085000276565552,
+    0.3197000026702881,
+    0.3815000057220459,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    97,
+    137,
+    71,
+]
+rgb_norm = [
+    0.38190001249313354,
+    0.5356000065803528,
+    0.2784000039100647,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    162,
+    163,
+    162,
+]
+rgb_norm = [
+    0.6355999708175659,
+    0.6384000182151794,
+    0.635200023651123,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    173,
+    33,
+    32,
+]
+rgb_norm = [
+    0.6772000193595886,
+    0.12839999794960022,
+    0.12449999898672104,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    82,
+    60,
+    109,
+]
+rgb_norm = [
+    0.32089999318122864,
+    0.2363000065088272,
+    0.4284999966621399,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    113,
+    157,
+    190,
+]
+rgb_norm = [
+    0.4417000114917755,
+    0.6168000102043152,
+    0.7458000183105469,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    75,
+    89,
+    79,
+]
+rgb_norm = [
+    0.2955000102519989,
+    0.3481999933719635,
+    0.30970001220703125,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    101,
+    173,
+    95,
+]
+rgb_norm = [
+    0.39800000190734863,
+    0.6793000102043152,
+    0.37139999866485596,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    193,
+    202,
+    80,
+]
+rgb_norm = [
+    0.7554000020027161,
+    0.7926999926567078,
+    0.31310001015663147,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    208,
+    179,
+    162,
+]
+rgb_norm = [
+    0.8166999816894531,
+    0.7032999992370605,
+    0.6371999979019165,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    19,
+    25,
+    27,
+]
+rgb_norm = [
+    0.07639999687671661,
+    0.09749999642372131,
+    0.10520000010728836,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    0,
+    63,
+    173,
+]
+rgb_norm = [
+    0.0017000000225380063,
+    0.2459000051021576,
+    0.6787999868392944,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    202,
+    187,
+    38,
+]
+rgb_norm = [
+    0.7907000184059143,
+    0.7350999712944031,
+    0.14959999918937683,
+]
+
+[[stocks.Pro-160S-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    114,
+    75,
+    52,
+]
+rgb_norm = [
+    0.4487000107765198,
+    0.29510000348091125,
+    0.2045000046491623,
+]
+
+[stocks.Pro-400H-plus0EV-Frontier]
+source_image = "film-data/color-check/data/Pro-400H-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    228,
+    233,
+    239,
+]
+rgb_norm = [
+    0.8939999938011169,
+    0.9129999876022339,
+    0.9361000061035156,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    0,
+    178,
+    210,
+]
+rgb_norm = [
+    0.0015999999595806003,
+    0.6970999836921692,
+    0.8216000199317932,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    193,
+    152,
+    64,
+]
+rgb_norm = [
+    0.7576000094413757,
+    0.597000002861023,
+    0.249099999666214,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    171,
+    209,
+    217,
+]
+rgb_norm = [
+    0.6690000295639038,
+    0.8184000253677368,
+    0.8500999808311462,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    216,
+    220,
+    226,
+]
+rgb_norm = [
+    0.848800003528595,
+    0.8621000051498413,
+    0.8877000212669373,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    196,
+    99,
+    168,
+]
+rgb_norm = [
+    0.7688000202178955,
+    0.3869999945163727,
+    0.6578999757766724,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    44,
+    114,
+    186,
+]
+rgb_norm = [
+    0.17270000278949738,
+    0.4489000141620636,
+    0.7303000092506409,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    177,
+    175,
+    207,
+]
+rgb_norm = [
+    0.6927000284194946,
+    0.6855000257492065,
+    0.8108999729156494,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    197,
+    197,
+    202,
+]
+rgb_norm = [
+    0.7724999785423279,
+    0.7735000252723694,
+    0.7932000160217285,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    201,
+    211,
+    99,
+]
+rgb_norm = [
+    0.7870000004768372,
+    0.8270999789237976,
+    0.3885999917984009,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    184,
+    88,
+    106,
+]
+rgb_norm = [
+    0.7202000021934509,
+    0.34369999170303345,
+    0.41440001130104065,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    89,
+    130,
+    84,
+]
+rgb_norm = [
+    0.3506999909877777,
+    0.5080999732017517,
+    0.33009999990463257,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    158,
+    157,
+    158,
+]
+rgb_norm = [
+    0.6194000244140625,
+    0.6172000169754028,
+    0.6179999709129333,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    182,
+    43,
+    43,
+]
+rgb_norm = [
+    0.7149999737739563,
+    0.17030000686645508,
+    0.17000000178813934,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    97,
+    69,
+    111,
+]
+rgb_norm = [
+    0.3808000087738037,
+    0.27140000462532043,
+    0.4345000088214874,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    101,
+    150,
+    183,
+]
+rgb_norm = [
+    0.397599995136261,
+    0.5877000093460083,
+    0.7185999751091003,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    84,
+    91,
+    87,
+]
+rgb_norm = [
+    0.3287000060081482,
+    0.3555000126361847,
+    0.33959999680519104,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    36,
+    172,
+    123,
+]
+rgb_norm = [
+    0.14090000092983246,
+    0.67330002784729,
+    0.4832000136375427,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    181,
+    204,
+    105,
+]
+rgb_norm = [
+    0.7102000117301941,
+    0.8001000285148621,
+    0.41040000319480896,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    205,
+    180,
+    162,
+]
+rgb_norm = [
+    0.8050000071525574,
+    0.7055000066757202,
+    0.6355999708175659,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    17,
+    28,
+    30,
+]
+rgb_norm = [
+    0.06780000030994415,
+    0.10840000212192535,
+    0.11649999767541885,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    0,
+    63,
+    154,
+]
+rgb_norm = [
+    0.0017000000225380063,
+    0.24889999628067017,
+    0.6046000123023987,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    196,
+    184,
+    76,
+]
+rgb_norm = [
+    0.767300009727478,
+    0.7214999794960022,
+    0.2971999943256378,
+]
+
+[[stocks.Pro-400H-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    136,
+    83,
+    61,
+]
+rgb_norm = [
+    0.5342000126838684,
+    0.32670000195503235,
+    0.2387000024318695,
+]
+
+[stocks.Pro-400H-pushed-plus0EV-Frontier]
+source_image = "film-data/color-check/data/Pro-400H-pushed-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    234,
+    237,
+    242,
+]
+rgb_norm = [
+    0.9182000160217285,
+    0.930400013923645,
+    0.9503999948501587,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    3,
+    188,
+    221,
+]
+rgb_norm = [
+    0.01209999993443489,
+    0.7365000247955322,
+    0.8654000163078308,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    204,
+    152,
+    70,
+]
+rgb_norm = [
+    0.7990000247955322,
+    0.5946999788284302,
+    0.27410000562667847,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    178,
+    214,
+    223,
+]
+rgb_norm = [
+    0.698199987411499,
+    0.8400999903678894,
+    0.8748000264167786,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    223,
+    225,
+    231,
+]
+rgb_norm = [
+    0.8738999962806702,
+    0.8816999793052673,
+    0.9056000113487244,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    206,
+    107,
+    173,
+]
+rgb_norm = [
+    0.8091999888420105,
+    0.41990000009536743,
+    0.6801000237464905,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    40,
+    121,
+    194,
+]
+rgb_norm = [
+    0.1559000015258789,
+    0.4740000069141388,
+    0.7598000168800354,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    183,
+    182,
+    212,
+]
+rgb_norm = [
+    0.7178000211715698,
+    0.7131999731063843,
+    0.8330000042915344,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    205,
+    203,
+    207,
+]
+rgb_norm = [
+    0.8022000193595886,
+    0.7942000031471252,
+    0.8130000233650208,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    211,
+    217,
+    107,
+]
+rgb_norm = [
+    0.8256000280380249,
+    0.8503999710083008,
+    0.4196999967098236,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    195,
+    92,
+    110,
+]
+rgb_norm = [
+    0.7631000280380249,
+    0.36010000109672546,
+    0.4309000074863434,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    84,
+    129,
+    89,
+]
+rgb_norm = [
+    0.3276999890804291,
+    0.5076000094413757,
+    0.35010001063346863,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    161,
+    163,
+    163,
+]
+rgb_norm = [
+    0.6330000162124634,
+    0.6380000114440918,
+    0.638700008392334,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    195,
+    49,
+    46,
+]
+rgb_norm = [
+    0.76419997215271,
+    0.19040000438690186,
+    0.18140000104904175,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    91,
+    71,
+    117,
+]
+rgb_norm = [
+    0.35760000348091125,
+    0.2793000042438507,
+    0.45719999074935913,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    100,
+    155,
+    188,
+]
+rgb_norm = [
+    0.39309999346733093,
+    0.6078000068664551,
+    0.7372000217437744,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    76,
+    90,
+    89,
+]
+rgb_norm = [
+    0.2994000017642975,
+    0.3547999858856201,
+    0.34880000352859497,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    25,
+    177,
+    135,
+]
+rgb_norm = [
+    0.09700000286102295,
+    0.6927000284194946,
+    0.527999997138977,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    190,
+    210,
+    111,
+]
+rgb_norm = [
+    0.7452999949455261,
+    0.8240000009536743,
+    0.4366999864578247,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    214,
+    186,
+    171,
+]
+rgb_norm = [
+    0.8403000235557556,
+    0.7296000123023987,
+    0.6704999804496765,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    18,
+    29,
+    33,
+]
+rgb_norm = [
+    0.07209999859333038,
+    0.11320000141859055,
+    0.12759999930858612,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    1,
+    65,
+    158,
+]
+rgb_norm = [
+    0.0031999999191612005,
+    0.2531999945640564,
+    0.620199978351593,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    207,
+    187,
+    81,
+]
+rgb_norm = [
+    0.8118000030517578,
+    0.7340999841690063,
+    0.3172999918460846,
+]
+
+[[stocks.Pro-400H-pushed-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    137,
+    86,
+    67,
+]
+rgb_norm = [
+    0.536300003528595,
+    0.33809998631477356,
+    0.26190000772476196,
+]
+
+[stocks.Provia-100F-plus0EV-Frontier]
+source_image = "film-data/color-check/data/Provia-100F-plus0EV-Frontier.jpg"
+image_width = 2841
+image_height = 1937
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 1
+name = "White 9.5"
+row = 1
+col = 1
+rgb_u8 = [
+    246,
+    246,
+    245,
+]
+rgb_norm = [
+    0.9648000001907349,
+    0.964900016784668,
+    0.9596999883651733,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 2
+name = "Cyan"
+row = 1
+col = 2
+rgb_u8 = [
+    97,
+    158,
+    198,
+]
+rgb_norm = [
+    0.3815000057220459,
+    0.6179999709129333,
+    0.777400016784668,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 3
+name = "Orange Yellow"
+row = 1
+col = 3
+rgb_u8 = [
+    237,
+    146,
+    99,
+]
+rgb_norm = [
+    0.930400013923645,
+    0.5720000267028809,
+    0.3880000114440918,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 4
+name = "Bluish Green"
+row = 1
+col = 4
+rgb_u8 = [
+    161,
+    215,
+    211,
+]
+rgb_norm = [
+    0.6309999823570251,
+    0.84170001745224,
+    0.8273000121116638,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 5
+name = "Neutral 8"
+row = 2
+col = 1
+rgb_u8 = [
+    237,
+    238,
+    238,
+]
+rgb_norm = [
+    0.9302999973297119,
+    0.9351000189781189,
+    0.9334999918937683,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 6
+name = "Magenta"
+row = 2
+col = 2
+rgb_u8 = [
+    226,
+    116,
+    175,
+]
+rgb_norm = [
+    0.8847000002861023,
+    0.45399999618530273,
+    0.6880000233650208,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 7
+name = "Yellow Green"
+row = 2
+col = 3
+rgb_u8 = [
+    78,
+    98,
+    173,
+]
+rgb_norm = [
+    0.3050000071525574,
+    0.38589999079704285,
+    0.6794000267982483,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 8
+name = "Blue Flower"
+row = 2
+col = 4
+rgb_u8 = [
+    163,
+    161,
+    209,
+]
+rgb_norm = [
+    0.638700008392334,
+    0.632099986076355,
+    0.820900022983551,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 9
+name = "Neutral 6.5"
+row = 3
+col = 1
+rgb_u8 = [
+    202,
+    205,
+    212,
+]
+rgb_norm = [
+    0.7935000061988831,
+    0.8030999898910522,
+    0.8305000066757202,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 10
+name = "Yellow"
+row = 3
+col = 2
+rgb_u8 = [
+    252,
+    237,
+    143,
+]
+rgb_norm = [
+    0.9876000285148621,
+    0.9298999905586243,
+    0.5623999834060669,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 11
+name = "Purple"
+row = 3
+col = 3
+rgb_u8 = [
+    238,
+    95,
+    96,
+]
+rgb_norm = [
+    0.9333000183105469,
+    0.37119999527931213,
+    0.3767000138759613,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 12
+name = "Foliage"
+row = 3
+col = 4
+rgb_u8 = [
+    85,
+    118,
+    81,
+]
+rgb_norm = [
+    0.3330000042915344,
+    0.46140000224113464,
+    0.3188999891281128,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 13
+name = "Neutral 5"
+row = 4
+col = 1
+rgb_u8 = [
+    135,
+    147,
+    155,
+]
+rgb_norm = [
+    0.5299000144004822,
+    0.5753999948501587,
+    0.6065000295639038,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 14
+name = "Red"
+row = 4
+col = 2
+rgb_u8 = [
+    225,
+    41,
+    30,
+]
+rgb_norm = [
+    0.8819000124931335,
+    0.16110000014305115,
+    0.1160999983549118,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 15
+name = "Moderate Red"
+row = 4
+col = 3
+rgb_u8 = [
+    76,
+    61,
+    100,
+]
+rgb_norm = [
+    0.29809999465942383,
+    0.2395000010728836,
+    0.3928000032901764,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 16
+name = "Blue Sky"
+row = 4
+col = 4
+rgb_u8 = [
+    106,
+    141,
+    182,
+]
+rgb_norm = [
+    0.41690000891685486,
+    0.5515000224113464,
+    0.7127000093460083,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 17
+name = "Neutral 3.5"
+row = 5
+col = 1
+rgb_u8 = [
+    66,
+    79,
+    83,
+]
+rgb_norm = [
+    0.26030001044273376,
+    0.3098999857902527,
+    0.32429999113082886,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 18
+name = "Green"
+row = 5
+col = 2
+rgb_u8 = [
+    92,
+    174,
+    102,
+]
+rgb_norm = [
+    0.3601999878883362,
+    0.6807000041007996,
+    0.39959999918937683,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 19
+name = "Purplish Blue"
+row = 5
+col = 3
+rgb_u8 = [
+    179,
+    213,
+    128,
+]
+rgb_norm = [
+    0.7009999752044678,
+    0.8341000080108643,
+    0.5026999711990356,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 20
+name = "Light Skin"
+row = 5
+col = 4
+rgb_u8 = [
+    233,
+    176,
+    168,
+]
+rgb_norm = [
+    0.9144999980926514,
+    0.6899999976158142,
+    0.6575999855995178,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 21
+name = "Black 2"
+row = 6
+col = 1
+rgb_u8 = [
+    16,
+    24,
+    27,
+]
+rgb_norm = [
+    0.062199998646974564,
+    0.09369999915361404,
+    0.10599999874830246,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 22
+name = "Blue"
+row = 6
+col = 2
+rgb_u8 = [
+    25,
+    36,
+    102,
+]
+rgb_norm = [
+    0.09809999912977219,
+    0.14249999821186066,
+    0.40059998631477356,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 23
+name = "Orange"
+row = 6
+col = 3
+rgb_u8 = [
+    237,
+    189,
+    121,
+]
+rgb_norm = [
+    0.928600013256073,
+    0.7391999959945679,
+    0.47380000352859497,
+]
+
+[[stocks.Provia-100F-plus0EV-Frontier.patches]]
+index = 24
+name = "Dark Skin"
+row = 6
+col = 4
+rgb_u8 = [
+    101,
+    70,
+    65,
+]
+rgb_norm = [
+    0.3962000012397766,
+    0.27480000257492065,
+    0.2563999891281128,
+]
