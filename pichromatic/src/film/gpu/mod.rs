@@ -37,9 +37,9 @@ use crate::film::stock::{EmulsionLayer, FilmStock, LayerKind};
 use crate::film::{FilmError, FilmOutput, FilmParams};
 use crate::gpu::{ComputePassDesc, GpuContext, GpuImageBuffer};
 
-/// Max FIR radius for tiled blur shaders (`tile[512]` = 256 + 2x128).
+/// Max FIR radius for tiled blur shaders (`tile[1024]` = 256 + 2x384).
 /// Larger radii fall back to untiled [`shaders::BLUR_H`] / [`shaders::BLUR_V`].
-pub(crate) const BLUR_TILED_MAX_RADIUS: u32 = 128;
+pub(crate) const BLUR_TILED_MAX_RADIUS: u32 = 384;
 
 /// Partial outputs per emulsion for grain variance reduce (allocation + dispatch).
 pub(crate) const GRAIN_VAR_PARTIALS_PER: usize = 2048;
@@ -74,6 +74,15 @@ struct ExposeRoiU {
     num_layers: u32,
     num_emul: u32,
     _p0: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct TransposeU {
+    width: u32,
+    height: u32,
+    src_off: u32,
+    dst_off: u32,
 }
 
 #[repr(C)]
@@ -974,76 +983,10 @@ fn workgroups(n: usize) -> u32 {
     ((n as u32) + 255) / 256
 }
 
-struct BlurDispatch<'a> {
-    h_label: &'a str,
-    v_label: &'a str,
-    h_wgsl: &'a str,
-    v_wgsl: &'a str,
-    h_gx: u32,
-    h_gy: u32,
-    v_gx: u32,
-    v_gy: u32,
-}
-
-fn blur_dispatch(width: usize, height: usize, radius: u32) -> BlurDispatch<'static> {
-    let n = width * height;
-    if radius > BLUR_TILED_MAX_RADIUS {
-        let wg = workgroups(n);
-        BlurDispatch {
-            h_label: "film_blur_h",
-            v_label: "film_blur_v",
-            h_wgsl: shaders::BLUR_H,
-            v_wgsl: shaders::BLUR_V,
-            h_gx: wg,
-            h_gy: 0,
-            v_gx: wg,
-            v_gy: 0,
-        }
-    } else {
-        BlurDispatch {
-            h_label: "film_blur_h_tiled",
-            v_label: "film_blur_v_tiled",
-            h_wgsl: shaders::BLUR_H_TILED,
-            v_wgsl: shaders::BLUR_V_TILED,
-            h_gx: ((width as u32) + 255) / 256,
-            h_gy: height as u32,
-            v_gx: width as u32,
-            v_gy: ((height as u32) + 255) / 256,
-        }
-    }
-}
-
-fn blur_dispatch_arena(width: usize, height: usize, radius: u32) -> BlurDispatch<'static> {
-    let n = width * height;
-    if radius > BLUR_TILED_MAX_RADIUS {
-        let wg = workgroups(n);
-        BlurDispatch {
-            h_label: "film_blur_h_arena",
-            v_label: "film_blur_v_arena",
-            h_wgsl: shaders::BLUR_H_ARENA,
-            v_wgsl: shaders::BLUR_V_ARENA,
-            h_gx: wg,
-            h_gy: 0,
-            v_gx: wg,
-            v_gy: 0,
-        }
-    } else {
-        BlurDispatch {
-            h_label: "film_blur_h_tiled_arena",
-            v_label: "film_blur_v_tiled_arena",
-            h_wgsl: shaders::BLUR_H_TILED_ARENA,
-            v_wgsl: shaders::BLUR_V_TILED_ARENA,
-            h_gx: ((width as u32) + 255) / 256,
-            h_gy: height as u32,
-            v_gx: width as u32,
-            v_gy: ((height as u32) + 255) / 256,
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn blur_plane(
     ctx: &GpuContext,
+    encoder: &mut wgpu::CommandEncoder,
     width: usize,
     height: usize,
     src: &Buffer,
@@ -1053,7 +996,7 @@ fn blur_plane(
     btmp: &Buffer,
     kernel: &Buffer,
     radius: u32,
-) {
+) -> Vec<(wgpu::BindGroup, Option<wgpu::Buffer>)> {
     let n = width * height;
     let u_h = BlurU {
         width: width as u32,
@@ -1079,28 +1022,53 @@ fn blur_plane(
     let ub_v = bytemuck::bytes_of(&u_v);
     let h_bufs = [src, btmp, kernel];
     let v_bufs = [btmp, dst, kernel];
-    let d = blur_dispatch(width, height, radius);
-    ctx.dispatch_compute_passes(
-        "film_blur",
-        &[
-            ComputePassDesc {
-                label: d.h_label,
-                wgsl_source: d.h_wgsl,
-                storage_buffers: &h_bufs,
-                uniform_bytes: ub_h,
-                workgroups_x: d.h_gx,
-                workgroups_y: d.h_gy,
-            },
-            ComputePassDesc {
-                label: d.v_label,
-                wgsl_source: d.v_wgsl,
-                storage_buffers: &v_bufs,
-                uniform_bytes: ub_v,
-                workgroups_x: d.v_gx,
-                workgroups_y: d.v_gy,
-            },
-        ],
-    );
+
+    if radius > BLUR_TILED_MAX_RADIUS {
+        let wg = workgroups(n);
+        ctx.encode_compute_passes(
+            encoder,
+            &[
+                ComputePassDesc {
+                    label: "film_blur_h",
+                    wgsl_source: shaders::BLUR_H,
+                    storage_buffers: &h_bufs,
+                    uniform_bytes: ub_h,
+                    workgroups_x: wg,
+                    workgroups_y: 0,
+                },
+                ComputePassDesc {
+                    label: "film_blur_v",
+                    wgsl_source: shaders::BLUR_V,
+                    storage_buffers: &v_bufs,
+                    uniform_bytes: ub_v,
+                    workgroups_x: wg,
+                    workgroups_y: 0,
+                },
+            ],
+        )
+    } else {
+        ctx.encode_compute_passes(
+            encoder,
+            &[
+                ComputePassDesc {
+                    label: "film_blur_h_tiled",
+                    wgsl_source: shaders::BLUR_H_TILED,
+                    storage_buffers: &h_bufs,
+                    uniform_bytes: ub_h,
+                    workgroups_x: ((width as u32) + 255) / 256,
+                    workgroups_y: height as u32,
+                },
+                ComputePassDesc {
+                    label: "film_blur_v_tiled",
+                    wgsl_source: shaders::BLUR_V_TILED,
+                    storage_buffers: &v_bufs,
+                    uniform_bytes: ub_v,
+                    workgroups_x: width as u32,
+                    workgroups_y: ((height as u32) + 255) / 256,
+                },
+            ],
+        )
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1141,33 +1109,58 @@ fn blur_plane_in_arena(
     let ub_v = bytemuck::bytes_of(&u_v);
     let h_bufs = [arena, kernel];
     let v_bufs = [arena, kernel];
-    let d = blur_dispatch_arena(width, height, radius);
-    ctx.encode_compute_passes(
-        encoder,
-        &[
-            ComputePassDesc {
-                label: d.h_label,
-                wgsl_source: d.h_wgsl,
-                storage_buffers: &h_bufs,
-                uniform_bytes: ub_h,
-                workgroups_x: d.h_gx,
-                workgroups_y: d.h_gy,
-            },
-            ComputePassDesc {
-                label: d.v_label,
-                wgsl_source: d.v_wgsl,
-                storage_buffers: &v_bufs,
-                uniform_bytes: ub_v,
-                workgroups_x: d.v_gx,
-                workgroups_y: d.v_gy,
-            },
-        ],
-    )
+
+    if radius > BLUR_TILED_MAX_RADIUS {
+        let wg = workgroups(n);
+        ctx.encode_compute_passes(
+            encoder,
+            &[
+                ComputePassDesc {
+                    label: "film_blur_h_arena",
+                    wgsl_source: shaders::BLUR_H_ARENA,
+                    storage_buffers: &h_bufs,
+                    uniform_bytes: ub_h,
+                    workgroups_x: wg,
+                    workgroups_y: 0,
+                },
+                ComputePassDesc {
+                    label: "film_blur_v_arena",
+                    wgsl_source: shaders::BLUR_V_ARENA,
+                    storage_buffers: &v_bufs,
+                    uniform_bytes: ub_v,
+                    workgroups_x: wg,
+                    workgroups_y: 0,
+                },
+            ],
+        )
+    } else {
+        ctx.encode_compute_passes(
+            encoder,
+            &[
+                ComputePassDesc {
+                    label: "film_blur_h_tiled_arena",
+                    wgsl_source: shaders::BLUR_H_TILED_ARENA,
+                    storage_buffers: &h_bufs,
+                    uniform_bytes: ub_h,
+                    workgroups_x: ((width as u32) + 255) / 256,
+                    workgroups_y: height as u32,
+                },
+                ComputePassDesc {
+                    label: "film_blur_v_tiled_arena",
+                    wgsl_source: shaders::BLUR_V_TILED_ARENA,
+                    storage_buffers: &v_bufs,
+                    uniform_bytes: ub_v,
+                    workgroups_x: width as u32,
+                    workgroups_y: ((height as u32) + 255) / 256,
+                },
+            ],
+        )
+    }
 }
 
 /// Stable public entry point for the GPU film simulation.
-/// Uses bounded ROI execution by default (1024x1024 cores).
-/// Respects `PICHROMATIC_GPU_MODE=fullframe` environment variable for oracle diagnostics.
+/// Uses fast fullframe execution by default on native platforms.
+/// Respects `PICHROMATIC_GPU_MODE=roi` environment variable for bounded ROI execution.
 pub async fn process_gpu(
     ctx: &GpuContext,
     gpu_buf: &GpuImageBuffer,
@@ -1179,7 +1172,7 @@ pub async fn process_gpu(
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    if std::env::var("PICHROMATIC_GPU_MODE").as_deref() == Ok("fullframe") {
+    if std::env::var("PICHROMATIC_GPU_MODE").as_deref() != Ok("roi") {
         return process_gpu_full_frame(ctx, gpu_buf, meta, params).await;
     }
 
@@ -1224,6 +1217,9 @@ async fn process_gpu_full_frame(
     let bout = &scratch.bout;
     let noise = &scratch.noise;
 
+    let mut encoder = ctx.create_command_encoder("film_fullframe_main_sequence");
+    let mut keep = Vec::new();
+
     // ── Stage 1: expose -> forward planes + upward bounce planes (in work) ──
     {
         let u = ExposeU {
@@ -1236,13 +1232,14 @@ async fn process_gpu_full_frame(
             _p1: 0,
             _p2: 0,
         };
-        ctx.dispatch_compute_shader_multi(
+        keep.push(ctx.encode_compute_shader_multi(
+            &mut encoder,
             "film_expose",
             shaders::EXPOSE,
             &[&gpu_buf.buffer, planes, work, &consts.expose],
             bytemuck::bytes_of(&u),
             workgroups(n),
-        );
+        ));
     }
 
     // ── Stage 2: Spatial Exposure Effects (Irradiation & Multi-bounce Halation) ──
@@ -1250,9 +1247,9 @@ async fn process_gpu_full_frame(
     if let Some(((ref core_k, core_r), (ref t1_k, t1_r), (ref t2_k, t2_r))) = consts.irrad_kernels {
         for plane_e in 0..e {
             let plane_off = (plane_e * n) as u32;
-            blur_plane(ctx, width, height, planes, plane_off, bout, 0, btmp, core_k.as_ref(), core_r);
-            blur_plane(ctx, width, height, planes, plane_off, noise, 0, btmp, t1_k.as_ref(), t1_r);
-            blur_plane(ctx, width, height, planes, plane_off, mask, 0, btmp, t2_k.as_ref(), t2_r);
+            keep.extend(blur_plane(ctx, &mut encoder, width, height, planes, plane_off, bout, 0, btmp, core_k.as_ref(), core_r));
+            keep.extend(blur_plane(ctx, &mut encoder, width, height, planes, plane_off, noise, 0, btmp, t1_k.as_ref(), t1_r));
+            keep.extend(blur_plane(ctx, &mut encoder, width, height, planes, plane_off, mask, 0, btmp, t2_k.as_ref(), t2_r));
 
             let u = IrradiationMixU {
                 n: n as u32,
@@ -1260,13 +1257,14 @@ async fn process_gpu_full_frame(
                 weight: consts.irrad_weights[plane_e],
                 _p0: 0,
             };
-            ctx.dispatch_compute_shader_multi(
+            keep.push(ctx.encode_compute_shader_multi(
+                &mut encoder,
                 "film_irradiation_mix",
                 shaders::IRRADIATION_MIX,
                 &[planes, bout, noise, mask],
                 bytemuck::bytes_of(&u),
                 workgroups(n),
-            );
+            ));
         }
     }
 
@@ -1275,8 +1273,9 @@ async fn process_gpu_full_frame(
         for plane_e in 0..e {
             let bounce_off = (plane_e * n) as u32;
             for (k, (ref kbuf, radius)) in consts.halation_kernels.iter().enumerate() {
-                blur_plane(
+                keep.extend(blur_plane(
                     ctx,
+                    &mut encoder,
                     width,
                     height,
                     work,
@@ -1286,20 +1285,21 @@ async fn process_gpu_full_frame(
                     btmp,
                     kbuf.as_ref(),
                     *radius,
-                );
+                ));
                 let u = HalationAccumU {
                     n: n as u32,
                     w: consts.halation_weights[k],
                     init: if k == 0 { 1 } else { 0 },
                     _p0: 0,
                 };
-                ctx.dispatch_compute_shader_multi(
+                keep.push(ctx.encode_compute_shader_multi(
+                    &mut encoder,
                     "film_halation_accum",
                     shaders::HALATION_ACCUM,
                     &[noise, bout],
                     bytemuck::bytes_of(&u),
                     workgroups(n),
-                );
+                ));
             }
             let u = HalationAddEmulU {
                 n: n as u32,
@@ -1307,13 +1307,14 @@ async fn process_gpu_full_frame(
                 _p0: 0,
                 _p1: 0,
             };
-            ctx.dispatch_compute_shader_multi(
+            keep.push(ctx.encode_compute_shader_multi(
+                &mut encoder,
                 "film_halation_add_emul",
                 shaders::HALATION_ADD_EMUL,
                 &[planes, noise],
                 bytemuck::bytes_of(&u),
                 workgroups(n),
-            );
+            ));
         }
     }
 
@@ -1325,13 +1326,14 @@ async fn process_gpu_full_frame(
             _p0: 0,
             _p1: 0,
         };
-        ctx.dispatch_compute_shader_multi(
+        keep.push(ctx.encode_compute_shader_multi(
+            &mut encoder,
             "film_lut",
             shaders::LUT,
             &[planes, &consts.lut],
             bytemuck::bytes_of(&u),
             workgroups(n),
-        );
+        ));
     }
 
     // ── Stage 4: reduce (fraction -> image/mask dye density) ──
@@ -1342,13 +1344,14 @@ async fn process_gpu_full_frame(
             _p0: 0,
             _p1: 0,
         };
-        ctx.dispatch_compute_shader_multi(
+        keep.push(ctx.encode_compute_shader_multi(
+            &mut encoder,
             "film_reduce",
             shaders::REDUCE,
             &[planes, dye, mask, &consts.reduce],
             bytemuck::bytes_of(&u),
             workgroups(n),
-        );
+        ));
     }
 
     // ── Stage 5: particle overwrite -> effective dye-cloud convolution -> scale d_max ──
@@ -1376,16 +1379,18 @@ async fn process_gpu_full_frame(
                 knuth_threshold: (-(sites as f64)).exp() as f32,
                 _p0: 0,
             };
-            ctx.dispatch_compute_shader_multi(
+            keep.push(ctx.encode_compute_shader_multi(
+                &mut encoder,
                 "film_particle_field",
                 shaders::PARTICLE_FIELD,
                 &[dye, planes],
                 bytemuck::bytes_of(&pfu),
                 workgroups(n),
-            );
+            ));
 
-            blur_plane(
+            keep.extend(blur_plane(
                 ctx,
+                &mut encoder,
                 width,
                 height,
                 planes,
@@ -1395,7 +1400,7 @@ async fn process_gpu_full_frame(
                 btmp,
                 eff_kbuf.as_ref(),
                 eff_radius,
-            );
+            ));
 
             let sdu = ScaleDmaxU {
                 n: n as u32,
@@ -1403,13 +1408,14 @@ async fn process_gpu_full_frame(
                 out_off: in_off,
                 d_max: dmax,
             };
-            ctx.dispatch_compute_shader_multi(
+            keep.push(ctx.encode_compute_shader_multi(
+                &mut encoder,
                 "film_scale_dmax",
                 shaders::SCALE_DMAX,
                 &[bout, dye],
                 bytemuck::bytes_of(&sdu),
                 workgroups(n),
-            );
+            ));
         }
     }
 
@@ -1421,13 +1427,13 @@ async fn process_gpu_full_frame(
         if let Some((ref kbuf, radius)) = consts.adj_ex_kernel {
             for plane_e in 0..e {
                 let off = (plane_e * n) as u32;
-                blur_plane(ctx, width, height, dye, off, work, off, btmp, kbuf.as_ref(), radius);
+                keep.extend(blur_plane(ctx, &mut encoder, width, height, dye, off, work, off, btmp, kbuf.as_ref(), radius));
             }
         }
         if let Some((ref kbuf, radius)) = consts.adj_dir_kernel {
             for plane_e in 0..e {
                 let off = (plane_e * n) as u32;
-                blur_plane(ctx, width, height, dye, off, planes, off, btmp, kbuf.as_ref(), radius);
+                keep.extend(blur_plane(ctx, &mut encoder, width, height, dye, off, planes, off, btmp, kbuf.as_ref(), radius));
             }
         }
 
@@ -1437,13 +1443,14 @@ async fn process_gpu_full_frame(
             ex_active: if ex_active { 1 } else { 0 },
             dir_active: if dir_active { 1 } else { 0 },
         };
-        ctx.dispatch_compute_shader_multi(
+        keep.push(ctx.encode_compute_shader_multi(
+            &mut encoder,
             "film_adjacency_two_comp",
             shaders::ADJACENCY_TWO_COMPONENT,
             &[dye, work, planes, &consts.mat_ex, &consts.mat_dir],
             bytemuck::bytes_of(&u),
             workgroups(n),
-        );
+        ));
     }
 
     // ── Stage 7: Densitometric Scan -> Scanner MTF -> Technical Invert ──
@@ -1455,20 +1462,21 @@ async fn process_gpu_full_frame(
             scale: consts.scan_scale,
             _p0: 0,
         };
-        ctx.dispatch_compute_shader_multi(
+        keep.push(ctx.encode_compute_shader_multi(
+            &mut encoder,
             "film_scan_to_acescg",
             shaders::SCAN_TO_ACESCG,
             &[dye, mask, planes, work, noise, &consts.scan],
             bytemuck::bytes_of(&u),
             workgroups(n),
-        );
+        ));
     }
 
     // 2. Scanner Optical + Sensor Aperture MTF Gaussian Blur
     if let Some((ref kbuf, radius)) = consts.scanner_mtf_kernel {
-        blur_plane(ctx, width, height, planes, 0, planes, 0, btmp, kbuf.as_ref(), radius);
-        blur_plane(ctx, width, height, work, 0, work, 0, btmp, kbuf.as_ref(), radius);
-        blur_plane(ctx, width, height, noise, 0, noise, 0, btmp, kbuf.as_ref(), radius);
+        keep.extend(blur_plane(ctx, &mut encoder, width, height, planes, 0, planes, 0, btmp, kbuf.as_ref(), radius));
+        keep.extend(blur_plane(ctx, &mut encoder, width, height, work, 0, work, 0, btmp, kbuf.as_ref(), radius));
+        keep.extend(blur_plane(ctx, &mut encoder, width, height, noise, 0, noise, 0, btmp, kbuf.as_ref(), radius));
     }
 
     // 3. Technical Scanner Invert
@@ -1486,14 +1494,20 @@ async fn process_gpu_full_frame(
             exponent: consts.exponent,
             gain: consts.gain,
         };
-        ctx.dispatch_compute_shader_multi(
+        keep.push(ctx.encode_compute_shader_multi(
+            &mut encoder,
             "film_invert",
             shaders::INVERT,
             &[&gpu_buf.buffer, planes, work, noise],
             bytemuck::bytes_of(&u),
             workgroups(n),
-        );
+        ));
     }
+
+    ctx.queue.submit(Some(encoder.finish()));
+    #[cfg(not(target_arch = "wasm32"))]
+    ctx.device.poll(wgpu::Maintain::Poll);
+    drop(keep);
 
     Ok(())
 }

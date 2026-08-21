@@ -37,16 +37,21 @@ pub fn run_pixel_pipeline_with_backend(
     pixel_pipeline: &mut config::PipelineConfig,
     backend: &Backend,
 ) {
+    let t_upload = std::time::Instant::now();
     let mut pipeline_image = match backend {
         Backend::Cpu => PipelineImage::Cpu(image.clone()),
         Backend::Wgpu(ctx) => PipelineImage::new_gpu(ctx, image),
     };
+    eprintln!("  Upload to GPU took {:>8.2?}", t_upload.elapsed());
 
     let modules = &mut pixel_pipeline.pipeline_modules;
     for module in modules.iter_mut() {
+        let t0 = std::time::Instant::now();
         module.process(backend, &mut pipeline_image);
+        eprintln!("  Module {:<28} took {:>8.2?}", module.schema().name, t0.elapsed());
     }
 
+    let t_down = std::time::Instant::now();
     *image = match backend {
         Backend::Cpu => match pipeline_image {
             PipelineImage::Cpu(img) => img,
@@ -62,6 +67,7 @@ pub fn run_pixel_pipeline_with_backend(
             }
         },
     };
+    eprintln!("  Download/GPU sync took {:>8.2?}", t_down.elapsed());
 }
 
 pub async fn run_pixel_pipeline_with_backend_async(

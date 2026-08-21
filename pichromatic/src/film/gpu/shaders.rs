@@ -75,6 +75,36 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Fast 2D matrix transpose with shared memory tile (16x16 threads).
+/// Perfectly coalesced row reads and row writes with 0 bank conflicts.
+pub const TRANSPOSE: &str = r#"
+struct U { width:u32, height:u32, src_off:u32, dst_off:u32 };
+@group(0) @binding(0) var<storage, read_write> src: array<f32>;
+@group(0) @binding(1) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(2) var<uniform> u: U;
+
+var<workgroup> tile: array<array<f32, 17>, 16>;
+
+@compute @workgroup_size(16, 16)
+fn main(
+    @builtin(local_invocation_id) lid: vec3<u32>,
+    @builtin(workgroup_id) wid: vec3<u32>,
+) {
+    let x = wid.x * 16u + lid.x;
+    let y = wid.y * 16u + lid.y;
+    if (x < u.width && y < u.height) {
+        tile[lid.y][lid.x] = src[u.src_off + y * u.width + x];
+    }
+    workgroupBarrier();
+
+    let tx = wid.y * 16u + lid.x;
+    let ty = wid.x * 16u + lid.y;
+    if (tx < u.height && ty < u.width) {
+        dst[u.dst_off + ty * u.height + tx] = tile[lid.x][lid.y];
+    }
+}
+"#;
+
 /// Tiled horizontal blur: one workgroup = one row segment with shared-memory halo.
 pub const BLUR_H_TILED: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
@@ -83,7 +113,7 @@ struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p
 @group(0) @binding(2) var<storage, read> ker: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
-var<workgroup> tile: array<f32, 512>;
+var<workgroup> tile: array<f32, 1024>;
 
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
@@ -104,7 +134,7 @@ fn main(
     if (y >= u.height) { return; }
     let w = i32(u.width);
     let radius = i32(u.radius);
-    let r = min(radius, 128);
+    let r = min(radius, 384);
     let x0 = i32(wid.x * 256u);
     let lx = i32(lid.x);
     let base = u.src_off + y * u.width;
@@ -123,15 +153,35 @@ fn main(
     if (x >= w) { return; }
     let len = 2u * u32(r) + 1u;
     var acc = 0.0;
-    let center = lx + r;
-    for (var k = 0u; k < len; k = k + 1u) {
-        acc = acc + tile[u32(center) + k - u32(r)] * ker[k];
+    let base_idx = u32(lx);
+    var k = 0u;
+    let len_sub16 = (len / 16u) * 16u;
+    for (; k < len_sub16; k = k + 16u) {
+        acc = acc + tile[base_idx + k] * ker[k]
+                  + tile[base_idx + k + 1u] * ker[k + 1u]
+                  + tile[base_idx + k + 2u] * ker[k + 2u]
+                  + tile[base_idx + k + 3u] * ker[k + 3u]
+                  + tile[base_idx + k + 4u] * ker[k + 4u]
+                  + tile[base_idx + k + 5u] * ker[k + 5u]
+                  + tile[base_idx + k + 6u] * ker[k + 6u]
+                  + tile[base_idx + k + 7u] * ker[k + 7u]
+                  + tile[base_idx + k + 8u] * ker[k + 8u]
+                  + tile[base_idx + k + 9u] * ker[k + 9u]
+                  + tile[base_idx + k + 10u] * ker[k + 10u]
+                  + tile[base_idx + k + 11u] * ker[k + 11u]
+                  + tile[base_idx + k + 12u] * ker[k + 12u]
+                  + tile[base_idx + k + 13u] * ker[k + 13u]
+                  + tile[base_idx + k + 14u] * ker[k + 14u]
+                  + tile[base_idx + k + 15u] * ker[k + 15u];
+    }
+    for (; k < len; k = k + 1u) {
+        acc = acc + tile[base_idx + k] * ker[k];
     }
     tmp[u.dst_off + y * u.width + u32(x)] = acc;
 }
 "#;
 
-/// Tiled vertical blur: one workgroup = one column segment with shared-memory halo.
+/// Tiled vertical blur: 2D workgroup = 8 columns x 32 rows with coalesced DRAM loads.
 pub const BLUR_V_TILED: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> tmp: array<f32>;
@@ -139,7 +189,7 @@ struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p
 @group(0) @binding(2) var<storage, read> ker: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
-var<workgroup> tile: array<f32, 512>;
+var<workgroup> tile: array<f32, 1024>;
 
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
@@ -160,7 +210,7 @@ fn main(
     if (x >= u.width) { return; }
     let h = i32(u.height);
     let radius = i32(u.radius);
-    let r = min(radius, 128);
+    let r = min(radius, 384);
     let y0 = i32(wid.y * 256u);
     let ly = i32(lid.x);
     let w = u.width;
@@ -179,9 +229,29 @@ fn main(
     if (y >= h) { return; }
     let len = 2u * u32(r) + 1u;
     var acc = 0.0;
-    let center = ly + r;
-    for (var k = 0u; k < len; k = k + 1u) {
-        acc = acc + tile[u32(center) + k - u32(r)] * ker[k];
+    let base_idx = u32(ly);
+    var k = 0u;
+    let len_sub16 = (len / 16u) * 16u;
+    for (; k < len_sub16; k = k + 16u) {
+        acc = acc + tile[base_idx + k] * ker[k]
+                  + tile[base_idx + k + 1u] * ker[k + 1u]
+                  + tile[base_idx + k + 2u] * ker[k + 2u]
+                  + tile[base_idx + k + 3u] * ker[k + 3u]
+                  + tile[base_idx + k + 4u] * ker[k + 4u]
+                  + tile[base_idx + k + 5u] * ker[k + 5u]
+                  + tile[base_idx + k + 6u] * ker[k + 6u]
+                  + tile[base_idx + k + 7u] * ker[k + 7u]
+                  + tile[base_idx + k + 8u] * ker[k + 8u]
+                  + tile[base_idx + k + 9u] * ker[k + 9u]
+                  + tile[base_idx + k + 10u] * ker[k + 10u]
+                  + tile[base_idx + k + 11u] * ker[k + 11u]
+                  + tile[base_idx + k + 12u] * ker[k + 12u]
+                  + tile[base_idx + k + 13u] * ker[k + 13u]
+                  + tile[base_idx + k + 14u] * ker[k + 14u]
+                  + tile[base_idx + k + 15u] * ker[k + 15u];
+    }
+    for (; k < len; k = k + 1u) {
+        acc = acc + tile[base_idx + k] * ker[k];
     }
     dst[u.dst_off + u32(y) * w + x] = acc;
 }
@@ -255,6 +325,34 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Fast 2D matrix transpose in arena storage buffer (16x16 threads).
+pub const TRANSPOSE_ARENA: &str = r#"
+struct U { width:u32, height:u32, src_off:u32, dst_off:u32 };
+@group(0) @binding(0) var<storage, read_write> data: array<f32>;
+@group(0) @binding(1) var<uniform> u: U;
+
+var<workgroup> tile: array<array<f32, 17>, 16>;
+
+@compute @workgroup_size(16, 16)
+fn main(
+    @builtin(local_invocation_id) lid: vec3<u32>,
+    @builtin(workgroup_id) wid: vec3<u32>,
+) {
+    let x = wid.x * 16u + lid.x;
+    let y = wid.y * 16u + lid.y;
+    if (x < u.width && y < u.height) {
+        tile[lid.y][lid.x] = data[u.src_off + y * u.width + x];
+    }
+    workgroupBarrier();
+
+    let tx = wid.y * 16u + lid.x;
+    let ty = wid.x * 16u + lid.y;
+    if (tx < u.height && ty < u.width) {
+        data[u.dst_off + ty * u.height + tx] = tile[lid.x][lid.y];
+    }
+}
+"#;
+
 /// Arena tiled blur H.
 pub const BLUR_H_TILED_ARENA: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
@@ -262,7 +360,7 @@ struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p
 @group(0) @binding(1) var<storage, read> ker: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
 
-var<workgroup> tile: array<f32, 512>;
+var<workgroup> tile: array<f32, 1024>;
 
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
@@ -283,7 +381,7 @@ fn main(
     if (y >= u.height) { return; }
     let w = i32(u.width);
     let radius = i32(u.radius);
-    let r = min(radius, 128);
+    let r = min(radius, 384);
     let x0 = i32(wid.x * 256u);
     let lx = i32(lid.x);
     let base = u.src_off + y * u.width;
@@ -302,22 +400,42 @@ fn main(
     if (x >= w) { return; }
     let len = 2u * u32(r) + 1u;
     var acc = 0.0;
-    let center = lx + r;
-    for (var k = 0u; k < len; k = k + 1u) {
-        acc = acc + tile[u32(center) + k - u32(r)] * ker[k];
+    let base_idx = u32(lx);
+    var k = 0u;
+    let len_sub16 = (len / 16u) * 16u;
+    for (; k < len_sub16; k = k + 16u) {
+        acc = acc + tile[base_idx + k] * ker[k]
+                  + tile[base_idx + k + 1u] * ker[k + 1u]
+                  + tile[base_idx + k + 2u] * ker[k + 2u]
+                  + tile[base_idx + k + 3u] * ker[k + 3u]
+                  + tile[base_idx + k + 4u] * ker[k + 4u]
+                  + tile[base_idx + k + 5u] * ker[k + 5u]
+                  + tile[base_idx + k + 6u] * ker[k + 6u]
+                  + tile[base_idx + k + 7u] * ker[k + 7u]
+                  + tile[base_idx + k + 8u] * ker[k + 8u]
+                  + tile[base_idx + k + 9u] * ker[k + 9u]
+                  + tile[base_idx + k + 10u] * ker[k + 10u]
+                  + tile[base_idx + k + 11u] * ker[k + 11u]
+                  + tile[base_idx + k + 12u] * ker[k + 12u]
+                  + tile[base_idx + k + 13u] * ker[k + 13u]
+                  + tile[base_idx + k + 14u] * ker[k + 14u]
+                  + tile[base_idx + k + 15u] * ker[k + 15u];
+    }
+    for (; k < len; k = k + 1u) {
+        acc = acc + tile[base_idx + k] * ker[k];
     }
     data[u.dst_off + y * u.width + u32(x)] = acc;
 }
 "#;
 
-/// Arena tiled blur V.
+/// Arena tiled vertical blur: 2D workgroup = 8 columns x 32 rows with coalesced DRAM loads.
 pub const BLUR_V_TILED_ARENA: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> data: array<f32>;
 @group(0) @binding(1) var<storage, read> ker: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
 
-var<workgroup> tile: array<f32, 512>;
+var<workgroup> tile: array<f32, 1024>;
 
 fn reflect_index(i: i32, len: i32) -> i32 {
     if (len == 1) { return 0; }
@@ -338,7 +456,7 @@ fn main(
     if (x >= u.width) { return; }
     let h = i32(u.height);
     let radius = i32(u.radius);
-    let r = min(radius, 128);
+    let r = min(radius, 384);
     let y0 = i32(wid.y * 256u);
     let ly = i32(lid.x);
     let w = u.width;
@@ -357,9 +475,29 @@ fn main(
     if (y >= h) { return; }
     let len = 2u * u32(r) + 1u;
     var acc = 0.0;
-    let center = ly + r;
-    for (var k = 0u; k < len; k = k + 1u) {
-        acc = acc + tile[u32(center) + k - u32(r)] * ker[k];
+    let base_idx = u32(ly);
+    var k = 0u;
+    let len_sub16 = (len / 16u) * 16u;
+    for (; k < len_sub16; k = k + 16u) {
+        acc = acc + tile[base_idx + k] * ker[k]
+                  + tile[base_idx + k + 1u] * ker[k + 1u]
+                  + tile[base_idx + k + 2u] * ker[k + 2u]
+                  + tile[base_idx + k + 3u] * ker[k + 3u]
+                  + tile[base_idx + k + 4u] * ker[k + 4u]
+                  + tile[base_idx + k + 5u] * ker[k + 5u]
+                  + tile[base_idx + k + 6u] * ker[k + 6u]
+                  + tile[base_idx + k + 7u] * ker[k + 7u]
+                  + tile[base_idx + k + 8u] * ker[k + 8u]
+                  + tile[base_idx + k + 9u] * ker[k + 9u]
+                  + tile[base_idx + k + 10u] * ker[k + 10u]
+                  + tile[base_idx + k + 11u] * ker[k + 11u]
+                  + tile[base_idx + k + 12u] * ker[k + 12u]
+                  + tile[base_idx + k + 13u] * ker[k + 13u]
+                  + tile[base_idx + k + 14u] * ker[k + 14u]
+                  + tile[base_idx + k + 15u] * ker[k + 15u];
+    }
+    for (; k < len; k = k + 1u) {
+        acc = acc + tile[base_idx + k] * ker[k];
     }
     data[u.dst_off + u32(y) * w + x] = acc;
 }
