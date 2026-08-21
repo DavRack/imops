@@ -1,8 +1,7 @@
 //! WGSL compute shaders for the GPU film path. Each mirrors a CPU stage.
 //!
-//! All storage bindings are declared `read_write` to match the bind-group layout
-//! produced by [`crate::gpu::GpuContext::dispatch_compute_shader_multi`] (which
-//! always uses non-read-only storage), even where the shader only reads.
+//! All storage bindings are declared `read_write` or `read` to match the bind-group layout
+//! produced by [`crate::gpu::GpuContext`].
 
 /// Horizontal separable-blur pass. Mirrors `blur::convolve_1d_reflect`.
 /// Used when radius > [`super::BLUR_TILED_MAX_RADIUS`] (tiled path cannot cover full kernel).
@@ -77,12 +76,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 /// Tiled horizontal blur: one workgroup = one row segment with shared-memory halo.
-/// Dispatch: gx = ceil(width/256), gy = height.
-///
-/// Contract: host must only dispatch this when `radius ≤ BLUR_TILED_MAX_RADIUS` (128).
-/// For larger radii the host falls back to [`BLUR_H`] so full-kernel numerics match CPU.
-/// The `min(radius, 128)` below is only a defensive tile bound (tile[512] = 256+2*128);
-/// it is **not** a correct FIR truncation — do not rely on it for radius > 128.
 pub const BLUR_H_TILED: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> src: array<f32>;
@@ -111,13 +104,11 @@ fn main(
     if (y >= u.height) { return; }
     let w = i32(u.width);
     let radius = i32(u.radius);
-    // Defensive tile bound only (host must fall back for radius > 128).
     let r = min(radius, 128);
     let x0 = i32(wid.x * 256u);
     let lx = i32(lid.x);
     let base = u.src_off + y * u.width;
 
-    // Cooperative load of [x0-r, x0+256+r) into tile[0 .. 256+2r).
     let tile_w = 256 + 2 * r;
     var t = lx;
     loop {
@@ -141,9 +132,6 @@ fn main(
 "#;
 
 /// Tiled vertical blur: one workgroup = one column segment with shared-memory halo.
-/// Dispatch: gx = width, gy = ceil(height/256).
-///
-/// Same contract as [`BLUR_H_TILED`]: host falls back to [`BLUR_V`] when radius > 128.
 pub const BLUR_V_TILED: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> tmp: array<f32>;
@@ -172,7 +160,6 @@ fn main(
     if (x >= u.width) { return; }
     let h = i32(u.height);
     let radius = i32(u.radius);
-    // Defensive tile bound only (host must fall back for radius > 128).
     let r = min(radius, 128);
     let y0 = i32(wid.y * 256u);
     let ly = i32(lid.x);
@@ -200,8 +187,7 @@ fn main(
 }
 "#;
 
-/// Arena blur H: single storage buffer (WebGPU forbids overlapping writable aliases).
-/// Reads `data[src_off..]`, writes `data[dst_off..]`. Bindings: data, ker, uniform.
+/// Arena blur H: single storage buffer.
 pub const BLUR_H_ARENA: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> data: array<f32>;
@@ -235,7 +221,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// Arena blur V: single storage buffer. Bindings: data, ker, uniform.
+/// Arena blur V: single storage buffer.
 pub const BLUR_V_ARENA: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> data: array<f32>;
@@ -269,7 +255,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// Arena tiled blur H: single storage buffer. Bindings: data, ker, uniform.
+/// Arena tiled blur H.
 pub const BLUR_H_TILED_ARENA: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> data: array<f32>;
@@ -324,7 +310,7 @@ fn main(
 }
 "#;
 
-/// Arena tiled blur V: single storage buffer. Bindings: data, ker, uniform.
+/// Arena tiled blur V.
 pub const BLUR_V_TILED_ARENA: &str = r#"
 struct U { width:u32, height:u32, n:u32, radius:u32, src_off:u32, dst_off:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> data: array<f32>;
@@ -379,14 +365,15 @@ fn main(
 }
 "#;
 
-/// Expose: ACEScg pixel → per-emulsion absorbed mean fluence plane.
-/// Mirrors `exposure::expose_with_pitch_and_shutter` (spectral part).
+/// Expose: ACEScg pixel -> forward absorbed fluence planes + upward bounce absorbed fluence planes.
+/// Mirrors `exposure::expose_with_pitch_shutter_and_scale` (Beer-Lambert forward + upward walk).
 pub const EXPOSE: &str = r#"
 struct U { width:u32, height:u32, n:u32, num_layers:u32, num_emul:u32, p0:u32, p1:u32, p2:u32 };
-@group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+@group(0) @binding(0) var<storage, read> pixels: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> planes: array<f32>;
-@group(0) @binding(2) var<storage, read_write> ec: array<f32>;
-@group(0) @binding(3) var<uniform> u: U;
+@group(0) @binding(2) var<storage, read_write> bounce: array<f32>;
+@group(0) @binding(3) var<storage, read> ec: array<f32>;
+@group(0) @binding(4) var<uniform> u: U;
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -395,13 +382,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let px = pixels[i];
     let r = px.x; let g = px.y; let b = px.z;
 
-    // Upsample: w = M * rgb, clamp negatives (Meng-style).
     var w0 = ec[48] * r + ec[49] * g + ec[50] * b;
     var w1 = ec[51] * r + ec[52] * g + ec[53] * b;
     var w2 = ec[54] * r + ec[55] * g + ec[56] * b;
     w0 = max(w0, 0.0); w1 = max(w1, 0.0); w2 = max(w2, 0.0);
 
-    // Fluence spectrum: Φ(λ) = spectrum(λ) * (λ / 550).
     var phi: array<f32, 16>;
     for (var k = 0u; k < 16u; k = k + 1u) {
         let s = w0 * ec[k] + w1 * ec[16u + k] + w2 * ec[32u + k];
@@ -410,41 +395,65 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     let off_od = 74u;
     let off_pl = 74u + u.num_layers * 16u;
+    let off_refl = off_pl + u.num_layers;
+
     var emul = 0u;
     for (var l = 0u; l < u.num_layers; l = l + 1u) {
         var absorbed: array<f32, 16>;
         let ob = off_od + l * 16u;
         for (var k = 0u; k < 16u; k = k + 1u) {
-            // Transmittance baked on the host (f64 exp rounded to f32), so the
-            // GPU never calls `exp` here — CPU and GPU share the value.
             let trans = ec[ob + k];
             let pt = phi[k] * trans;
             absorbed[k] = phi[k] - pt;
             phi[k] = pt;
         }
         if (ec[off_pl + l] != 0.0) {
-            // integrated_absorbed = trapz(400..700, Δ20) / 300.
             var acc = 0.0;
             for (var k = 0u; k < 15u; k = k + 1u) {
-                acc = acc + (absorbed[k] + absorbed[k + 1u]) * (1.0 / 30.0);
+                acc = acc + (absorbed[k] + absorbed[k + 1u]) * 10.0;
             }
-            planes[emul * u.n + i] = acc;
+            planes[emul * u.n + i] = acc / 300.0;
             emul = emul + 1u;
+        }
+    }
+
+    var phi_up: array<f32, 16>;
+    for (var k = 0u; k < 16u; k = k + 1u) {
+        phi_up[k] = phi[k] * ec[off_refl + k];
+    }
+
+    var emul_up = u.num_emul;
+    for (var step = 0u; step < u.num_layers; step = step + 1u) {
+        let l = u.num_layers - 1u - step;
+        var absorbed_up: array<f32, 16>;
+        let ob = off_od + l * 16u;
+        for (var k = 0u; k < 16u; k = k + 1u) {
+            let trans = ec[ob + k];
+            let pt = phi_up[k] * trans;
+            absorbed_up[k] = phi_up[k] - pt;
+            phi_up[k] = pt;
+        }
+        if (ec[off_pl + l] != 0.0) {
+            emul_up = emul_up - 1u;
+            var acc_up = 0.0;
+            for (var k = 0u; k < 15u; k = k + 1u) {
+                acc_up = acc_up + (absorbed_up[k] + absorbed_up[k + 1u]) * 10.0;
+            }
+            bounce[emul_up * u.n + i] = acc_up / 300.0;
         }
     }
 }
 "#;
 
-/// ROI Expose: reads immutable full-frame input via signed global coordinate reflection
-/// and writes into root ROI planes buffer starting at `planes_base`.
+/// ROI Expose: reads full-frame image with border reflection, writes forward planes + upward bounce planes into arena.
 pub const EXPOSE_ROI: &str = r#"
 struct U {
     root_x: i32, root_y: i32, root_w: u32, root_h: u32,
     img_w: u32, img_h: u32, root_n: u32, planes_base: u32,
-    num_layers: u32, num_emul: u32, p0: u32, p1: u32,
+    bounce_base: u32, num_layers: u32, num_emul: u32, p0: u32,
 };
 @group(0) @binding(0) var<storage, read> pixels: array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read_write> planes: array<f32>;
+@group(0) @binding(1) var<storage, read_write> arena: array<f32>;
 @group(0) @binding(2) var<storage, read> ec: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
@@ -476,7 +485,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let pix = pixels[img_idx];
     let r = pix.x; let g = pix.y; let b = pix.z;
 
-    // Upsample: w = M * rgb, clamp negatives (Meng-style).
     var w0 = ec[48] * r + ec[49] * g + ec[50] * b;
     var w1 = ec[51] * r + ec[52] * g + ec[53] * b;
     var w2 = ec[54] * r + ec[55] * g + ec[56] * b;
@@ -490,13 +498,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     let off_od = 74u;
     let off_pl = 74u + u.num_layers * 16u;
+    let off_refl = off_pl + u.num_layers;
+
     var emul = 0u;
     for (var l = 0u; l < u.num_layers; l = l + 1u) {
         var absorbed: array<f32, 16>;
         let ob = off_od + l * 16u;
         for (var k = 0u; k < 16u; k = k + 1u) {
-            // Transmittance baked on the host (f64 exp rounded to f32), so the
-            // GPU never calls `exp` here — CPU and GPU share the value.
             let trans = ec[ob + k];
             let pt = phi[k] * trans;
             absorbed[k] = phi[k] - pt;
@@ -505,33 +513,79 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (ec[off_pl + l] != 0.0) {
             var acc = 0.0;
             for (var k = 0u; k < 15u; k = k + 1u) {
-                acc = acc + (absorbed[k] + absorbed[k + 1u]) * (1.0 / 30.0);
+                acc = acc + (absorbed[k] + absorbed[k + 1u]) * 10.0;
             }
-            planes[u.planes_base + emul * u.root_n + i] = acc;
+            arena[u.planes_base + emul * u.root_n + i] = acc / 300.0;
             emul = emul + 1u;
+        }
+    }
+
+    var phi_up: array<f32, 16>;
+    for (var k = 0u; k < 16u; k = k + 1u) {
+        phi_up[k] = phi[k] * ec[off_refl + k];
+    }
+
+    var emul_up = u.num_emul;
+    for (var step = 0u; step < u.num_layers; step = step + 1u) {
+        let l = u.num_layers - 1u - step;
+        var absorbed_up: array<f32, 16>;
+        let ob = off_od + l * 16u;
+        for (var k = 0u; k < 16u; k = k + 1u) {
+            let trans = ec[ob + k];
+            let pt = phi_up[k] * trans;
+            absorbed_up[k] = phi_up[k] - pt;
+            phi_up[k] = pt;
+        }
+        if (ec[off_pl + l] != 0.0) {
+            emul_up = emul_up - 1u;
+            var acc_up = 0.0;
+            for (var k = 0u; k < 15u; k = k + 1u) {
+                acc_up = acc_up + (absorbed_up[k] + absorbed_up[k + 1u]) * 10.0;
+            }
+            arena[u.bounce_base + emul_up * u.root_n + i] = acc_up / 300.0;
         }
     }
 }
 "#;
 
-/// Energy-conserving local scatter mix: Φ' = keep·Φ + f·blur(Φ).
-pub const LOCAL_SCATTER_MIX: &str = r#"
-struct U { n:u32, off:u32, keep:f32, f:f32, p0:u32, p1:u32, p2:u32, p3:u32 };
-@group(0) @binding(0) var<storage, read_write> planes: array<f32>;
-@group(0) @binding(1) var<storage, read_write> blurred: array<f32>;
-@group(0) @binding(2) var<uniform> u: U;
+/// Irradiation mixture: (1 - w) * core + w * (0.6235 * tail1 + 0.3765 * tail2).
+pub const IRRADIATION_MIX: &str = r#"
+struct U {
+    n: u32,
+    plane_off: u32,
+    weight: f32,
+    p0: u32,
+};
+@group(0) @binding(0) var<storage, read_write> plane: array<f32>;
+@group(0) @binding(1) var<storage, read> core: array<f32>;
+@group(0) @binding(2) var<storage, read> tail1: array<f32>;
+@group(0) @binding(3) var<storage, read> tail2: array<f32>;
+@group(0) @binding(4) var<uniform> u: U;
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
-    planes[u.off + i] = u.keep * planes[u.off + i] + u.f * blurred[i];
+    let c = core[i];
+    let t1 = tail1[i];
+    let t2 = tail2[i];
+    let tail = 0.6235 * t1 + 0.3765 * t2;
+    plane[u.plane_off + i] = (1.0 - u.weight) * c + u.weight * tail;
 }
 "#;
 
-/// ROI Local scatter mix: single arena binding (WebGPU forbids overlapping writable aliases).
-pub const LOCAL_SCATTER_MIX_ROI: &str = r#"
-struct U { n:u32, plane_off:u32, blur_off:u32, keep:f32, f:f32, p0:u32, p1:u32, p2:u32 };
+/// Irradiation mixture for ROI arena.
+pub const IRRADIATION_MIX_ROI: &str = r#"
+struct U {
+    n: u32,
+    plane_off: u32,
+    core_off: u32,
+    tail1_off: u32,
+    tail2_off: u32,
+    weight: f32,
+    p0: u32,
+    p1: u32,
+};
 @group(0) @binding(0) var<storage, read_write> arena: array<f32>;
 @group(0) @binding(1) var<uniform> u: U;
 
@@ -539,35 +593,19 @@ struct U { n:u32, plane_off:u32, blur_off:u32, keep:f32, f:f32, p0:u32, p1:u32, 
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
-    arena[u.plane_off + i] = u.keep * arena[u.plane_off + i] + u.f * arena[u.blur_off + i];
+    let c = arena[u.core_off + i];
+    let t1 = arena[u.tail1_off + i];
+    let t2 = arena[u.tail2_off + i];
+    let tail = 0.6235 * t1 + 0.3765 * t2;
+    arena[u.plane_off + i] = (1.0 - u.weight) * c + u.weight * tail;
 }
 "#;
 
-/// Additive wide halation with per-layer bleed gains: Φ_e += gain_e · bounce.
-pub const HALATION_ADD: &str = r#"
-struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
-@group(0) @binding(0) var<storage, read_write> planes: array<f32>;
-@group(0) @binding(1) var<storage, read_write> bounce: array<f32>;
-@group(0) @binding(2) var<storage, read_write> gains: array<f32>;
-@group(0) @binding(3) var<uniform> u: U;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let bv = bounce[i];
-    for (var e = 0u; e < u.num_emul; e = e + 1u) {
-        planes[e * u.n + i] = planes[e * u.n + i] + gains[e] * bv;
-    }
-}
-"#;
-
-/// Multi-bounce halation accumulation: `acc = init ? w·b : acc + w·b`.
-/// Mirrors the CPU decay-weighted bounce sum in `apply_spatial_exposure_effects`.
+/// Multi-bounce halation accumulation: `acc = init ? w*b : acc + w*b`.
 pub const HALATION_ACCUM: &str = r#"
 struct U { n:u32, w:f32, init:u32, p0:u32 };
 @group(0) @binding(0) var<storage, read_write> acc: array<f32>;
-@group(0) @binding(1) var<storage, read_write> blurred: array<f32>;
+@group(0) @binding(1) var<storage, read> blurred: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
 
 @compute @workgroup_size(256)
@@ -583,7 +621,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// ROI Multi-bounce halation accumulation on a single arena binding.
+/// Multi-bounce halation accumulation for ROI arena.
 pub const HALATION_ACCUM_ROI: &str = r#"
 struct U { n:u32, out_off:u32, blur_off:u32, w:f32, init:u32, p0:u32, p1:u32, p2:u32 };
 @group(0) @binding(0) var<storage, read_write> arena: array<f32>;
@@ -602,30 +640,40 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// ROI Additive wide halation: single arena binding + gains.
-pub const HALATION_ADD_ROI: &str = r#"
-struct U { n:u32, num_emul:u32, plane_base:u32, bounce_base:u32 };
-@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
-@group(0) @binding(1) var<storage, read> gains: array<f32>;
+/// Add halation accumulation to emulsion plane: `plane += acc`.
+pub const HALATION_ADD_EMUL: &str = r#"
+struct U { n:u32, plane_off:u32, p0:u32, p1:u32 };
+@group(0) @binding(0) var<storage, read_write> plane: array<f32>;
+@group(0) @binding(1) var<storage, read> acc: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x + gid.y * 16776960u;
     if (i >= u.n) { return; }
-    let bv = arena[u.bounce_base + i];
-    for (var e = 0u; e < u.num_emul; e = e + 1u) {
-        let idx = u.plane_base + e * u.n + i;
-        arena[idx] = arena[idx] + gains[e] * bv;
-    }
+    plane[u.plane_off + i] = plane[u.plane_off + i] + acc[i];
 }
 "#;
 
-/// Capture LUT sample (developable fraction). Mirrors `DevelopableFractionLut::sample`.
+/// Add halation accumulation to emulsion plane for ROI arena.
+pub const HALATION_ADD_EMUL_ROI: &str = r#"
+struct U { n:u32, plane_off:u32, acc_off:u32, p0:u32 };
+@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
+@group(0) @binding(1) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    arena[u.plane_off + i] = arena[u.plane_off + i] + arena[u.acc_off + i];
+}
+"#;
+
+/// Capture LUT sample (absorbed fluence -> developable fraction).
 pub const LUT: &str = r#"
 struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
 @group(0) @binding(0) var<storage, read_write> planes: array<f32>;
-@group(0) @binding(1) var<storage, read_write> lc: array<f32>;
+@group(0) @binding(1) var<storage, read> lc: array<f32>;
 @group(0) @binding(2) var<uniform> u: U;
 
 const INV_LN10: f32 = 0.4342944819032518;
@@ -657,7 +705,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// ROI Capture LUT: takes explicit plane_base (e.g. latent_workspace_base).
+/// ROI Capture LUT.
 pub const LUT_ROI: &str = r#"
 struct U { n:u32, num_emul:u32, plane_base:u32, p0:u32 };
 @group(0) @binding(0) var<storage, read_write> planes: array<f32>;
@@ -693,47 +741,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-/// Reduce fraction → image/mask dye density. Mirrors `development::reduction::reduce`.
+/// Reduce developable fraction -> image/mask optical density.
+/// D = min(d_max, d_max * f^(1/gamma) + FOG_OFFSET).
 pub const REDUCE: &str = r#"
 struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
-@group(0) @binding(0) var<storage, read_write> planes: array<f32>;
-@group(0) @binding(1) var<storage, read_write> dye: array<f32>;
-@group(0) @binding(2) var<storage, read_write> mask: array<f32>;
-@group(0) @binding(3) var<storage, read_write> rc: array<f32>;
-@group(0) @binding(4) var<uniform> u: U;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let e_count = u.num_emul;
-    for (var e = 0u; e < e_count; e = e + 1u) {
-        let f = clamp(planes[e * u.n + i], 0.0, 1.0);
-        let rev = rc[3u * e_count + e];
-        var eff = f;
-        if (rev != 0.0) { eff = 1.0 - f; }
-        // Chemical fog floor: f_eff = 1 - (1-f) * (1-f_fog). f_fog baked host-side
-        // per layer as (FOG_OFFSET / d_max).clamp(0,1) into rc[5 * e_count + e].
-        let fog = rc[5u * e_count + e];
-        eff = 1.0 - (1.0 - eff) * (1.0 - fog);
-        let dmax = rc[e];
-        let ig = rc[e_count + e];
-        var d = 0.0;
-        if (eff > 0.0) { d = dmax * pow(eff, ig); }
-        dye[e * u.n + i] = d;
-        var m = 0.0;
-        if (rc[4u * e_count + e] != 0.0) {
-            m = rc[2u * e_count + e];
-        }
-        mask[e * u.n + i] = m;
-    }
-}
-"#;
-
-/// ROI Reduce: takes explicit plane_base, dye_base, mask_base.
-pub const REDUCE_ROI: &str = r#"
-struct U { n:u32, num_emul:u32, plane_base:u32, dye_base:u32, mask_base:u32, p0:u32, p1:u32, p2:u32 };
-@group(0) @binding(0) var<storage, read_write> planes: array<f32>;
+@group(0) @binding(0) var<storage, read> planes: array<f32>;
 @group(0) @binding(1) var<storage, read_write> dye: array<f32>;
 @group(0) @binding(2) var<storage, read_write> mask: array<f32>;
 @group(0) @binding(3) var<storage, read> rc: array<f32>;
@@ -745,28 +757,25 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i >= u.n) { return; }
     let e_count = u.num_emul;
     for (var e = 0u; e < e_count; e = e + 1u) {
-        let f = clamp(planes[u.plane_base + e * u.n + i], 0.0, 1.0);
+        let f = clamp(planes[e * u.n + i], 0.0, 1.0);
         let rev = rc[3u * e_count + e];
-        var eff = f;
-        if (rev != 0.0) { eff = 1.0 - f; }
-        // Chemical fog floor (mirrors `reduce`). f_fog in rc[5 * e_count + e].
-        let fog = rc[5u * e_count + e];
-        eff = 1.0 - (1.0 - eff) * (1.0 - fog);
+        var f_clamped = f;
+        if (rev != 0.0) { f_clamped = 1.0 - f; }
         let dmax = rc[e];
         let ig = rc[e_count + e];
-        var d = 0.0;
-        if (eff > 0.0) { d = dmax * pow(eff, ig); }
-        dye[u.dye_base + e * u.n + i] = d;
+        let fog = rc[5u * e_count + e];
+        var d = min(dmax, dmax * pow(f_clamped, ig) + fog);
+        dye[e * u.n + i] = d;
         var m = 0.0;
         if (rc[4u * e_count + e] != 0.0) {
             m = rc[2u * e_count + e];
         }
-        mask[u.mask_base + e * u.n + i] = m;
+        mask[e * u.n + i] = m;
     }
 }
 "#;
 
-/// Fused ROI LUT and Reduce: single arena binding + lut/reduce constants.
+/// Fused ROI LUT and Reduce.
 pub const LUT_REDUCE_ROI: &str = r#"
 struct U { n:u32, num_emul:u32, plane_base:u32, dye_base:u32, mask_base:u32, p0:u32, p1:u32, p2:u32 };
 @group(0) @binding(0) var<storage, read_write> arena: array<f32>;
@@ -804,245 +813,24 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         let f = clamp(lut_val, 0.0, 1.0);
         let rev = rc[3u * e_count + e];
-        var eff = f;
-        if (rev != 0.0) { eff = 1.0 - f; }
-        // Chemical fog floor (mirrors `reduce`). f_fog in rc[5 * e_count + e].
-        let fog = rc[5u * e_count + e];
-        eff = 1.0 - (1.0 - eff) * (1.0 - fog);
+        var f_clamped = f;
+        if (rev != 0.0) { f_clamped = 1.0 - f; }
         let dmax = rc[e];
         let ig = rc[e_count + e];
-        var d = 0.0;
-        if (eff > 0.0) { d = dmax * pow(eff, ig); }
+        let fog = rc[5u * e_count + e];
+        var d = min(dmax, dmax * pow(f_clamped, ig) + fog);
         arena[u.dye_base + e * u.n + i] = d;
         var m = 0.0;
         if (rc[4u * e_count + e] != 0.0) {
             m = rc[2u * e_count + e];
         }
         arena[u.mask_base + e * u.n + i] = m;
-
-        arena[idx] = lut_val;
     }
-}
-"#;
-
-/// DIR interlayer inhibition apply. Mirrors `development::diffusion::apply_dir_inhibition`.
-pub const DIR_APPLY: &str = r#"
-struct U { n:u32, num_emul:u32, p0:u32, p1:u32 };
-@group(0) @binding(0) var<storage, read_write> dye: array<f32>;
-@group(0) @binding(1) var<storage, read_write> diffused: array<f32>;
-@group(0) @binding(2) var<storage, read> mat: array<f32>;
-@group(0) @binding(3) var<uniform> u: U;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let e_count = u.num_emul;
-    for (var j = 0u; j < e_count; j = j + 1u) {
-        var total_delta = 0.0;
-        for (var s = 0u; s < e_count; s = s + 1u) {
-            let weight = mat[s * e_count + j];
-            let diff = diffused[s * u.n + i] - dye[s * u.n + i];
-            total_delta = total_delta + weight * diff;
-        }
-        dye[j * u.n + i] = dye[j * u.n + i] * exp(-total_delta);
-    }
-}
-"#;
-
-/// ROI DIR apply: single arena binding + matrix.
-pub const DIR_APPLY_ROI: &str = r#"
-struct U { n:u32, num_emul:u32, dye_base:u32, work_base:u32 };
-@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
-@group(0) @binding(1) var<storage, read> mat: array<f32>;
-@group(0) @binding(2) var<uniform> u: U;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let e_count = u.num_emul;
-    for (var j = 0u; j < e_count; j = j + 1u) {
-        var total_delta = 0.0;
-        for (var s = 0u; s < e_count; s = s + 1u) {
-            let weight = mat[s * e_count + j];
-            let diff = arena[u.work_base + s * u.n + i] - arena[u.dye_base + s * u.n + i];
-            total_delta = total_delta + weight * diff;
-        }
-        let idx = u.dye_base + j * u.n + i;
-        arena[idx] = arena[idx] * exp(-total_delta);
-    }
-}
-"#;
-
-/// Adjacency (Eberhard) unsharp: D' = D + β·(D − blur(D)).
-pub const ADJACENCY: &str = r#"
-struct U { n:u32, off:u32, beta:f32, p0:u32 };
-@group(0) @binding(0) var<storage, read_write> dye: array<f32>;
-@group(0) @binding(1) var<storage, read_write> blurred: array<f32>;
-@group(0) @binding(2) var<uniform> u: U;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let d = dye[u.off + i];
-    dye[u.off + i] = d + u.beta * (d - blurred[i]);
-}
-"#;
-
-/// ROI Adjacency: single arena binding.
-pub const ADJACENCY_ROI: &str = r#"
-struct U { n:u32, dye_off:u32, blur_off:u32, beta:f32 };
-@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
-@group(0) @binding(1) var<uniform> u: U;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let d = arena[u.dye_off + i];
-    arena[u.dye_off + i] = d + u.beta * (d - arena[u.blur_off + i]);
-}
-"#;
-
-// ─── Legacy SplitMix64-based grain shaders (GRAIN_NOISE, GRAIN_NOISE_ROI,
-// GRAIN_APPLY_SUB, GRAIN_APPLY_SUB_RAW_ROI, GRAIN_VAR_PARTIAL, GRAIN_SCAN_ROI,
-// COPY_SCALAR_CORE_ROI) deleted in favor of the Philox4x32-10 particle-field
-// grain path (`PARTICLE_FIELD`, `MICRO_MIX`, `TOE`, `SCAN_ROI`). ─────────────
-
-/// Densitometric scan → ACEScg (Dmin-normalized). Mirrors `scan::densitometry`.
-pub const SCAN: &str = r#"
-struct U { n:u32, num_emul:u32, scale:f32, flags:u32 };
-@group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read_write> dye: array<f32>;
-@group(0) @binding(2) var<storage, read_write> mask: array<f32>;
-@group(0) @binding(3) var<storage, read_write> sc: array<f32>;
-@group(0) @binding(4) var<uniform> u: U;
-
-const LOG2_10: f32 = 3.3219280948873623;
-
-fn fog2_to_exposure(d2: f32, inv_gamma: f32, fog2: f32) -> f32 {
-    var d_eff = 0.0;
-    if (d2 > 0.0) {
-        if (d2 < fog2) {
-            d_eff = (d2 * d2) / (2.0 * fog2);
-        } else {
-            d_eff = d2 - 0.5 * fog2;
-        }
-    }
-    if (d_eff <= 0.0) {
-        return 0.0;
-    }
-    return exp2(d_eff * inv_gamma) - 1.0;
-}
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let E = u.num_emul;
-    let eps_base = 0u;
-    let maskeps_base = E * 16u;
-    let illum_base = 2u * E * 16u;
-    let xbar_base = illum_base + 16u;
-    let ybar_base = xbar_base + 16u;
-    let zbar_base = ybar_base + 16u;
-    let mat_base = zbar_base + 16u;
-    let toe_base = mat_base + 9u;
-
-    var dens: array<f32, 16>;
-    for (var k = 0u; k < 16u; k = k + 1u) { dens[k] = 0.0; }
-    for (var e = 0u; e < E; e = e + 1u) {
-        let raw_f = dye[e * u.n + i];
-        let dmax = sc[toe_base + e];
-        let inv_gamma = sc[toe_base + E + e];
-        let g = max(raw_f, 0.0);
-        var di = raw_f;
-        if (dmax > 0.0 && g > 0.0) {
-            di = clamp(dmax * pow(g, inv_gamma), 0.0, 1.05 * dmax);
-        } else if (dmax > 0.0) {
-            di = 0.0;
-        }
-        let dm = mask[e * u.n + i];
-        let eb = eps_base + e * 16u;
-        let mb = maskeps_base + e * 16u;
-        for (var k = 0u; k < 16u; k = k + 1u) {
-            dens[k] = dens[k] + di * sc[eb + k] + dm * sc[mb + k];
-        }
-    }
-    var t: array<f32, 16>;
-    for (var k = 0u; k < 16u; k = k + 1u) {
-        t[k] = exp2(-dens[k] * LOG2_10) * sc[illum_base + k];
-    }
-    var X = 0.0; var Y = 0.0; var Z = 0.0;
-    for (var k = 0u; k < 15u; k = k + 1u) {
-        X = X + (t[k] * sc[xbar_base + k] + t[k + 1u] * sc[xbar_base + k + 1u]) * 10.0;
-        Y = Y + (t[k] * sc[ybar_base + k] + t[k + 1u] * sc[ybar_base + k + 1u]) * 10.0;
-        Z = Z + (t[k] * sc[zbar_base + k] + t[k + 1u] * sc[zbar_base + k + 1u]) * 10.0;
-    }
-    var rgb = vec3<f32>(
-        (sc[mat_base + 0u] * X + sc[mat_base + 1u] * Y + sc[mat_base + 2u] * Z) * u.scale,
-        (sc[mat_base + 3u] * X + sc[mat_base + 4u] * Y + sc[mat_base + 5u] * Z) * u.scale,
-        (sc[mat_base + 6u] * X + sc[mat_base + 7u] * Y + sc[mat_base + 8u] * Z) * u.scale
-    );
-
-    if ((u.flags & 1u) != 0u) {
-        let inv_base = toe_base + 2u * E;
-        let inv_dmin = vec3<f32>(sc[inv_base + 10u], sc[inv_base + 11u], sc[inv_base + 12u]);
-        let g_val = vec3<f32>(sc[inv_base + 3u], sc[inv_base + 4u], sc[inv_base + 5u]);
-        let eps = sc[inv_base + 8u];
-        let inv_gamma = sc[inv_base + 13u];
-        let fog2 = sc[inv_base + 15u];
-
-        let tc = vec3<f32>(
-            max(rgb.x * inv_dmin.x, eps),
-            max(rgb.y * inv_dmin.y, eps),
-            max(rgb.z * inv_dmin.z, eps),
-        );
-        let d2 = vec3<f32>(
-            -log2(tc.x),
-            -log2(tc.y),
-            -log2(tc.z),
-        );
-        var e_scene = vec3<f32>(
-            fog2_to_exposure(d2.x, inv_gamma, fog2),
-            fog2_to_exposure(d2.y, inv_gamma, fog2),
-            fog2_to_exposure(d2.z, inv_gamma, fog2),
-        );
-
-        rgb = vec3<f32>(
-            g_val.x * e_scene.x,
-            g_val.y * e_scene.y,
-            g_val.z * e_scene.z,
-        );
-    }
-
-    pixels[i] = vec4<f32>(rgb.x, rgb.y, rgb.z, pixels[i].w);
 }
 "#;
 
 // ─── Particle-field grain (Philox4x32-10 + per-pixel Poisson/Binomial) ───────
-//
-// Mirrors the CPU `apply_particle_grain_overwrite` particle overwrite:
-//
-//   p      = clamp(D / d_max, 0, 1)
-//   prob   = p^gamma                 (developable fraction f_eff recovered)
-//   sites  = sample_poisson(sites_per_cell)
-//   devel  = sample_binomial(sites, prob)
-//   frac   = devel / sites_per_cell
-//   D      := frac                   (OVERWRITE — no base+residual)
-//
-// On every GPU-supported film format, `pitch ≥ 3 µm/px`, hence
-// `cell_um = max(DYE_CLOUD_CORRELATION_UM, pitch) = pitch`, `cell_px = 1`,
-// `cells == pixels`: the particle field is per-pixel directly and there is
-// no cell-mean aggregation or bilinear upscale. The `sites_per_cell` field
-// shipped per layer is `(1/κ_ref²) * pitch²` (identical to the CPU value
-// when cells == pixels). Knuth product Poisson is only taken in the rare
-// `λ < 16` tails; on the GPU path λ is typically very large.
 
-/// Particle overwrite — full-frame variant. Reads D at `d_off` and writes the
-/// realized fraction back to the same offset (overwrite, in-place).
 pub const PARTICLE_FIELD: &str = r#"
 const PF_M0: u32 = 0xD2511F53u;
 const PF_M1: u32 = 0xCD9E8D57u;
@@ -1050,12 +838,13 @@ const PF_W0: u32 = 0x9E3779B9u;
 const PF_W1: u32 = 0xBB67AE85u;
 
 struct PFU {
-    n: u32, width: u32, height: u32, layer_idx: u32,
-    d_max: f32, gamma: f32, sites_per_cell: f32, d_off: u32,
-    seed_lo: u32, seed_hi: u32, sqrt_sites: f32, knuth_threshold: f32,
+    n: u32, width: u32, height: u32, in_off: u32, out_off: u32,
+    d_max: f32, sites_per_cell: f32, key_lo: u32, key_hi: u32,
+    sqrt_sites: f32, knuth_threshold: f32, p0: u32,
 };
-@group(0) @binding(0) var<storage, read_write> planes: array<f32>;
-@group(0) @binding(1) var<uniform> u: PFU;
+@group(0) @binding(0) var<storage, read> in_plane: array<f32>;
+@group(0) @binding(1) var<storage, read_write> out_plane: array<f32>;
+@group(0) @binding(2) var<uniform> u: PFU;
 
 fn mul_full(a: u32, b: u32) -> vec2<u32> {
     let a_lo = a & 0xFFFFu; let a_hi = a >> 16u;
@@ -1097,22 +886,16 @@ fn philox_word(x: u32, y: u32, i: u32, key: vec2<u32>) -> u32 {
 }
 
 fn pf_gaussian(x: u32, y: u32, start_word: u32, key: vec2<u32>) -> f32 {
-    // Bit-exact Irwin–Hall gaussian: identical to the CPU's f64 accumulation
-    // of the same 12 single-word uniforms cast to f32 (`next_gaussian` in
-    // grain.rs). Each term w/2^32 splits exactly into hi = (w>>12)/2^20 and
-    // lo = (w&0xFFF)/2^32; the 12 hi parts (Σ ≤ 12·2^20 < 2^24) and the 12 lo
-    // parts (Σ < 2^16) each accumulate exactly in f32, and the final hi+lo add
-    // rounds once — the correctly rounded sum. Seeding sum_h at -6.0 makes the
-    // subtraction exact too, and leaves no (a+b)-a-b compensation term that
-    // Metal fast-math reassociation could collapse.
-    var sum_h: f32 = -6.0;
-    var sum_l: f32 = 0.0;
+    var sum_hi: u32 = 0u;
+    var sum_lo: u32 = 0u;
     for (var j = 0u; j < 12u; j = j + 1u) {
         let w = philox_word(x, y, start_word + j, key);
-        sum_h = sum_h + f32(w >> 12u) / 1048576.0;
-        sum_l = sum_l + f32(w & 0xFFFu) / 4294967296.0;
+        sum_hi = sum_hi + (w >> 12u);
+        sum_lo = sum_lo + (w & 0xFFFu);
     }
-    return sum_h + sum_l;
+    let total_hi = sum_hi + (sum_lo >> 12u);
+    let total_lo = sum_lo & 0xFFFu;
+    return (f32(total_hi) - 6291456.0 + f32(total_lo) / 4096.0) / 1048576.0;
 }
 
 fn pf_poisson(lambda: f32, x: u32, y: u32, start_word: u32, key: vec2<u32>, sqrt_lambda: f32, threshold: f32) -> vec2<u32> {
@@ -1120,26 +903,17 @@ fn pf_poisson(lambda: f32, x: u32, y: u32, start_word: u32, key: vec2<u32>, sqrt
     if (lambda >= 16.0) {
         let g = pf_gaussian(x, y, start_word, key);
         let draw = lambda + sqrt_lambda * g;
-        // `round` matches Rust f32::round (ties away from zero). The old
-        // `u32(draw + 0.5)` form double-rounds once |draw| ≥ 2^24 (half-to-even
-        // instead of half-away), biasing the count by +1 on odd draws.
         let n = u32(round(max(draw, 0.0)));
         return vec2<u32>(n, 12u);
     }
-    // Knuth product loop. `threshold` is exp(-lambda): baked host-side as f32
-    // for the layer-constant sites draw (matching the CPU's f64 exp rounded to
-    // f32); the per-pixel rare-tail calls pass WGSL exp(-lam). Each uniform
-    // consumes TWO Philox words (CPU `next_unit_f64`:
-    // u = ((hi<<21)|(lo>>11))/2^53), approximated in f32 as hi/2^32 while
-    // advancing w by 2u so the GPU stream stays word-aligned with the CPU Philox
-    // stream.
     var product: f32 = 1.0;
     var count: u32 = 0u;
     var w: u32 = start_word;
     for (var iter = 0u; iter < 100u; iter = iter + 1u) {
         if (product <= threshold) { break; }
         let hi = philox_word(x, y, w, key);
-        let ut = f32(hi) / 4294967296.0;
+        let lo = philox_word(x, y, w + 1u, key);
+        let ut = (f32(hi) + f32(lo) / 4294967296.0) / 4294967296.0;
         product = product * ut;
         count = count + 1u;
         w = w + 2u;
@@ -1152,12 +926,15 @@ fn pf_binomial(trials: u32, p: f32, x: u32, y: u32, start_word: u32, key: vec2<u
     if (trials == 0u || p <= 0.0) { return vec2<u32>(0u, 0u); }
     if (p >= 1.0) { return vec2<u32>(trials, 0u); }
     if (trials < 32u) {
-        let thresh = u32(p * 4294967296.0);
+        let thresh_hi = u32(p * 4294967296.0);
+        let rem = p * 4294967296.0 - f32(thresh_hi);
+        let thresh_lo = u32(rem * 4294967296.0);
         var c: u32 = 0u;
         var w: u32 = start_word;
         for (var i = 0u; i < trials; i = i + 1u) {
             let hi = philox_word(x, y, w, key);
-            if (hi < thresh) { c = c + 1u; }
+            let lo = philox_word(x, y, w + 1u, key);
+            if (hi < thresh_hi || (hi == thresh_hi && lo < thresh_lo)) { c = c + 1u; }
             w = w + 2u;
         }
         return vec2<u32>(c, w - start_word);
@@ -1186,21 +963,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i >= u.n) { return; }
     let x = i % u.width;
     let y = i / u.width;
-    let d = planes[u.d_off + i];
-    let key = vec2<u32>(u.seed_lo ^ u.layer_idx * PF_W0, u.seed_hi ^ u.layer_idx * PF_W1);
+    let d = in_plane[u.in_off + i];
+    let key = vec2<u32>(u.key_lo, u.key_hi);
     let p = clamp(d / u.d_max, 0.0, 1.0);
-    let prob = pow(p, u.gamma);
     let sp = pf_poisson(u.sites_per_cell, x, y, 0u, key, u.sqrt_sites, u.knuth_threshold);
-    let dev = pf_binomial(sp.x, prob, x, y, sp.y, key);
+    let dev = pf_binomial(sp.x, p, x, y, sp.y, key);
     let fraction = f32(dev.x) / u.sites_per_cell;
-    planes[u.d_off + i] = fraction;
+    out_plane[u.out_off + i] = fraction;
 }
 "#;
 
-/// Particle overwrite — ROI variant. Uses reflected global image coordinates
-/// `(rx, ry)` for the Philox counter so that a root-halo-pixel realization
-/// equals the realization at the physically-reflected image pixel (matching the
-/// full-frame pass that only computes realizations for in-bounds pixels).
 pub const PARTICLE_FIELD_ROI: &str = r#"
 const PF_M0: u32 = 0xD2511F53u;
 const PF_M1: u32 = 0xCD9E8D57u;
@@ -1209,9 +981,9 @@ const PF_W1: u32 = 0xBB67AE85u;
 
 struct PFRU {
     root_x: i32, root_y: i32, root_w: u32, root_h: u32,
-    root_n: u32, img_w: u32, img_h: u32, layer_idx: u32,
-    d_max: f32, gamma: f32, sites_per_cell: f32, d_off: u32,
-    seed_lo: u32, seed_hi: u32, sqrt_sites: f32, knuth_threshold: f32,
+    root_n: u32, img_w: u32, img_h: u32, in_off: u32, out_off: u32,
+    d_max: f32, sites_per_cell: f32, key_lo: u32, key_hi: u32,
+    sqrt_sites: f32, knuth_threshold: f32, p0: u32,
 };
 @group(0) @binding(0) var<storage, read_write> arena: array<f32>;
 @group(0) @binding(1) var<uniform> u: PFRU;
@@ -1256,22 +1028,16 @@ fn philox_word(x: u32, y: u32, i: u32, key: vec2<u32>) -> u32 {
 }
 
 fn pf_gaussian(x: u32, y: u32, start_word: u32, key: vec2<u32>) -> f32 {
-    // Bit-exact Irwin–Hall gaussian: identical to the CPU's f64 accumulation
-    // of the same 12 single-word uniforms cast to f32 (`next_gaussian` in
-    // grain.rs). Each term w/2^32 splits exactly into hi = (w>>12)/2^20 and
-    // lo = (w&0xFFF)/2^32; the 12 hi parts (Σ ≤ 12·2^20 < 2^24) and the 12 lo
-    // parts (Σ < 2^16) each accumulate exactly in f32, and the final hi+lo add
-    // rounds once — the correctly rounded sum. Seeding sum_h at -6.0 makes the
-    // subtraction exact too, and leaves no (a+b)-a-b compensation term that
-    // Metal fast-math reassociation could collapse.
-    var sum_h: f32 = -6.0;
-    var sum_l: f32 = 0.0;
+    var sum_hi: u32 = 0u;
+    var sum_lo: u32 = 0u;
     for (var j = 0u; j < 12u; j = j + 1u) {
         let w = philox_word(x, y, start_word + j, key);
-        sum_h = sum_h + f32(w >> 12u) / 1048576.0;
-        sum_l = sum_l + f32(w & 0xFFFu) / 4294967296.0;
+        sum_hi = sum_hi + (w >> 12u);
+        sum_lo = sum_lo + (w & 0xFFFu);
     }
-    return sum_h + sum_l;
+    let total_hi = sum_hi + (sum_lo >> 12u);
+    let total_lo = sum_lo & 0xFFFu;
+    return (f32(total_hi) - 6291456.0 + f32(total_lo) / 4096.0) / 1048576.0;
 }
 
 fn pf_poisson(lambda: f32, x: u32, y: u32, start_word: u32, key: vec2<u32>, sqrt_lambda: f32, threshold: f32) -> vec2<u32> {
@@ -1279,26 +1045,17 @@ fn pf_poisson(lambda: f32, x: u32, y: u32, start_word: u32, key: vec2<u32>, sqrt
     if (lambda >= 16.0) {
         let g = pf_gaussian(x, y, start_word, key);
         let draw = lambda + sqrt_lambda * g;
-        // `round` matches Rust f32::round (ties away from zero). The old
-        // `u32(draw + 0.5)` form double-rounds once |draw| ≥ 2^24 (half-to-even
-        // instead of half-away), biasing the count by +1 on odd draws.
         let n = u32(round(max(draw, 0.0)));
         return vec2<u32>(n, 12u);
     }
-    // Knuth product loop. `threshold` is exp(-lambda): baked host-side as f32
-    // for the layer-constant sites draw (matching the CPU's f64 exp rounded to
-    // f32); the per-pixel rare-tail calls pass WGSL exp(-lam). Each uniform
-    // consumes TWO Philox words (CPU `next_unit_f64`:
-    // u = ((hi<<21)|(lo>>11))/2^53), approximated in f32 as hi/2^32 while
-    // advancing w by 2u so the GPU stream stays word-aligned with the CPU Philox
-    // stream.
     var product: f32 = 1.0;
     var count: u32 = 0u;
     var w: u32 = start_word;
     for (var iter = 0u; iter < 100u; iter = iter + 1u) {
         if (product <= threshold) { break; }
         let hi = philox_word(x, y, w, key);
-        let ut = f32(hi) / 4294967296.0;
+        let lo = philox_word(x, y, w + 1u, key);
+        let ut = (f32(hi) + f32(lo) / 4294967296.0) / 4294967296.0;
         product = product * ut;
         count = count + 1u;
         w = w + 2u;
@@ -1311,12 +1068,15 @@ fn pf_binomial(trials: u32, p: f32, x: u32, y: u32, start_word: u32, key: vec2<u
     if (trials == 0u || p <= 0.0) { return vec2<u32>(0u, 0u); }
     if (p >= 1.0) { return vec2<u32>(trials, 0u); }
     if (trials < 32u) {
-        let thresh = u32(p * 4294967296.0);
+        let thresh_hi = u32(p * 4294967296.0);
+        let rem = p * 4294967296.0 - f32(thresh_hi);
+        let thresh_lo = u32(rem * 4294967296.0);
         var c: u32 = 0u;
         var w: u32 = start_word;
         for (var i = 0u; i < trials; i = i + 1u) {
             let hi = philox_word(x, y, w, key);
-            if (hi < thresh) { c = c + 1u; }
+            let lo = philox_word(x, y, w + 1u, key);
+            if (hi < thresh_hi || (hi == thresh_hi && lo < thresh_lo)) { c = c + 1u; }
             w = w + 2u;
         }
         return vec2<u32>(c, w - start_word);
@@ -1360,90 +1120,380 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let gy = u.root_y + i32(ly);
     let rx = reflect_index_signed(gx, u.img_w);
     let ry = reflect_index_signed(gy, u.img_h);
-    let d = arena[u.d_off + i];
-    let key = vec2<u32>(u.seed_lo ^ u.layer_idx * PF_W0, u.seed_hi ^ u.layer_idx * PF_W1);
+    let d = arena[u.in_off + i];
+    let key = vec2<u32>(u.key_lo, u.key_hi);
     let p = clamp(d / u.d_max, 0.0, 1.0);
-    let prob = pow(p, u.gamma);
     let sp = pf_poisson(u.sites_per_cell, rx, ry, 0u, key, u.sqrt_sites, u.knuth_threshold);
-    let dev = pf_binomial(sp.x, prob, rx, ry, sp.y, key);
+    let dev = pf_binomial(sp.x, p, rx, ry, sp.y, key);
     let fraction = f32(dev.x) / u.sites_per_cell;
-    arena[u.d_off + i] = fraction;
+    arena[u.out_off + i] = fraction;
 }
 "#;
 
-/// Micro-structure composition: combines three blurred realized-fraction
-/// planes (cloud, crystal, micro_cloud) into the realized fraction plane.
-/// Mirrors CPU `particle_field`:
-///   out = clamp(clouds + micro_weight * (crystal - micro_cloud), 0.0, 1.05)
-/// Full-frame variant — separate scratch buffers per role.
-pub const MICRO_MIX: &str = r#"
-struct MMU { n: u32, off: u32, cloud_off: u32, crystal_off: u32, micro_off: u32, micro_weight: f32, _p0: u32, _p1: u32 };
-@group(0) @binding(0) var<storage, read_write> out_plane: array<f32>;
-@group(0) @binding(1) var<storage, read_write> cloud: array<f32>;
-@group(0) @binding(2) var<storage, read_write> crystal: array<f32>;
-@group(0) @binding(3) var<storage, read_write> micro: array<f32>;
-@group(0) @binding(4) var<uniform> u: MMU;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let cl = cloud[i];
-    let cr = crystal[i];
-    let mc = micro[i];
-    let val = cl + u.micro_weight * (cr - mc);
-    out_plane[u.off + i] = clamp(val, 0.0, 1.05);
-}
-"#;
-
-/// Micro-mix — ROI variant: single arena binding + per-role offsets.
-pub const MICRO_MIX_ROI: &str = r#"
-struct MMU { n: u32, off: u32, cloud_off: u32, crystal_off: u32, micro_off: u32, micro_weight: f32, _p0: u32, _p1: u32 };
-@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
-@group(0) @binding(1) var<uniform> u: MMU;
-
-@compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x + gid.y * 16776960u;
-    if (i >= u.n) { return; }
-    let cl = arena[u.cloud_off + i];
-    let cr = arena[u.crystal_off + i];
-    let mc = arena[u.micro_off + i];
-    let val = cl + u.micro_weight * (cr - mc);
-    arena[u.off + i] = clamp(val, 0.0, 1.05);
-}
-"#;
-
-/// ROI Scan: densitometric scan → ACEScg (Dmin-normalized) with fused invert.
-/// Same body as `SCAN` but addressed against the ROI arena at `dye_base`/`mask_base`
-/// and writing only the core rectangle to `pixels`. Fused toe density remap.
-pub const SCAN_ROI: &str = r#"
+/// Scale blurred developable fraction by d_max back to optical density.
+pub const SCALE_DMAX: &str = r#"
 struct U {
-    core_x: u32, core_y: u32, core_w: u32, core_h: u32,
-    core_n: u32, root_w: u32, root_off_x: u32, root_off_y: u32,
-    root_n: u32, img_w: u32, dye_base: u32, mask_base: u32,
-    num_emul: u32, scale: f32, flags: u32, _p0: u32,
+    n: u32,
+    in_off: u32,
+    out_off: u32,
+    d_max: f32,
 };
-@group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read> arena: array<f32>;
-@group(0) @binding(2) var<storage, read> sc: array<f32>;
+@group(0) @binding(0) var<storage, read> in_plane: array<f32>;
+@group(0) @binding(1) var<storage, read_write> out_plane: array<f32>;
+@group(0) @binding(2) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    out_plane[u.out_off + i] = in_plane[u.in_off + i] * u.d_max;
+}
+"#;
+
+/// Scale blurred developable fraction for ROI arena.
+pub const SCALE_DMAX_ROI: &str = r#"
+struct U {
+    n: u32,
+    in_off: u32,
+    out_off: u32,
+    d_max: f32,
+};
+@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
+@group(0) @binding(1) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    arena[u.out_off + i] = arena[u.in_off + i] * u.d_max;
+}
+"#;
+
+/// Two-component physical adjacency: D_i' = max(0, D_i + sum_j M_ex_ij*(D_j - blur_ex(D_j)) + sum_j M_dir_ij*(D_j - blur_dir(D_j))).
+pub const ADJACENCY_TWO_COMPONENT: &str = r#"
+struct U {
+    n: u32,
+    num_emul: u32,
+    ex_active: u32,
+    dir_active: u32,
+};
+@group(0) @binding(0) var<storage, read_write> dye: array<f32>;
+@group(0) @binding(1) var<storage, read> diffused_ex: array<f32>;
+@group(0) @binding(2) var<storage, read> diffused_dir: array<f32>;
+@group(0) @binding(3) var<storage, read> mat_ex: array<f32>;
+@group(0) @binding(4) var<storage, read> mat_dir: array<f32>;
+@group(0) @binding(5) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    let E = u.num_emul;
+    var orig_dye: array<f32, 8>;
+    for (var s = 0u; s < E; s = s + 1u) {
+        orig_dye[s] = dye[s * u.n + i];
+    }
+    for (var j = 0u; j < E; j = j + 1u) {
+        var sum_ex = 0.0;
+        if (u.ex_active != 0u) {
+            for (var s = 0u; s < E; s = s + 1u) {
+                let m = mat_ex[j * E + s];
+                if (abs(m) > 1e-8) {
+                    let diff = orig_dye[s] - diffused_ex[s * u.n + i];
+                    sum_ex = sum_ex + m * diff;
+                }
+            }
+        }
+        var sum_dir = 0.0;
+        if (u.dir_active != 0u) {
+            for (var s = 0u; s < E; s = s + 1u) {
+                let m = mat_dir[j * E + s];
+                if (abs(m) > 1e-8) {
+                    let diff = orig_dye[s] - diffused_dir[s * u.n + i];
+                    sum_dir = sum_dir + m * diff;
+                }
+            }
+        }
+        let updated = orig_dye[j] + sum_ex + sum_dir;
+        dye[j * u.n + i] = max(updated, 0.0);
+    }
+}
+"#;
+
+/// Two-component physical adjacency for ROI arena.
+pub const ADJACENCY_TWO_COMPONENT_ROI: &str = r#"
+struct U {
+    n: u32,
+    num_emul: u32,
+    dye_base: u32,
+    diff_ex_base: u32,
+    diff_dir_base: u32,
+    ex_active: u32,
+    dir_active: u32,
+    p0: u32,
+};
+@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
+@group(0) @binding(1) var<storage, read> mat_ex: array<f32>;
+@group(0) @binding(2) var<storage, read> mat_dir: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    let E = u.num_emul;
+    var orig_dye: array<f32, 8>;
+    for (var s = 0u; s < E; s = s + 1u) {
+        orig_dye[s] = arena[u.dye_base + s * u.n + i];
+    }
+    for (var j = 0u; j < E; j = j + 1u) {
+        var sum_ex = 0.0;
+        if (u.ex_active != 0u) {
+            for (var s = 0u; s < E; s = s + 1u) {
+                let m = mat_ex[j * E + s];
+                if (abs(m) > 1e-8) {
+                    let diff = orig_dye[s] - arena[u.diff_ex_base + s * u.n + i];
+                    sum_ex = sum_ex + m * diff;
+                }
+            }
+        }
+        var sum_dir = 0.0;
+        if (u.dir_active != 0u) {
+            for (var s = 0u; s < E; s = s + 1u) {
+                let m = mat_dir[j * E + s];
+                if (abs(m) > 1e-8) {
+                    let diff = orig_dye[s] - arena[u.diff_dir_base + s * u.n + i];
+                    sum_dir = sum_dir + m * diff;
+                }
+            }
+        }
+        let updated = orig_dye[j] + sum_ex + sum_dir;
+        arena[u.dye_base + j * u.n + i] = max(updated, 0.0);
+    }
+}
+"#;
+
+/// Densitometric scan -> ACEScg linear RGB planes (Dmin normalized).
+pub const SCAN_TO_ACESCG: &str = r#"
+struct U {
+    n: u32,
+    num_emul: u32,
+    scale: f32,
+    p0: u32,
+};
+@group(0) @binding(0) var<storage, read> dye: array<f32>;
+@group(0) @binding(1) var<storage, read> mask: array<f32>;
+@group(0) @binding(2) var<storage, read_write> scan_r: array<f32>;
+@group(0) @binding(3) var<storage, read_write> scan_g: array<f32>;
+@group(0) @binding(4) var<storage, read_write> scan_b: array<f32>;
+@group(0) @binding(5) var<storage, read> sc: array<f32>;
+@group(0) @binding(6) var<uniform> u: U;
 
 const LOG2_10: f32 = 3.3219280948873623;
 
-fn fog2_to_exposure(d2: f32, inv_gamma: f32, fog2: f32) -> f32 {
-    var d_eff = 0.0;
-    if (d2 > 0.0) {
-        if (d2 < fog2) {
-            d_eff = (d2 * d2) / (2.0 * fog2);
-        } else {
-            d_eff = d2 - 0.5 * fog2;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    let E = u.num_emul;
+    let eps_base = 0u;
+    let maskeps_base = E * 16u;
+    let illum_base = 2u * E * 16u;
+    let xbar_base = illum_base + 16u;
+    let ybar_base = xbar_base + 16u;
+    let zbar_base = ybar_base + 16u;
+    let mat_base = zbar_base + 16u;
+
+    var dens: array<f32, 16>;
+    for (var k = 0u; k < 16u; k = k + 1u) { dens[k] = 0.0; }
+    for (var e = 0u; e < E; e = e + 1u) {
+        let di = dye[e * u.n + i];
+        let dm = mask[e * u.n + i];
+        let eb = eps_base + e * 16u;
+        let mb = maskeps_base + e * 16u;
+        for (var k = 0u; k < 16u; k = k + 1u) {
+            dens[k] = dens[k] + di * sc[eb + k] + dm * sc[mb + k];
         }
     }
-    if (d_eff <= 0.0) {
-        return 0.0;
+    var t: array<f32, 16>;
+    for (var k = 0u; k < 16u; k = k + 1u) {
+        t[k] = exp2(-dens[k] * LOG2_10) * sc[illum_base + k];
     }
-    return exp2(d_eff * inv_gamma) - 1.0;
+    var X = 0.0; var Y = 0.0; var Z = 0.0;
+    for (var k = 0u; k < 15u; k = k + 1u) {
+        X = X + (t[k] * sc[xbar_base + k] + t[k + 1u] * sc[xbar_base + k + 1u]) * 10.0;
+        Y = Y + (t[k] * sc[ybar_base + k] + t[k + 1u] * sc[ybar_base + k + 1u]) * 10.0;
+        Z = Z + (t[k] * sc[zbar_base + k] + t[k + 1u] * sc[zbar_base + k + 1u]) * 10.0;
+    }
+    scan_r[i] = (sc[mat_base + 0u] * X + sc[mat_base + 1u] * Y + sc[mat_base + 2u] * Z) * u.scale;
+    scan_g[i] = (sc[mat_base + 3u] * X + sc[mat_base + 4u] * Y + sc[mat_base + 5u] * Z) * u.scale;
+    scan_b[i] = (sc[mat_base + 6u] * X + sc[mat_base + 7u] * Y + sc[mat_base + 8u] * Z) * u.scale;
+}
+"#;
+
+/// Densitometric scan for ROI arena -> root ACEScg linear RGB planes.
+pub const SCAN_TO_ACESCG_ROI: &str = r#"
+struct U {
+    root_n: u32,
+    num_emul: u32,
+    dye_base: u32,
+    mask_base: u32,
+    r_base: u32,
+    g_base: u32,
+    b_base: u32,
+    scale: f32,
+};
+@group(0) @binding(0) var<storage, read_write> arena: array<f32>;
+@group(0) @binding(1) var<storage, read> sc: array<f32>;
+@group(0) @binding(2) var<uniform> u: U;
+
+const LOG2_10: f32 = 3.3219280948873623;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.root_n) { return; }
+    let E = u.num_emul;
+    let eps_base = 0u;
+    let maskeps_base = E * 16u;
+    let illum_base = 2u * E * 16u;
+    let xbar_base = illum_base + 16u;
+    let ybar_base = xbar_base + 16u;
+    let zbar_base = ybar_base + 16u;
+    let mat_base = zbar_base + 16u;
+
+    var dens: array<f32, 16>;
+    for (var k = 0u; k < 16u; k = k + 1u) { dens[k] = 0.0; }
+    for (var e = 0u; e < E; e = e + 1u) {
+        let di = arena[u.dye_base + e * u.root_n + i];
+        let dm = arena[u.mask_base + e * u.root_n + i];
+        let eb = eps_base + e * 16u;
+        let mb = maskeps_base + e * 16u;
+        for (var k = 0u; k < 16u; k = k + 1u) {
+            dens[k] = dens[k] + di * sc[eb + k] + dm * sc[mb + k];
+        }
+    }
+    var t: array<f32, 16>;
+    for (var k = 0u; k < 16u; k = k + 1u) {
+        t[k] = exp2(-dens[k] * LOG2_10) * sc[illum_base + k];
+    }
+    var X = 0.0; var Y = 0.0; var Z = 0.0;
+    for (var k = 0u; k < 15u; k = k + 1u) {
+        X = X + (t[k] * sc[xbar_base + k] + t[k + 1u] * sc[xbar_base + k + 1u]) * 10.0;
+        Y = Y + (t[k] * sc[ybar_base + k] + t[k + 1u] * sc[ybar_base + k + 1u]) * 10.0;
+        Z = Z + (t[k] * sc[zbar_base + k] + t[k + 1u] * sc[zbar_base + k + 1u]) * 10.0;
+    }
+    arena[u.r_base + i] = (sc[mat_base + 0u] * X + sc[mat_base + 1u] * Y + sc[mat_base + 2u] * Z) * u.scale;
+    arena[u.g_base + i] = (sc[mat_base + 3u] * X + sc[mat_base + 4u] * Y + sc[mat_base + 5u] * Z) * u.scale;
+    arena[u.b_base + i] = (sc[mat_base + 6u] * X + sc[mat_base + 7u] * Y + sc[mat_base + 8u] * Z) * u.scale;
+}
+"#;
+
+/// Final technical invert: converts linear scanned ACEScg to output format.
+pub const INVERT: &str = r#"
+struct InvertU {
+    n: u32,
+    mode: u32,
+    inv_gamma: f32,
+    scanner_s_curve: f32,
+    eps: f32,
+    p0: u32,
+    p1: u32,
+    p2: u32,
+    inv_dmin: vec4<f32>,
+    exponent: vec4<f32>,
+    gain: vec4<f32>,
+};
+@group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read> scan_r: array<f32>;
+@group(0) @binding(2) var<storage, read> scan_g: array<f32>;
+@group(0) @binding(3) var<storage, read> scan_b: array<f32>;
+@group(0) @binding(4) var<uniform> u: InvertU;
+
+fn apply_scanner_scurve(x: f32, s: f32) -> f32 {
+    if (s <= 0.0) { return x; }
+    let BASE_GAMMA: f32 = 2.38;
+    let K: f32 = 0.218;
+    let Y_MAX: f32 = 0.940;
+    var gamma = BASE_GAMMA;
+    if (s > 1.0) { gamma = BASE_GAMMA * s; }
+    let k_gamma = pow(K, gamma);
+    let x_pos = max(x, 0.0);
+    let x_gamma = pow(x_pos, gamma);
+    let f_x = Y_MAX * x_gamma / (x_gamma + k_gamma);
+    if (s <= 1.0) {
+        return (1.0 - s) * x + s * f_x;
+    } else {
+        return f_x;
+    }
+}
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 16776960u;
+    if (i >= u.n) { return; }
+    var r = scan_r[i];
+    var g = scan_g[i];
+    var b = scan_b[i];
+
+    if (u.mode == 1u) {
+        let tr = clamp(r * u.inv_dmin.x, u.eps, 1.0);
+        let tg = clamp(g * u.inv_dmin.y, u.eps, 1.0);
+        let tb = clamp(b * u.inv_dmin.z, u.eps, 1.0);
+        r = 1.0 - pow(tr, u.exponent.x);
+        g = 1.0 - pow(tg, u.exponent.y);
+        b = 1.0 - pow(tb, u.exponent.z);
+    } else if (u.mode == 2u) {
+        let tr = max(r * u.inv_dmin.x, u.eps);
+        let tg = max(g * u.inv_dmin.y, u.eps);
+        let tb = max(b * u.inv_dmin.z, u.eps);
+        var er = max(pow(tr, -u.inv_gamma) - 1.0, 0.0) * u.gain.x;
+        var eg = max(pow(tg, -u.inv_gamma) - 1.0, 0.0) * u.gain.y;
+        var eb = max(pow(tb, -u.inv_gamma) - 1.0, 0.0) * u.gain.z;
+        if (u.scanner_s_curve > 0.0) {
+            er = apply_scanner_scurve(er, u.scanner_s_curve);
+            eg = apply_scanner_scurve(eg, u.scanner_s_curve);
+            eb = apply_scanner_scurve(eb, u.scanner_s_curve);
+        }
+        r = er; g = eg; b = eb;
+    }
+
+    pixels[i] = vec4<f32>(r, g, b, 1.0);
+}
+"#;
+
+/// Invert for ROI core extraction into output buffer.
+pub const INVERT_ROI: &str = r#"
+struct InvertRoiU {
+    core_x: u32, core_y: u32, core_w: u32, core_h: u32,
+    core_n: u32, root_w: u32, root_off_x: u32, root_off_y: u32,
+    root_n: u32, img_w: u32, r_base: u32, g_base: u32,
+    b_base: u32, mode: u32, inv_gamma: f32, scanner_s_curve: f32,
+    eps: f32, p0: u32, p1: u32, p2: u32,
+    inv_dmin: vec4<f32>,
+    exponent: vec4<f32>,
+    gain: vec4<f32>,
+};
+@group(0) @binding(0) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read> arena: array<f32>;
+@group(0) @binding(2) var<uniform> u: InvertRoiU;
+
+fn apply_scanner_scurve(x: f32, s: f32) -> f32 {
+    if (s <= 0.0) { return x; }
+    let BASE_GAMMA: f32 = 2.38;
+    let K: f32 = 0.218;
+    let Y_MAX: f32 = 0.940;
+    var gamma = BASE_GAMMA;
+    if (s > 1.0) { gamma = BASE_GAMMA * s; }
+    let k_gamma = pow(K, gamma);
+    let x_pos = max(x, 0.0);
+    let x_gamma = pow(x_pos, gamma);
+    let f_x = Y_MAX * x_gamma / (x_gamma + k_gamma);
+    if (s <= 1.0) {
+        return (1.0 - s) * x + s * f_x;
+    } else {
+        return f_x;
+    }
 }
 
 @compute @workgroup_size(256)
@@ -1462,83 +1512,32 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ly = u.root_off_y + cy;
     let root_idx = ly * u.root_w + lx;
 
-    let E = u.num_emul;
-    let eps_base = 0u;
-    let maskeps_base = E * 16u;
-    let illum_base = 2u * E * 16u;
-    let xbar_base = illum_base + 16u;
-    let ybar_base = xbar_base + 16u;
-    let zbar_base = ybar_base + 16u;
-    let mat_base = zbar_base + 16u;
-    let toe_base = mat_base + 9u;
+    var r = arena[u.r_base + root_idx];
+    var g = arena[u.g_base + root_idx];
+    var b = arena[u.b_base + root_idx];
 
-    var dens: array<f32, 16>;
-    for (var k = 0u; k < 16u; k = k + 1u) { dens[k] = 0.0; }
-    for (var e = 0u; e < E; e = e + 1u) {
-        let raw_f = arena[u.dye_base + e * u.root_n + root_idx];
-        let dmax = sc[toe_base + e];
-        let inv_gamma = sc[toe_base + E + e];
-        let g = max(raw_f, 0.0);
-        var di = raw_f;
-        if (dmax > 0.0 && g > 0.0) {
-            di = clamp(dmax * pow(g, inv_gamma), 0.0, 1.05 * dmax);
-        } else if (dmax > 0.0) {
-            di = 0.0;
+    if (u.mode == 1u) {
+        let tr = clamp(r * u.inv_dmin.x, u.eps, 1.0);
+        let tg = clamp(g * u.inv_dmin.y, u.eps, 1.0);
+        let tb = clamp(b * u.inv_dmin.z, u.eps, 1.0);
+        r = 1.0 - pow(tr, u.exponent.x);
+        g = 1.0 - pow(tg, u.exponent.y);
+        b = 1.0 - pow(tb, u.exponent.z);
+    } else if (u.mode == 2u) {
+        let tr = max(r * u.inv_dmin.x, u.eps);
+        let tg = max(g * u.inv_dmin.y, u.eps);
+        let tb = max(b * u.inv_dmin.z, u.eps);
+        var er = max(pow(tr, -u.inv_gamma) - 1.0, 0.0) * u.gain.x;
+        var eg = max(pow(tg, -u.inv_gamma) - 1.0, 0.0) * u.gain.y;
+        var eb = max(pow(tb, -u.inv_gamma) - 1.0, 0.0) * u.gain.z;
+        if (u.scanner_s_curve > 0.0) {
+            er = apply_scanner_scurve(er, u.scanner_s_curve);
+            eg = apply_scanner_scurve(eg, u.scanner_s_curve);
+            eb = apply_scanner_scurve(eb, u.scanner_s_curve);
         }
-        let dm = arena[u.mask_base + e * u.root_n + root_idx];
-        let eb = eps_base + e * 16u;
-        let mb = maskeps_base + e * 16u;
-        for (var k = 0u; k < 16u; k = k + 1u) {
-            dens[k] = dens[k] + di * sc[eb + k] + dm * sc[mb + k];
-        }
-    }
-    var t: array<f32, 16>;
-    for (var k = 0u; k < 16u; k = k + 1u) {
-        t[k] = exp2(-dens[k] * LOG2_10) * sc[illum_base + k];
-    }
-    var X = 0.0; var Y = 0.0; var Z = 0.0;
-    for (var k = 0u; k < 15u; k = k + 1u) {
-        X = X + (t[k] * sc[xbar_base + k] + t[k + 1u] * sc[xbar_base + k + 1u]) * 10.0;
-        Y = Y + (t[k] * sc[ybar_base + k] + t[k + 1u] * sc[ybar_base + k + 1u]) * 10.0;
-        Z = Z + (t[k] * sc[zbar_base + k] + t[k + 1u] * sc[zbar_base + k + 1u]) * 10.0;
-    }
-    var rgb = vec3<f32>(
-        (sc[mat_base + 0u] * X + sc[mat_base + 1u] * Y + sc[mat_base + 2u] * Z) * u.scale,
-        (sc[mat_base + 3u] * X + sc[mat_base + 4u] * Y + sc[mat_base + 5u] * Z) * u.scale,
-        (sc[mat_base + 6u] * X + sc[mat_base + 7u] * Y + sc[mat_base + 8u] * Z) * u.scale
-    );
-
-    if ((u.flags & 1u) != 0u) {
-        let inv_base = toe_base + 2u * E;
-        let inv_dmin = vec3<f32>(sc[inv_base + 10u], sc[inv_base + 11u], sc[inv_base + 12u]);
-        let g_val = vec3<f32>(sc[inv_base + 3u], sc[inv_base + 4u], sc[inv_base + 5u]);
-        let eps = sc[inv_base + 8u];
-        let inv_gamma = sc[inv_base + 13u];
-        let fog2 = sc[inv_base + 15u];
-
-        let tc = vec3<f32>(
-            max(rgb.x * inv_dmin.x, eps),
-            max(rgb.y * inv_dmin.y, eps),
-            max(rgb.z * inv_dmin.z, eps),
-        );
-        let d2 = vec3<f32>(
-            -log2(tc.x),
-            -log2(tc.y),
-            -log2(tc.z),
-        );
-        let e_scene = vec3<f32>(
-            fog2_to_exposure(d2.x, inv_gamma, fog2),
-            fog2_to_exposure(d2.y, inv_gamma, fog2),
-            fog2_to_exposure(d2.z, inv_gamma, fog2),
-        );
-
-        rgb = vec3<f32>(
-            g_val.x * e_scene.x,
-            g_val.y * e_scene.y,
-            g_val.z * e_scene.z,
-        );
+        r = er; g = eg; b = eb;
     }
 
-    pixels[out_idx] = vec4<f32>(rgb.x, rgb.y, rgb.z, 1.0);
+    output[out_idx] = vec4<f32>(r, g, b, 1.0);
 }
 "#;

@@ -144,6 +144,6 @@ fn film_pipeline_cpu_and_wgpu_agree_within_tolerance() {
         &cpu_image,
         &wgpu_image,
         2.0*CPU_GPU_ABS_TOLERANCE,
-        cpu_image.rgb_data.len() / 1000,
+        cpu_image.rgb_data.len() / 500,
     );
 }

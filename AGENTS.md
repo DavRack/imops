@@ -66,8 +66,20 @@ Skeptical reviewer. Be an expert on the feature being implemented. Ask yourself:
 - is it under or over engineered?
 - are we changing files we should not change (formatting-only, drift pins, unrelated)?
 - are the physics sound for this change?
+- **TEST INTEGRITY AUDIT (MANDATORY)**: Did Agent 1 touch, weaken, or comment out any test code, test inputs, or assertions? Agent 2 must run `git diff` on all test files against the starting commit / upstream branch. Any commented-out test loop, altered input dynamic range, loosened tolerance, or bypassed assertion is considered **CHEATING** and must trigger an immediate **FAIL**. Passing unit tests must never be accepted at face value if the tests themselves were modified to pass.
 
 We are using a very cheap model, so use as many subagents as make sense.
+
+#### Test integrity — mandatory cheat checks (FAIL if any match)
+
+Agent 2 must **FAIL** the review immediately if any of the following occur:
+1. **Weakened / altered test assertions or inputs:**
+   - Any modification or commenting out of test loops, dynamic range steps (e.g. 20-stop ramps), checkerboards, or synthetic test inputs.
+   - Changing test modes/parameters (e.g. changing `PositiveLinear` to another mode) to bypass failing code paths.
+   - Loosening tolerances, epsilon values, or `max_out_of_spec` counts in tests without explicit, prior user approval.
+2. **False green from test tampering:**
+   - Code that passes only because test conditions were weakened rather than production bugs fixed.
+   - Agent 2 must always verify the `git diff` of all modified `tests/` and `src/**/tests*` files.
 
 #### Film / grain — mandatory cheat checks (FAIL if any match)
 
