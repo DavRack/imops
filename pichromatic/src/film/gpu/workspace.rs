@@ -75,6 +75,10 @@ impl FilmScratch {
             var_partial: ctx.create_f32_buffer(GRAIN_VAR_PARTIALS_PER * e, "film_var_partial"),
         }
     }
+
+    fn matches(&self, width: usize, height: usize, num_emul: usize) -> bool {
+        self.width == width && self.height == height && self.num_emul == num_emul
+    }
 }
 
 /// Layout calculation for bounded ROI arena & workspace.
@@ -355,6 +359,8 @@ impl RoiScratch {
 
 struct FilmGpuWorkspace {
     generation: u64,
+    /// Cached full-frame scratch buffer for zero-allocation re-use.
+    scratch: Option<FilmScratch>,
     /// Single bounded ROI arena for Epic 3 memory limits. No preview/final caching.
     roi_scratch: Option<RoiScratch>,
     /// LRU const buffers keyed by stock fingerprint + width.
@@ -365,6 +371,7 @@ impl FilmGpuWorkspace {
     const fn new() -> Self {
         Self {
             generation: 0,
+            scratch: None,
             roi_scratch: None,
             consts: Vec::new(),
         }
@@ -372,6 +379,7 @@ impl FilmGpuWorkspace {
 
     fn check_generation(&mut self, ctx: &GpuContext) {
         if self.generation != ctx.generation {
+            self.scratch = None;
             self.roi_scratch = None;
             self.consts.clear();
             self.generation = ctx.generation;
@@ -387,7 +395,18 @@ impl FilmGpuWorkspace {
     ) -> FilmScratch {
         self.check_generation(ctx);
         let e = num_emul.max(1);
+        if let Some(s) = self.scratch.take() {
+            if s.matches(width, height, e) {
+                return s;
+            }
+        }
         FilmScratch::allocate(ctx, width, height, e)
+    }
+
+    fn restore_scratch(&mut self, scratch: FilmScratch, generation: u64) {
+        if self.generation == generation {
+            self.scratch = Some(scratch);
+        }
     }
 
     fn take_roi_scratch(
@@ -402,8 +421,6 @@ impl FilmGpuWorkspace {
         self.check_generation(ctx);
         if let Some(s) = self.roi_scratch.take() {
             if s.matches(roi_width, roi_height, img_width, img_height, num_emul) {
-                #[cfg(not(target_arch = "wasm32"))]
-                ctx.poll_wait();
                 return Ok(s);
             }
         }
@@ -473,9 +490,14 @@ impl Drop for FilmGpuLease {
     fn drop(&mut self) {
         let scratch = self.scratch.take();
         let consts = self.consts.take();
-        drop(scratch); // Full-frame scratch is dropped immediately (not retained in workspace).
+        if scratch.is_none() && consts.is_none() {
+            return;
+        }
+        let mut ws = WORKSPACE.0.lock().unwrap();
+        if let Some(scratch) = scratch {
+            ws.restore_scratch(scratch, self.generation);
+        }
         if let Some(consts) = consts {
-            let mut ws = WORKSPACE.0.lock().unwrap();
             ws.restore_consts(self.consts_key, consts, self.generation);
         }
     }

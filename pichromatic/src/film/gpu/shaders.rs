@@ -1013,21 +1013,57 @@ fn philox_block(ctr: vec4<u32>, key: vec2<u32>) -> vec4<u32> {
     return c;
 }
 
-fn philox_word(x: u32, y: u32, i: u32, key: vec2<u32>) -> u32 {
-    let b = i >> 2u;
-    let l = i & 3u;
-    let out = philox_block(vec4<u32>(x, y, 0u, b), key);
-    if (l == 0u) { return out.x; }
-    if (l == 1u) { return out.y; }
-    if (l == 2u) { return out.z; }
-    return out.w;
+struct PhiloxState {
+    key: vec2<u32>,
+    ctr_lo: vec2<u32>,
+    block_idx: u32,
+    lane: u32,
+    block: vec4<u32>,
+};
+
+fn philox_init(key: vec2<u32>, x: u32, y: u32) -> PhiloxState {
+    var st: PhiloxState;
+    st.key = key;
+    st.ctr_lo = vec2<u32>(x, y);
+    st.block_idx = 0u;
+    st.lane = 0u;
+    st.block = philox_block(vec4<u32>(x, y, 0u, 0u), key);
+    return st;
 }
 
-fn pf_gaussian(x: u32, y: u32, start_word: u32, key: vec2<u32>) -> f32 {
+fn philox_next(st: ptr<function, PhiloxState>) -> u32 {
+    if ((*st).lane == 4u) {
+        (*st).block_idx = (*st).block_idx + 1u;
+        (*st).block = philox_block(vec4<u32>((*st).ctr_lo.x, (*st).ctr_lo.y, 0u, (*st).block_idx), (*st).key);
+        (*st).lane = 0u;
+    }
+    let val = (*st).block[(*st).lane];
+    (*st).lane = (*st).lane + 1u;
+    return val;
+}
+
+fn pf_gaussian(st: ptr<function, PhiloxState>) -> f32 {
+    if ((*st).lane == 0u) {
+        let b0 = (*st).block;
+        let b1 = philox_block(vec4<u32>((*st).ctr_lo.x, (*st).ctr_lo.y, 0u, (*st).block_idx + 1u), (*st).key);
+        let b2 = philox_block(vec4<u32>((*st).ctr_lo.x, (*st).ctr_lo.y, 0u, (*st).block_idx + 2u), (*st).key);
+        (*st).block_idx = (*st).block_idx + 2u;
+        (*st).lane = 4u;
+
+        let sum_hi = (b0.x >> 12u) + (b0.y >> 12u) + (b0.z >> 12u) + (b0.w >> 12u)
+                   + (b1.x >> 12u) + (b1.y >> 12u) + (b1.z >> 12u) + (b1.w >> 12u)
+                   + (b2.x >> 12u) + (b2.y >> 12u) + (b2.z >> 12u) + (b2.w >> 12u);
+        let sum_lo = (b0.x & 0xFFFu) + (b0.y & 0xFFFu) + (b0.z & 0xFFFu) + (b0.w & 0xFFFu)
+                   + (b1.x & 0xFFFu) + (b1.y & 0xFFFu) + (b1.z & 0xFFFu) + (b1.w & 0xFFFu)
+                   + (b2.x & 0xFFFu) + (b2.y & 0xFFFu) + (b2.z & 0xFFFu) + (b2.w & 0xFFFu);
+        let total_hi = sum_hi + (sum_lo >> 12u);
+        let total_lo = sum_lo & 0xFFFu;
+        return (f32(total_hi) - 6291456.0 + f32(total_lo) / 4096.0) / 1048576.0;
+    }
     var sum_hi: u32 = 0u;
     var sum_lo: u32 = 0u;
     for (var j = 0u; j < 12u; j = j + 1u) {
-        let w = philox_word(x, y, start_word + j, key);
+        let w = philox_next(st);
         sum_hi = sum_hi + (w >> 12u);
         sum_lo = sum_lo + (w & 0xFFFu);
     }
@@ -1036,63 +1072,57 @@ fn pf_gaussian(x: u32, y: u32, start_word: u32, key: vec2<u32>) -> f32 {
     return (f32(total_hi) - 6291456.0 + f32(total_lo) / 4096.0) / 1048576.0;
 }
 
-fn pf_poisson(lambda: f32, x: u32, y: u32, start_word: u32, key: vec2<u32>, sqrt_lambda: f32, threshold: f32) -> vec2<u32> {
-    if (!(lambda > 0.0)) { return vec2<u32>(0u, 0u); }
+fn pf_poisson(lambda: f32, st: ptr<function, PhiloxState>, sqrt_lambda: f32, threshold: f32) -> u32 {
+    if (!(lambda > 0.0)) { return 0u; }
     if (lambda >= 16.0) {
-        let g = pf_gaussian(x, y, start_word, key);
+        let g = pf_gaussian(st);
         let draw = lambda + sqrt_lambda * g;
-        let n = u32(round(max(draw, 0.0)));
-        return vec2<u32>(n, 12u);
+        return u32(round(max(draw, 0.0)));
     }
     var product: f32 = 1.0;
     var count: u32 = 0u;
-    var w: u32 = start_word;
     for (var iter = 0u; iter < 100u; iter = iter + 1u) {
         if (product <= threshold) { break; }
-        let hi = philox_word(x, y, w, key);
-        let lo = philox_word(x, y, w + 1u, key);
+        let hi = philox_next(st);
+        let lo = philox_next(st);
         let ut = (f32(hi) + f32(lo) / 4294967296.0) / 4294967296.0;
         product = product * ut;
         count = count + 1u;
-        w = w + 2u;
     }
     if (count > 0u) { count = count - 1u; }
-    return vec2<u32>(count, w - start_word);
+    return count;
 }
 
-fn pf_binomial(trials: u32, p: f32, x: u32, y: u32, start_word: u32, key: vec2<u32>) -> vec2<u32> {
-    if (trials == 0u || p <= 0.0) { return vec2<u32>(0u, 0u); }
-    if (p >= 1.0) { return vec2<u32>(trials, 0u); }
+fn pf_binomial(trials: u32, p: f32, st: ptr<function, PhiloxState>) -> u32 {
+    if (trials == 0u || p <= 0.0) { return 0u; }
+    if (p >= 1.0) { return trials; }
     if (trials < 32u) {
         let thresh_hi = u32(p * 4294967296.0);
         let rem = p * 4294967296.0 - f32(thresh_hi);
         let thresh_lo = u32(rem * 4294967296.0);
         var c: u32 = 0u;
-        var w: u32 = start_word;
         for (var i = 0u; i < trials; i = i + 1u) {
-            let hi = philox_word(x, y, w, key);
-            let lo = philox_word(x, y, w + 1u, key);
+            let hi = philox_next(st);
+            let lo = philox_next(st);
             if (hi < thresh_hi || (hi == thresh_hi && lo < thresh_lo)) { c = c + 1u; }
-            w = w + 2u;
         }
-        return vec2<u32>(c, w - start_word);
+        return c;
     }
     if (p < 0.05) {
         let lam = f32(trials) * p;
-        let rp = pf_poisson(lam, x, y, start_word, key, sqrt(lam), exp(-lam));
-        return vec2<u32>(min(rp.x, trials), rp.y);
+        let rp = pf_poisson(lam, st, sqrt(lam), exp(-lam));
+        return min(rp, trials);
     }
     if (p > 0.95) {
         let lam = f32(trials) * (1.0 - p);
-        let rp = pf_poisson(lam, x, y, start_word, key, sqrt(lam), exp(-lam));
-        return vec2<u32>(trials - min(rp.x, trials), rp.y);
+        let rp = pf_poisson(lam, st, sqrt(lam), exp(-lam));
+        return trials - min(rp, trials);
     }
-    let g = pf_gaussian(x, y, start_word, key);
+    let g = pf_gaussian(st);
     let mean = f32(trials) * p;
     let variance = mean * (1.0 - p);
     let draw = mean + sqrt(variance) * g;
-    let dc = u32(round(clamp(draw, 0.0, f32(trials))));
-    return vec2<u32>(dc, 12u);
+    return u32(round(clamp(draw, 0.0, f32(trials))));
 }
 
 @compute @workgroup_size(256)
@@ -1104,9 +1134,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let d = in_plane[u.in_off + i];
     let key = vec2<u32>(u.key_lo, u.key_hi);
     let p = clamp(d / u.d_max, 0.0, 1.0);
-    let sp = pf_poisson(u.sites_per_cell, x, y, 0u, key, u.sqrt_sites, u.knuth_threshold);
-    let dev = pf_binomial(sp.x, p, x, y, sp.y, key);
-    let fraction = f32(dev.x) / u.sites_per_cell;
+    var st = philox_init(key, x, y);
+    let sp = pf_poisson(u.sites_per_cell, &st, u.sqrt_sites, u.knuth_threshold);
+    let dev = pf_binomial(sp, p, &st);
+    let fraction = f32(dev) / u.sites_per_cell;
     out_plane[u.out_off + i] = fraction;
 }
 "#;
@@ -1155,21 +1186,57 @@ fn philox_block(ctr: vec4<u32>, key: vec2<u32>) -> vec4<u32> {
     return c;
 }
 
-fn philox_word(x: u32, y: u32, i: u32, key: vec2<u32>) -> u32 {
-    let b = i >> 2u;
-    let l = i & 3u;
-    let out = philox_block(vec4<u32>(x, y, 0u, b), key);
-    if (l == 0u) { return out.x; }
-    if (l == 1u) { return out.y; }
-    if (l == 2u) { return out.z; }
-    return out.w;
+struct PhiloxState {
+    key: vec2<u32>,
+    ctr_lo: vec2<u32>,
+    block_idx: u32,
+    lane: u32,
+    block: vec4<u32>,
+};
+
+fn philox_init(key: vec2<u32>, x: u32, y: u32) -> PhiloxState {
+    var st: PhiloxState;
+    st.key = key;
+    st.ctr_lo = vec2<u32>(x, y);
+    st.block_idx = 0u;
+    st.lane = 0u;
+    st.block = philox_block(vec4<u32>(x, y, 0u, 0u), key);
+    return st;
 }
 
-fn pf_gaussian(x: u32, y: u32, start_word: u32, key: vec2<u32>) -> f32 {
+fn philox_next(st: ptr<function, PhiloxState>) -> u32 {
+    if ((*st).lane == 4u) {
+        (*st).block_idx = (*st).block_idx + 1u;
+        (*st).block = philox_block(vec4<u32>((*st).ctr_lo.x, (*st).ctr_lo.y, 0u, (*st).block_idx), (*st).key);
+        (*st).lane = 0u;
+    }
+    let val = (*st).block[(*st).lane];
+    (*st).lane = (*st).lane + 1u;
+    return val;
+}
+
+fn pf_gaussian(st: ptr<function, PhiloxState>) -> f32 {
+    if ((*st).lane == 0u) {
+        let b0 = (*st).block;
+        let b1 = philox_block(vec4<u32>((*st).ctr_lo.x, (*st).ctr_lo.y, 0u, (*st).block_idx + 1u), (*st).key);
+        let b2 = philox_block(vec4<u32>((*st).ctr_lo.x, (*st).ctr_lo.y, 0u, (*st).block_idx + 2u), (*st).key);
+        (*st).block_idx = (*st).block_idx + 2u;
+        (*st).lane = 4u;
+
+        let sum_hi = (b0.x >> 12u) + (b0.y >> 12u) + (b0.z >> 12u) + (b0.w >> 12u)
+                   + (b1.x >> 12u) + (b1.y >> 12u) + (b1.z >> 12u) + (b1.w >> 12u)
+                   + (b2.x >> 12u) + (b2.y >> 12u) + (b2.z >> 12u) + (b2.w >> 12u);
+        let sum_lo = (b0.x & 0xFFFu) + (b0.y & 0xFFFu) + (b0.z & 0xFFFu) + (b0.w & 0xFFFu)
+                   + (b1.x & 0xFFFu) + (b1.y & 0xFFFu) + (b1.z & 0xFFFu) + (b1.w & 0xFFFu)
+                   + (b2.x & 0xFFFu) + (b2.y & 0xFFFu) + (b2.z & 0xFFFu) + (b2.w & 0xFFFu);
+        let total_hi = sum_hi + (sum_lo >> 12u);
+        let total_lo = sum_lo & 0xFFFu;
+        return (f32(total_hi) - 6291456.0 + f32(total_lo) / 4096.0) / 1048576.0;
+    }
     var sum_hi: u32 = 0u;
     var sum_lo: u32 = 0u;
     for (var j = 0u; j < 12u; j = j + 1u) {
-        let w = philox_word(x, y, start_word + j, key);
+        let w = philox_next(st);
         sum_hi = sum_hi + (w >> 12u);
         sum_lo = sum_lo + (w & 0xFFFu);
     }
@@ -1178,63 +1245,57 @@ fn pf_gaussian(x: u32, y: u32, start_word: u32, key: vec2<u32>) -> f32 {
     return (f32(total_hi) - 6291456.0 + f32(total_lo) / 4096.0) / 1048576.0;
 }
 
-fn pf_poisson(lambda: f32, x: u32, y: u32, start_word: u32, key: vec2<u32>, sqrt_lambda: f32, threshold: f32) -> vec2<u32> {
-    if (!(lambda > 0.0)) { return vec2<u32>(0u, 0u); }
+fn pf_poisson(lambda: f32, st: ptr<function, PhiloxState>, sqrt_lambda: f32, threshold: f32) -> u32 {
+    if (!(lambda > 0.0)) { return 0u; }
     if (lambda >= 16.0) {
-        let g = pf_gaussian(x, y, start_word, key);
+        let g = pf_gaussian(st);
         let draw = lambda + sqrt_lambda * g;
-        let n = u32(round(max(draw, 0.0)));
-        return vec2<u32>(n, 12u);
+        return u32(round(max(draw, 0.0)));
     }
     var product: f32 = 1.0;
     var count: u32 = 0u;
-    var w: u32 = start_word;
     for (var iter = 0u; iter < 100u; iter = iter + 1u) {
         if (product <= threshold) { break; }
-        let hi = philox_word(x, y, w, key);
-        let lo = philox_word(x, y, w + 1u, key);
+        let hi = philox_next(st);
+        let lo = philox_next(st);
         let ut = (f32(hi) + f32(lo) / 4294967296.0) / 4294967296.0;
         product = product * ut;
         count = count + 1u;
-        w = w + 2u;
     }
     if (count > 0u) { count = count - 1u; }
-    return vec2<u32>(count, w - start_word);
+    return count;
 }
 
-fn pf_binomial(trials: u32, p: f32, x: u32, y: u32, start_word: u32, key: vec2<u32>) -> vec2<u32> {
-    if (trials == 0u || p <= 0.0) { return vec2<u32>(0u, 0u); }
-    if (p >= 1.0) { return vec2<u32>(trials, 0u); }
+fn pf_binomial(trials: u32, p: f32, st: ptr<function, PhiloxState>) -> u32 {
+    if (trials == 0u || p <= 0.0) { return 0u; }
+    if (p >= 1.0) { return trials; }
     if (trials < 32u) {
         let thresh_hi = u32(p * 4294967296.0);
         let rem = p * 4294967296.0 - f32(thresh_hi);
         let thresh_lo = u32(rem * 4294967296.0);
         var c: u32 = 0u;
-        var w: u32 = start_word;
         for (var i = 0u; i < trials; i = i + 1u) {
-            let hi = philox_word(x, y, w, key);
-            let lo = philox_word(x, y, w + 1u, key);
+            let hi = philox_next(st);
+            let lo = philox_next(st);
             if (hi < thresh_hi || (hi == thresh_hi && lo < thresh_lo)) { c = c + 1u; }
-            w = w + 2u;
         }
-        return vec2<u32>(c, w - start_word);
+        return c;
     }
     if (p < 0.05) {
         let lam = f32(trials) * p;
-        let rp = pf_poisson(lam, x, y, start_word, key, sqrt(lam), exp(-lam));
-        return vec2<u32>(min(rp.x, trials), rp.y);
+        let rp = pf_poisson(lam, st, sqrt(lam), exp(-lam));
+        return min(rp, trials);
     }
     if (p > 0.95) {
         let lam = f32(trials) * (1.0 - p);
-        let rp = pf_poisson(lam, x, y, start_word, key, sqrt(lam), exp(-lam));
-        return vec2<u32>(trials - min(rp.x, trials), rp.y);
+        let rp = pf_poisson(lam, st, sqrt(lam), exp(-lam));
+        return trials - min(rp, trials);
     }
-    let g = pf_gaussian(x, y, start_word, key);
+    let g = pf_gaussian(st);
     let mean = f32(trials) * p;
     let variance = mean * (1.0 - p);
     let draw = mean + sqrt(variance) * g;
-    let dc = u32(round(clamp(draw, 0.0, f32(trials))));
-    return vec2<u32>(dc, 12u);
+    return u32(round(clamp(draw, 0.0, f32(trials))));
 }
 
 fn reflect_index_signed(i: i32, len: u32) -> u32 {
@@ -1261,9 +1322,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let d = arena[u.in_off + i];
     let key = vec2<u32>(u.key_lo, u.key_hi);
     let p = clamp(d / u.d_max, 0.0, 1.0);
-    let sp = pf_poisson(u.sites_per_cell, rx, ry, 0u, key, u.sqrt_sites, u.knuth_threshold);
-    let dev = pf_binomial(sp.x, p, rx, ry, sp.y, key);
-    let fraction = f32(dev.x) / u.sites_per_cell;
+    var st = philox_init(key, rx, ry);
+    let sp = pf_poisson(u.sites_per_cell, &st, u.sqrt_sites, u.knuth_threshold);
+    let dev = pf_binomial(sp, p, &st);
+    let fraction = f32(dev) / u.sites_per_cell;
     arena[u.out_off + i] = fraction;
 }
 "#;
@@ -1328,8 +1390,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i >= u.n) { return; }
     let E = u.num_emul;
     var orig_dye: array<f32, 8>;
+    var diff_ex: array<f32, 8>;
+    var diff_dir: array<f32, 8>;
     for (var s = 0u; s < E; s = s + 1u) {
         orig_dye[s] = dye[s * u.n + i];
+        if (u.ex_active != 0u) {
+            diff_ex[s] = diffused_ex[s * u.n + i];
+        }
+        if (u.dir_active != 0u) {
+            diff_dir[s] = diffused_dir[s * u.n + i];
+        }
     }
     for (var j = 0u; j < E; j = j + 1u) {
         var sum_ex = 0.0;
@@ -1337,7 +1407,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             for (var s = 0u; s < E; s = s + 1u) {
                 let m = mat_ex[j * E + s];
                 if (abs(m) > 1e-8) {
-                    let diff = orig_dye[s] - diffused_ex[s * u.n + i];
+                    let diff = orig_dye[s] - diff_ex[s];
                     sum_ex = sum_ex + m * diff;
                 }
             }
@@ -1347,7 +1417,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             for (var s = 0u; s < E; s = s + 1u) {
                 let m = mat_dir[j * E + s];
                 if (abs(m) > 1e-8) {
-                    let diff = orig_dye[s] - diffused_dir[s * u.n + i];
+                    let diff = orig_dye[s] - diff_dir[s];
                     sum_dir = sum_dir + m * diff;
                 }
             }
@@ -1381,8 +1451,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i >= u.n) { return; }
     let E = u.num_emul;
     var orig_dye: array<f32, 8>;
+    var diff_ex: array<f32, 8>;
+    var diff_dir: array<f32, 8>;
     for (var s = 0u; s < E; s = s + 1u) {
         orig_dye[s] = arena[u.dye_base + s * u.n + i];
+        if (u.ex_active != 0u) {
+            diff_ex[s] = arena[u.diff_ex_base + s * u.n + i];
+        }
+        if (u.dir_active != 0u) {
+            diff_dir[s] = arena[u.diff_dir_base + s * u.n + i];
+        }
     }
     for (var j = 0u; j < E; j = j + 1u) {
         var sum_ex = 0.0;
@@ -1390,7 +1468,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             for (var s = 0u; s < E; s = s + 1u) {
                 let m = mat_ex[j * E + s];
                 if (abs(m) > 1e-8) {
-                    let diff = orig_dye[s] - arena[u.diff_ex_base + s * u.n + i];
+                    let diff = orig_dye[s] - diff_ex[s];
                     sum_ex = sum_ex + m * diff;
                 }
             }
@@ -1400,7 +1478,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             for (var s = 0u; s < E; s = s + 1u) {
                 let m = mat_dir[j * E + s];
                 if (abs(m) > 1e-8) {
-                    let diff = orig_dye[s] - arena[u.diff_dir_base + s * u.n + i];
+                    let diff = orig_dye[s] - diff_dir[s];
                     sum_dir = sum_dir + m * diff;
                 }
             }

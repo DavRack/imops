@@ -254,6 +254,302 @@ struct ChromaDenoiseParamsGpu {
     _pad: f32,
 }
 
+struct ChromaDenoiseScratch {
+    n: usize,
+    y: wgpu::Buffer,
+    cr: wgpu::Buffer,
+    cb: wgpu::Buffer,
+    tmp: wgpu::Buffer,
+    mean_g: wgpu::Buffer,
+    var_g: wgpu::Buffer,
+    work0: wgpu::Buffer,
+    work1: wgpu::Buffer,
+    work2: wgpu::Buffer,
+    work3: wgpu::Buffer,
+}
+
+impl ChromaDenoiseScratch {
+    fn allocate(ctx: &GpuContext, n: usize) -> Self {
+        Self {
+            n,
+            y: ctx.create_f32_buffer(n, "chroma_denoise_y"),
+            cr: ctx.create_f32_buffer(n, "chroma_denoise_cr"),
+            cb: ctx.create_f32_buffer(n, "chroma_denoise_cb"),
+            tmp: ctx.create_f32_buffer(n, "chroma_denoise_tmp"),
+            mean_g: ctx.create_f32_buffer(n, "chroma_denoise_mean_g"),
+            var_g: ctx.create_f32_buffer(n, "chroma_denoise_var_g"),
+            work0: ctx.create_f32_buffer(n, "chroma_denoise_work0"),
+            work1: ctx.create_f32_buffer(n, "chroma_denoise_work1"),
+            work2: ctx.create_f32_buffer(n, "chroma_denoise_work2"),
+            work3: ctx.create_f32_buffer(n, "chroma_denoise_work3"),
+        }
+    }
+}
+
+static CHROMA_SCRATCH: std::sync::Mutex<Option<(u64, ChromaDenoiseScratch)>> = std::sync::Mutex::new(None);
+
+const EXTRACT_SHADER: &str = r#"
+    struct Params {
+        width: u32,
+        height: u32,
+        radius: u32,
+        epsilon: f32,
+        wr: f32,
+        wg: f32,
+        wb: f32,
+        _pad: f32,
+    };
+    @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+    @group(0) @binding(1) var<storage, read_write> y: array<f32>;
+    @group(0) @binding(2) var<storage, read_write> cr: array<f32>;
+    @group(0) @binding(3) var<storage, read_write> cb: array<f32>;
+    @group(0) @binding(4) var<uniform> params: Params;
+
+    @compute @workgroup_size(256)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let i = global_id.x + global_id.y * 16776960u;
+        let n = params.width * params.height;
+        if (i >= n) { return; }
+        let p = pixels[i];
+        let yv = params.wr * p.r + params.wg * p.g + params.wb * p.b;
+        y[i] = yv;
+        cr[i] = p.r - yv;
+        cb[i] = p.b - yv;
+    }
+"#;
+
+const RECONSTRUCT_SHADER: &str = r#"
+    struct Params {
+        width: u32,
+        height: u32,
+        radius: u32,
+        epsilon: f32,
+        wr: f32,
+        wg: f32,
+        wb: f32,
+        _pad: f32,
+    };
+    @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+    @group(0) @binding(1) var<storage, read_write> cr: array<f32>;
+    @group(0) @binding(2) var<storage, read_write> cb: array<f32>;
+    @group(0) @binding(3) var<uniform> params: Params;
+
+    @compute @workgroup_size(256)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let i = global_id.x + global_id.y * 16776960u;
+        let n = params.width * params.height;
+        if (i >= n) { return; }
+        let p = pixels[i];
+        let yv = params.wr * p.r + params.wg * p.g + params.wb * p.b;
+        let crs = cr[i];
+        let cbs = cb[i];
+        let r = yv + crs;
+        let g = yv - (params.wr / params.wg) * crs - (params.wb / params.wg) * cbs;
+        let b = yv + cbs;
+        pixels[i] = vec4<f32>(r, g, b, p.a);
+    }
+"#;
+
+const BOX_FILTER_H_SHADER: &str = r#"
+    struct Params {
+        width: u32,
+        height: u32,
+        radius: u32,
+        epsilon: f32,
+        wr: f32,
+        wg: f32,
+        wb: f32,
+        _pad: f32,
+    };
+    @group(0) @binding(0) var<storage, read_write> input_data: array<f32>;
+    @group(0) @binding(1) var<storage, read_write> tmp: array<f32>;
+    @group(0) @binding(2) var<uniform> params: Params;
+
+    @compute @workgroup_size(64)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let y = global_id.x;
+        if (y >= params.height) { return; }
+        let row = y * params.width;
+        let r = params.radius;
+        let w = params.width;
+
+        var sum = 0.0;
+        let dx_max = min(r, w - 1u);
+        for (var dx = 0u; dx <= dx_max; dx++) {
+            sum += input_data[row + dx];
+        }
+        tmp[row] = sum;
+
+        for (var x = 1u; x < w; x++) {
+            if (x > r) {
+                sum -= input_data[row + x - r - 1u];
+            }
+            if (x + r < w) {
+                sum += input_data[row + x + r];
+            }
+            tmp[row + x] = sum;
+        }
+    }
+"#;
+
+const BOX_FILTER_V_SHADER: &str = r#"
+    struct Params {
+        width: u32,
+        height: u32,
+        radius: u32,
+        epsilon: f32,
+        wr: f32,
+        wg: f32,
+        wb: f32,
+        _pad: f32,
+    };
+    @group(0) @binding(0) var<storage, read_write> tmp: array<f32>;
+    @group(0) @binding(1) var<storage, read_write> output_data: array<f32>;
+    @group(0) @binding(2) var<uniform> params: Params;
+
+    @compute @workgroup_size(64)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let x = global_id.x;
+        if (x >= params.width) { return; }
+        let r = params.radius;
+        let w = params.width;
+        let h = params.height;
+
+        var sum = 0.0;
+        let dy_max = min(r, h - 1u);
+        for (var dy = 0u; dy <= dy_max; dy++) {
+            sum += tmp[dy * w + x];
+        }
+        {
+            let cy = f32(min(r, 0u) + min(r, h - 1u) + 1u);
+            let cx = f32(min(r, x) + min(r, w - 1u - x) + 1u);
+            output_data[x] = sum / (cx * cy);
+        }
+
+        for (var y = 1u; y < h; y++) {
+            if (y > r) {
+                sum -= tmp[(y - r - 1u) * w + x];
+            }
+            if (y + r < h) {
+                sum += tmp[(y + r) * w + x];
+            }
+            let cy = f32(min(r, y) + min(r, h - 1u - y) + 1u);
+            let cx = f32(min(r, x) + min(r, w - 1u - x) + 1u);
+            output_data[y * w + x] = sum / (cx * cy);
+        }
+    }
+"#;
+
+const MUL_PLANE_SHADER: &str = r#"
+    struct Params {
+        width: u32,
+        height: u32,
+        radius: u32,
+        epsilon: f32,
+        wr: f32,
+        wg: f32,
+        wb: f32,
+        _pad: f32,
+    };
+    @group(0) @binding(0) var<storage, read> a: array<f32>;
+    @group(0) @binding(1) var<storage, read> b: array<f32>;
+    @group(0) @binding(2) var<storage, read_write> out_data: array<f32>;
+    @group(0) @binding(3) var<uniform> params: Params;
+
+    @compute @workgroup_size(256)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let i = global_id.x + global_id.y * 16776960u;
+        let n = params.width * params.height;
+        if (i >= n) { return; }
+        out_data[i] = a[i] * b[i];
+    }
+"#;
+
+const VAR_FROM_MEANS_SHADER: &str = r#"
+    struct Params {
+        width: u32,
+        height: u32,
+        radius: u32,
+        epsilon: f32,
+        wr: f32,
+        wg: f32,
+        wb: f32,
+        _pad: f32,
+    };
+    @group(0) @binding(0) var<storage, read> mean_gg: array<f32>;
+    @group(0) @binding(1) var<storage, read> mean_g: array<f32>;
+    @group(0) @binding(2) var<storage, read_write> var_g: array<f32>;
+    @group(0) @binding(3) var<uniform> params: Params;
+
+    @compute @workgroup_size(256)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let i = global_id.x + global_id.y * 16776960u;
+        let n = params.width * params.height;
+        if (i >= n) { return; }
+        let mg = mean_g[i];
+        var_g[i] = mean_gg[i] - mg * mg;
+    }
+"#;
+
+const GUIDED_AB_SHADER: &str = r#"
+    struct Params {
+        width: u32,
+        height: u32,
+        radius: u32,
+        epsilon: f32,
+        wr: f32,
+        wg: f32,
+        wb: f32,
+        _pad: f32,
+    };
+    @group(0) @binding(0) var<storage, read> mean_g: array<f32>;
+    @group(0) @binding(1) var<storage, read> mean_p: array<f32>;
+    @group(0) @binding(2) var<storage, read> mean_gp: array<f32>;
+    @group(0) @binding(3) var<storage, read> var_g: array<f32>;
+    @group(0) @binding(4) var<storage, read_write> a_out: array<f32>;
+    @group(0) @binding(5) var<storage, read_write> b_out: array<f32>;
+    @group(0) @binding(6) var<uniform> params: Params;
+
+    @compute @workgroup_size(256)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let i = global_id.x + global_id.y * 16776960u;
+        let n = params.width * params.height;
+        if (i >= n) { return; }
+        let mg = mean_g[i];
+        let mp = mean_p[i];
+        let cov = mean_gp[i] - mg * mp;
+        let a_val = cov / (var_g[i] + params.epsilon);
+        a_out[i] = a_val;
+        b_out[i] = mp - a_val * mg;
+    }
+"#;
+
+const GUIDED_APPLY_SHADER: &str = r#"
+    struct Params {
+        width: u32,
+        height: u32,
+        radius: u32,
+        epsilon: f32,
+        wr: f32,
+        wg: f32,
+        wb: f32,
+        _pad: f32,
+    };
+    @group(0) @binding(0) var<storage, read> mean_a: array<f32>;
+    @group(0) @binding(1) var<storage, read> mean_b: array<f32>;
+    @group(0) @binding(2) var<storage, read> guide: array<f32>;
+    @group(0) @binding(3) var<storage, read_write> out_data: array<f32>;
+    @group(0) @binding(4) var<uniform> params: Params;
+
+    @compute @workgroup_size(256)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let i = global_id.x + global_id.y * 16776960u;
+        let n = params.width * params.height;
+        if (i >= n) { return; }
+        out_data[i] = mean_a[i] * guide[i] + mean_b[i];
+    }
+"#;
+
 /// Native GPU luma-guided chroma denoise (guided filter). No CPU fallback.
 pub fn chroma_denoise_gpu(
     ctx: &GpuContext,
@@ -281,333 +577,135 @@ pub fn chroma_denoise_gpu(
     let params_bytes = bytemuck::bytes_of(&params);
     let workgroups = ((n as u32) + 255) / 256;
 
-    let y = ctx.create_f32_buffer(n, "chroma_denoise_y");
-    let cr = ctx.create_f32_buffer(n, "chroma_denoise_cr");
-    let cb = ctx.create_f32_buffer(n, "chroma_denoise_cb");
-    let tmp = ctx.create_f32_buffer(n, "chroma_denoise_tmp");
-    let mean_g = ctx.create_f32_buffer(n, "chroma_denoise_mean_g");
-    let var_g = ctx.create_f32_buffer(n, "chroma_denoise_var_g");
-    let work0 = ctx.create_f32_buffer(n, "chroma_denoise_work0");
-    let work1 = ctx.create_f32_buffer(n, "chroma_denoise_work1");
-    let work2 = ctx.create_f32_buffer(n, "chroma_denoise_work2");
-    let work3 = ctx.create_f32_buffer(n, "chroma_denoise_work3");
+    let scratch = {
+        let mut guard = CHROMA_SCRATCH.lock().unwrap();
+        if let Some((gen, s)) = guard.take() {
+            if gen == ctx.generation && s.n >= n {
+                s
+            } else {
+                ChromaDenoiseScratch::allocate(ctx, n)
+            }
+        } else {
+            ChromaDenoiseScratch::allocate(ctx, n)
+        }
+    };
+
+    let mut encoder = ctx.create_command_encoder("chroma_denoise");
+    let mut keep: Vec<(wgpu::BindGroup, Option<wgpu::Buffer>)> = Vec::with_capacity(32);
 
     // Extract Y, Cr, Cb from RGB.
-    let extract_shader = r#"
-        struct Params {
-            width: u32,
-            height: u32,
-            radius: u32,
-            epsilon: f32,
-            wr: f32,
-            wg: f32,
-            wb: f32,
-            _pad: f32,
-        };
-        @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
-        @group(0) @binding(1) var<storage, read_write> y: array<f32>;
-        @group(0) @binding(2) var<storage, read_write> cr: array<f32>;
-        @group(0) @binding(3) var<storage, read_write> cb: array<f32>;
-        @group(0) @binding(4) var<uniform> params: Params;
-
-        @compute @workgroup_size(256)
-        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let i = global_id.x + global_id.y * 16776960u;
-            let n = params.width * params.height;
-            if (i >= n) { return; }
-            let p = pixels[i];
-            let yv = params.wr * p.r + params.wg * p.g + params.wb * p.b;
-            y[i] = yv;
-            cr[i] = p.r - yv;
-            cb[i] = p.b - yv;
-        }
-    "#;
-    ctx.dispatch_compute_shader_multi(
+    keep.push(ctx.encode_compute_shader_multi(
+        &mut encoder,
         "chroma_denoise_extract",
-        extract_shader,
-        &[&storage_buffer.buffer, &y, &cr, &cb],
+        EXTRACT_SHADER,
+        &[&storage_buffer.buffer, &scratch.y, &scratch.cr, &scratch.cb],
         params_bytes,
         workgroups,
-    );
+    ));
 
     // Shared guide statistics: mean_g, mean_gg, var_g.
-    box_filter_gpu(ctx, &y, &mean_g, &tmp, &params, workgroups);
-    mul_plane_gpu(ctx, &y, &y, &work0, &params, workgroups);
-    box_filter_gpu(ctx, &work0, &work1, &tmp, &params, workgroups);
-    var_from_means_gpu(ctx, &work1, &mean_g, &var_g, &params, workgroups);
+    encode_box_filter_gpu(ctx, &mut encoder, &mut keep, &scratch.y, &scratch.mean_g, &scratch.tmp, &params);
+    keep.push(ctx.encode_compute_shader_multi(
+        &mut encoder,
+        "mul_plane_gg",
+        MUL_PLANE_SHADER,
+        &[&scratch.y, &scratch.y, &scratch.work0],
+        params_bytes,
+        workgroups,
+    ));
+    encode_box_filter_gpu(ctx, &mut encoder, &mut keep, &scratch.work0, &scratch.work1, &scratch.tmp, &params);
+    keep.push(ctx.encode_compute_shader_multi(
+        &mut encoder,
+        "var_from_means",
+        VAR_FROM_MEANS_SHADER,
+        &[&scratch.work1, &scratch.mean_g, &scratch.var_g],
+        params_bytes,
+        workgroups,
+    ));
 
-    guided_filter_channel_gpu(
+    encode_guided_filter_channel_gpu(
         ctx,
-        &y,
-        &cr,
-        &mean_g,
-        &var_g,
-        [&work0, &work1, &work2, &work3],
-        &tmp,
+        &mut encoder,
+        &mut keep,
+        &scratch.y,
+        &scratch.cr,
+        &scratch.mean_g,
+        &scratch.var_g,
+        [&scratch.work0, &scratch.work1, &scratch.work2, &scratch.work3],
+        &scratch.tmp,
         &params,
         workgroups,
     );
 
-    guided_filter_channel_gpu(
+    encode_guided_filter_channel_gpu(
         ctx,
-        &y,
-        &cb,
-        &mean_g,
-        &var_g,
-        [&work0, &work1, &work2, &work3],
-        &tmp,
+        &mut encoder,
+        &mut keep,
+        &scratch.y,
+        &scratch.cb,
+        &scratch.mean_g,
+        &scratch.var_g,
+        [&scratch.work0, &scratch.work1, &scratch.work2, &scratch.work3],
+        &scratch.tmp,
         &params,
         workgroups,
     );
 
     // Reconstruct RGB from smoothed chroma (luma recomputed from original RGB).
-    let reconstruct_shader = r#"
-        struct Params {
-            width: u32,
-            height: u32,
-            radius: u32,
-            epsilon: f32,
-            wr: f32,
-            wg: f32,
-            wb: f32,
-            _pad: f32,
-        };
-        @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
-        @group(0) @binding(1) var<storage, read_write> cr: array<f32>;
-        @group(0) @binding(2) var<storage, read_write> cb: array<f32>;
-        @group(0) @binding(3) var<uniform> params: Params;
-
-        @compute @workgroup_size(256)
-        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let i = global_id.x + global_id.y * 16776960u;
-            let n = params.width * params.height;
-            if (i >= n) { return; }
-            let p = pixels[i];
-            let yv = params.wr * p.r + params.wg * p.g + params.wb * p.b;
-            let crs = cr[i];
-            let cbs = cb[i];
-            let r = yv + crs;
-            let g = yv - (params.wr / params.wg) * crs - (params.wb / params.wg) * cbs;
-            let b = yv + cbs;
-            pixels[i] = vec4<f32>(r, g, b, p.a);
-        }
-    "#;
-    ctx.dispatch_compute_shader_multi(
+    keep.push(ctx.encode_compute_shader_multi(
+        &mut encoder,
         "chroma_denoise_reconstruct",
-        reconstruct_shader,
-        &[&storage_buffer.buffer, &cr, &cb],
+        RECONSTRUCT_SHADER,
+        &[&storage_buffer.buffer, &scratch.cr, &scratch.cb],
         params_bytes,
         workgroups,
-    );
+    ));
+
+    ctx.queue.submit(Some(encoder.finish()));
+    #[cfg(not(target_arch = "wasm32"))]
+    ctx.poll_wait();
+    drop(keep);
+
+    // Return scratch to pool
+    let mut guard = CHROMA_SCRATCH.lock().unwrap();
+    *guard = Some((ctx.generation, scratch));
 }
 
-fn box_filter_gpu(
+fn encode_box_filter_gpu(
     ctx: &GpuContext,
+    encoder: &mut wgpu::CommandEncoder,
+    keep: &mut Vec<(wgpu::BindGroup, Option<wgpu::Buffer>)>,
     input: &wgpu::Buffer,
     output: &wgpu::Buffer,
     tmp: &wgpu::Buffer,
     params: &ChromaDenoiseParamsGpu,
-    _workgroups: u32,
 ) {
     let params_bytes = bytemuck::bytes_of(params);
-
-    // Horizontal pass: unnormalized sliding-window sums (matches CPU).
-    // One workgroup item per row.
-    let h_shader = r#"
-        struct Params {
-            width: u32,
-            height: u32,
-            radius: u32,
-            epsilon: f32,
-            wr: f32,
-            wg: f32,
-            wb: f32,
-            _pad: f32,
-        };
-        @group(0) @binding(0) var<storage, read_write> input_data: array<f32>;
-        @group(0) @binding(1) var<storage, read_write> tmp: array<f32>;
-        @group(0) @binding(2) var<uniform> params: Params;
-
-        @compute @workgroup_size(64)
-        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let y = global_id.x;
-            if (y >= params.height) { return; }
-            let row = y * params.width;
-            let r = params.radius;
-            let w = params.width;
-
-            var sum = 0.0;
-            let dx_max = min(r, w - 1u);
-            for (var dx = 0u; dx <= dx_max; dx++) {
-                sum += input_data[row + dx];
-            }
-            tmp[row] = sum;
-
-            for (var x = 1u; x < w; x++) {
-                if (x > r) {
-                    sum -= input_data[row + x - r - 1u];
-                }
-                if (x + r < w) {
-                    sum += input_data[row + x + r];
-                }
-                tmp[row + x] = sum;
-            }
-        }
-    "#;
     let h_workgroups = (params.height + 63) / 64;
-    ctx.dispatch_compute_shader_multi(
+    keep.push(ctx.encode_compute_shader_multi(
+        encoder,
         "box_filter_h",
-        h_shader,
+        BOX_FILTER_H_SHADER,
         &[input, tmp],
         params_bytes,
         h_workgroups,
-    );
+    ));
 
-    // Vertical pass + normalize by clipped window size.
-    let v_shader = r#"
-        struct Params {
-            width: u32,
-            height: u32,
-            radius: u32,
-            epsilon: f32,
-            wr: f32,
-            wg: f32,
-            wb: f32,
-            _pad: f32,
-        };
-        @group(0) @binding(0) var<storage, read_write> tmp: array<f32>;
-        @group(0) @binding(1) var<storage, read_write> output_data: array<f32>;
-        @group(0) @binding(2) var<uniform> params: Params;
-
-        @compute @workgroup_size(64)
-        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let x = global_id.x;
-            if (x >= params.width) { return; }
-            let r = params.radius;
-            let w = params.width;
-            let h = params.height;
-
-            var sum = 0.0;
-            let dy_max = min(r, h - 1u);
-            for (var dy = 0u; dy <= dy_max; dy++) {
-                sum += tmp[dy * w + x];
-            }
-            // Store unnormalized; normalize below in same loop over y.
-            // First pixel y=0
-            {
-                let cy = f32(min(r, 0u) + min(r, h - 1u) + 1u);
-                let cx = f32(min(r, x) + min(r, w - 1u - x) + 1u);
-                output_data[x] = sum / (cx * cy);
-            }
-
-            for (var y = 1u; y < h; y++) {
-                if (y > r) {
-                    sum -= tmp[(y - r - 1u) * w + x];
-                }
-                if (y + r < h) {
-                    sum += tmp[(y + r) * w + x];
-                }
-                let cy = f32(min(r, y) + min(r, h - 1u - y) + 1u);
-                let cx = f32(min(r, x) + min(r, w - 1u - x) + 1u);
-                output_data[y * w + x] = sum / (cx * cy);
-            }
-        }
-    "#;
     let v_workgroups = (params.width + 63) / 64;
-    ctx.dispatch_compute_shader_multi(
+    keep.push(ctx.encode_compute_shader_multi(
+        encoder,
         "box_filter_v",
-        v_shader,
+        BOX_FILTER_V_SHADER,
         &[tmp, output],
         params_bytes,
         v_workgroups,
-    );
+    ));
 }
 
-fn mul_plane_gpu(
+fn encode_guided_filter_channel_gpu(
     ctx: &GpuContext,
-    a: &wgpu::Buffer,
-    b: &wgpu::Buffer,
-    out: &wgpu::Buffer,
-    params: &ChromaDenoiseParamsGpu,
-    workgroups: u32,
-) {
-    let shader = r#"
-        struct Params {
-            width: u32,
-            height: u32,
-            radius: u32,
-            epsilon: f32,
-            wr: f32,
-            wg: f32,
-            wb: f32,
-            _pad: f32,
-        };
-        @group(0) @binding(0) var<storage, read> a: array<f32>;
-        @group(0) @binding(1) var<storage, read> b: array<f32>;
-        @group(0) @binding(2) var<storage, read_write> out_data: array<f32>;
-        @group(0) @binding(3) var<uniform> params: Params;
-
-        @compute @workgroup_size(256)
-        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let i = global_id.x + global_id.y * 16776960u;
-            let n = params.width * params.height;
-            if (i >= n) { return; }
-            out_data[i] = a[i] * b[i];
-        }
-    "#;
-    ctx.dispatch_compute_shader_multi(
-        "mul_plane",
-        shader,
-        &[a, b, out],
-        bytemuck::bytes_of(params),
-        workgroups,
-    );
-}
-
-fn var_from_means_gpu(
-    ctx: &GpuContext,
-    mean_gg: &wgpu::Buffer,
-    mean_g: &wgpu::Buffer,
-    var_g: &wgpu::Buffer,
-    params: &ChromaDenoiseParamsGpu,
-    workgroups: u32,
-) {
-    let shader = r#"
-        struct Params {
-            width: u32,
-            height: u32,
-            radius: u32,
-            epsilon: f32,
-            wr: f32,
-            wg: f32,
-            wb: f32,
-            _pad: f32,
-        };
-        @group(0) @binding(0) var<storage, read> mean_gg: array<f32>;
-        @group(0) @binding(1) var<storage, read> mean_g: array<f32>;
-        @group(0) @binding(2) var<storage, read_write> var_g: array<f32>;
-        @group(0) @binding(3) var<uniform> params: Params;
-
-        @compute @workgroup_size(256)
-        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let i = global_id.x + global_id.y * 16776960u;
-            let n = params.width * params.height;
-            if (i >= n) { return; }
-            let mg = mean_g[i];
-            var_g[i] = mean_gg[i] - mg * mg;
-        }
-    "#;
-    ctx.dispatch_compute_shader_multi(
-        "var_from_means",
-        shader,
-        &[mean_gg, mean_g, var_g],
-        bytemuck::bytes_of(params),
-        workgroups,
-    );
-}
-
-fn guided_filter_channel_gpu(
-    ctx: &GpuContext,
+    encoder: &mut wgpu::CommandEncoder,
+    keep: &mut Vec<(wgpu::BindGroup, Option<wgpu::Buffer>)>,
     guide: &wgpu::Buffer,
     source: &wgpu::Buffer,
     mean_g: &wgpu::Buffer,
@@ -619,85 +717,35 @@ fn guided_filter_channel_gpu(
 ) {
     let params_bytes = bytemuck::bytes_of(params);
 
-    // Reuse four full-frame planes as each intermediate becomes dead.
-    box_filter_gpu(ctx, source, work0, tmp, params, workgroups); // mean_p
-    mul_plane_gpu(ctx, guide, source, work1, params, workgroups); // prod
-    box_filter_gpu(ctx, work1, work2, tmp, params, workgroups); // mean_gp
+    encode_box_filter_gpu(ctx, encoder, keep, source, work0, tmp, params); // mean_p
+    keep.push(ctx.encode_compute_shader_multi(
+        encoder,
+        "mul_gp",
+        MUL_PLANE_SHADER,
+        &[guide, source, work1],
+        params_bytes,
+        workgroups,
+    ));
+    encode_box_filter_gpu(ctx, encoder, keep, work1, work2, tmp, params); // mean_gp
 
-    // a = cov / (var + eps), b = mean_p - a * mean_g
-    let ab_shader = r#"
-        struct Params {
-            width: u32,
-            height: u32,
-            radius: u32,
-            epsilon: f32,
-            wr: f32,
-            wg: f32,
-            wb: f32,
-            _pad: f32,
-        };
-        @group(0) @binding(0) var<storage, read> mean_g: array<f32>;
-        @group(0) @binding(1) var<storage, read> mean_p: array<f32>;
-        @group(0) @binding(2) var<storage, read> mean_gp: array<f32>;
-        @group(0) @binding(3) var<storage, read> var_g: array<f32>;
-        @group(0) @binding(4) var<storage, read_write> a_out: array<f32>;
-        @group(0) @binding(5) var<storage, read_write> b_out: array<f32>;
-        @group(0) @binding(6) var<uniform> params: Params;
-
-        @compute @workgroup_size(256)
-        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let i = global_id.x + global_id.y * 16776960u;
-            let n = params.width * params.height;
-            if (i >= n) { return; }
-            let mg = mean_g[i];
-            let mp = mean_p[i];
-            let cov = mean_gp[i] - mg * mp;
-            let a_val = cov / (var_g[i] + params.epsilon);
-            a_out[i] = a_val;
-            b_out[i] = mp - a_val * mg;
-        }
-    "#;
-    ctx.dispatch_compute_shader_multi(
+    keep.push(ctx.encode_compute_shader_multi(
+        encoder,
         "guided_ab",
-        ab_shader,
+        GUIDED_AB_SHADER,
         &[mean_g, work0, work2, var_g, work1, work3],
         params_bytes,
         workgroups,
-    );
+    ));
 
-    box_filter_gpu(ctx, work1, work2, tmp, params, workgroups); // mean_a
-    box_filter_gpu(ctx, work3, work0, tmp, params, workgroups); // mean_b
+    encode_box_filter_gpu(ctx, encoder, keep, work1, work2, tmp, params); // mean_a
+    encode_box_filter_gpu(ctx, encoder, keep, work3, work0, tmp, params); // mean_b
 
-    let apply_shader = r#"
-        struct Params {
-            width: u32,
-            height: u32,
-            radius: u32,
-            epsilon: f32,
-            wr: f32,
-            wg: f32,
-            wb: f32,
-            _pad: f32,
-        };
-        @group(0) @binding(0) var<storage, read> mean_a: array<f32>;
-        @group(0) @binding(1) var<storage, read> mean_b: array<f32>;
-        @group(0) @binding(2) var<storage, read> guide: array<f32>;
-        @group(0) @binding(3) var<storage, read_write> out_data: array<f32>;
-        @group(0) @binding(4) var<uniform> params: Params;
-
-        @compute @workgroup_size(256)
-        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let i = global_id.x + global_id.y * 16776960u;
-            let n = params.width * params.height;
-            if (i >= n) { return; }
-            out_data[i] = mean_a[i] * guide[i] + mean_b[i];
-        }
-    "#;
-    ctx.dispatch_compute_shader_multi(
+    keep.push(ctx.encode_compute_shader_multi(
+        encoder,
         "guided_apply",
-        apply_shader,
+        GUIDED_APPLY_SHADER,
         &[work2, work0, guide, source],
         params_bytes,
         workgroups,
-    );
+    ));
 }
