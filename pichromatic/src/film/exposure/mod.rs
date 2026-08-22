@@ -9,7 +9,10 @@ pub mod upsample;
 pub use capture::DevelopableFractionLut;
 
 use crate::film::constants::ABSORPTION_SIGMA_SCALE_PER_UM;
-use crate::film::exposure::absorption::{absorb_stack, absorb_stack_upward, mean_absorbed_fluence};
+use crate::film::exposure::absorption::{
+    absorb_walk_forward_with_trans, absorb_walk_upward_with_trans, layer_transmittances,
+    mean_absorbed_fluence, LayerAbsorption,
+};
 use crate::film::exposure::upsample::upsample_acescg_f32;
 use crate::film::stock::{FilmStock, LayerKind};
 use crate::film::types::LatentPlanes;
@@ -79,45 +82,83 @@ pub fn expose_with_pitch_shutter_and_scale(
         .filter(|l| l.kind == LayerKind::Emulsion)
         .count();
 
-    let mut absorbed_planes: Vec<Vec<f32>> = (0..emulsion_count).map(|_| vec![0.0f32; n]).collect();
-    let mut bounce_planes: Vec<Vec<f32>> = (0..emulsion_count).map(|_| vec![0.0f32; n]).collect();
     let sigma_scale = ABSORPTION_SIGMA_SCALE_PER_UM;
 
-    let per_pixel: Vec<(Vec<f32>, Vec<f32>)> = rgb
-        .par_iter()
-        .map(|px| {
-            let spectrum = pixel_fluence_spectrum(px, capture_scale);
-            let (forward_layers, phi_trans) = absorb_stack(&stock.layers, &spectrum, sigma_scale);
-            let mut phi_refl = [0.0f32; 16];
-            for i in 0..16 {
-                phi_refl[i] = phi_trans[i] * stock.antihalation.reflectance.samples[i] as f32;
-            }
-            let upward_layers = absorb_stack_upward(&stock.layers, &phi_refl, sigma_scale);
+    let trans_table = layer_transmittances(&stock.layers, sigma_scale);
 
-            let mut emulsion_abs = Vec::with_capacity(emulsion_count);
-            for la in &forward_layers {
-                if la.produces_latent {
-                    emulsion_abs.push(mean_absorbed_fluence(&la.absorbed));
+    let e_count = emulsion_count;
+    let stride = 2 * e_count;
+    let mut flat = vec![0.0f32; stride * n];
+
+    // Guard mirrors the old degenerate behavior (empty image / no emulsion
+    // layers): par_chunks_mut panics on a zero chunk size.
+    if stride > 0 && n > 0 {
+        // One task per image row: scratch Vecs allocated once per row, never per pixel.
+        flat.par_chunks_mut(stride * width)
+            .enumerate()
+            .for_each(|(row, row_chunk)| {
+                let y0 = row * width;
+                let mut forward_scratch: Vec<LayerAbsorption> =
+                    Vec::with_capacity(stock.layers.len());
+                let mut upward_scratch: Vec<LayerAbsorption> =
+                    Vec::with_capacity(stock.layers.len());
+                for x in 0..width {
+                    let p = y0 + x;
+                    let spectrum = pixel_fluence_spectrum(&rgb[p], capture_scale);
+                    let phi_trans = absorb_walk_forward_with_trans(
+                        &stock.layers,
+                        &spectrum,
+                        &trans_table,
+                        &mut forward_scratch,
+                    );
+                    let mut phi_refl = [0.0f32; 16];
+                    for i in 0..16 {
+                        phi_refl[i] =
+                            phi_trans[i] * stock.antihalation.reflectance.samples[i] as f32;
+                    }
+                    absorb_walk_upward_with_trans(
+                        &stock.layers,
+                        &phi_refl,
+                        &trans_table,
+                        &mut upward_scratch,
+                    );
+                    let chunk = &mut row_chunk[x * stride..(x + 1) * stride];
+                    let mut ae = 0usize;
+                    for la in forward_scratch.iter() {
+                        if la.produces_latent {
+                            chunk[ae] = mean_absorbed_fluence(&la.absorbed);
+                            ae += 1;
+                        }
+                    }
+                    let mut be = 0usize;
+                    for la in upward_scratch.iter() {
+                        if la.produces_latent {
+                            chunk[e_count + be] = mean_absorbed_fluence(&la.absorbed);
+                            be += 1;
+                        }
+                    }
                 }
-            }
-            let mut emulsion_bounce = Vec::with_capacity(emulsion_count);
-            for la in &upward_layers {
-                if la.produces_latent {
-                    emulsion_bounce.push(mean_absorbed_fluence(&la.absorbed));
-                }
-            }
-            (emulsion_abs, emulsion_bounce)
+            });
+    }
+
+    let mut absorbed_planes: Vec<Vec<f32>> = (0..e_count)
+        .map(|e| {
+            let mut v = vec![0.0f32; n];
+            v.par_iter_mut()
+                .enumerate()
+                .for_each(|(p, x)| *x = flat[p * stride + e]);
+            v
         })
         .collect();
-
-    for (p, (abs_list, bounce_list)) in per_pixel.iter().enumerate() {
-        for (e, &a) in abs_list.iter().enumerate() {
-            absorbed_planes[e][p] = a;
-        }
-        for (e, &b) in bounce_list.iter().enumerate() {
-            bounce_planes[e][p] = b;
-        }
-    }
+    let mut bounce_planes: Vec<Vec<f32>> = (0..e_count)
+        .map(|e| {
+            let mut v = vec![0.0f32; n];
+            v.par_iter_mut()
+                .enumerate()
+                .for_each(|(p, x)| *x = flat[p * stride + e_count + e]);
+            v
+        })
+        .collect();
 
     crate::film::exposure::halation::apply_spatial_exposure_effects(
         &mut absorbed_planes,

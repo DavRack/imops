@@ -114,6 +114,39 @@ pub struct GpuContext {
 unsafe impl Send for GpuContext {}
 unsafe impl Sync for GpuContext {}
 
+/// Type-system escape hatch for GPU resources (e.g. pooled `wgpu::Buffer`s)
+/// held in long-lived storage. wgpu handles are `!Send + !Sync` on wasm32,
+/// but this repo only ever touches GPU objects from one thread: native
+/// callers serialize through the pipeline, and wasm32 has no threads (rayon
+/// runs sequentially). The invariant is asserted here, once.
+///
+/// Shared access must still be externally synchronized (callers hold a Mutex
+/// around the wrapped value); this wrapper only restores Send/Sync bounds.
+pub struct GpuSend<T>(T);
+
+impl<T> GpuSend<T> {
+    pub(crate) const fn new(value: T) -> Self {
+        Self(value)
+    }
+
+    pub(crate) fn get(&self) -> &T {
+        &self.0
+    }
+
+    pub(crate) fn get_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+
+    pub(crate) fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+// SAFETY: single-threaded GPU access invariant (see type docs).
+unsafe impl<T> Send for GpuSend<T> {}
+// SAFETY: shared access is externally synchronized by callers (see type docs).
+unsafe impl<T> Sync for GpuSend<T> {}
+
 pub struct GpuImageBuffer {
     pub buffer: wgpu::Buffer,
     pub width: usize,

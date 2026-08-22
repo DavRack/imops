@@ -143,6 +143,142 @@ pub fn absorb_stack_upward(
     out
 }
 
+/// Per-layer spectral transmittance exp(−OD) precomputed once per stock.
+/// Bit-identical to the values computed inside `absorb_stack` /
+/// `absorb_stack_upward`: same f64 OD expression, exp, then f32 round.
+pub(crate) fn layer_transmittances(layers: &[EmulsionLayer], sigma_scale: f64) -> Vec<[f32; 16]> {
+    layers
+        .iter()
+        .map(|layer| {
+            let mut trans = [0.0f32; 16];
+            match layer.kind {
+                LayerKind::Emulsion => {
+                    let sens = layer
+                        .spectral_sensitivity
+                        .as_ref()
+                        .expect("emulsion has sensitivity");
+                    let rho = layer.silver_halide_fraction as f64;
+                    let thickness = layer.thickness.0 as f64;
+                    for i in 0..16 {
+                        let od = sens.samples[i] * sigma_scale * rho * thickness;
+                        trans[i] = (-od).exp() as f32;
+                    }
+                }
+                LayerKind::Filter | LayerKind::Overcoat | LayerKind::Antihalation => {
+                    if let Some(curve) = layer.spectral_sensitivity.as_ref() {
+                        let thickness = layer.thickness.0 as f64;
+                        for i in 0..16 {
+                            let od = curve.samples[i] * thickness;
+                            trans[i] = (-od).exp() as f32;
+                        }
+                    }
+                }
+                LayerKind::Support => {}
+            }
+            trans
+        })
+        .collect()
+}
+
+/// Table-consuming variant of [`absorb_stack`] that reuses `out` as scratch.
+/// Identical walk math (same operands, same order); only the per-tap
+/// transmittance lookup differs (table vs recompute).
+pub(crate) fn absorb_walk_forward_with_trans(
+    layers: &[EmulsionLayer],
+    incident: &[f32; 16],
+    trans_table: &[[f32; 16]],
+    out: &mut Vec<LayerAbsorption>,
+) -> [f32; 16] {
+    let mut phi = *incident;
+    out.clear();
+
+    for (layer_index, layer) in layers.iter().enumerate() {
+        let mut absorbed = [0.0f32; 16];
+        let produces_latent = layer.kind == LayerKind::Emulsion;
+
+        match layer.kind {
+            LayerKind::Emulsion => {
+                for i in 0..16 {
+                    let trans = trans_table[layer_index][i];
+                    let phi_t = phi[i] * trans;
+                    absorbed[i] = phi[i] - phi_t;
+                    phi[i] = phi_t;
+                }
+            }
+            LayerKind::Filter | LayerKind::Overcoat | LayerKind::Antihalation => {
+                // Curve-less layers pass light unchanged, matching the original
+                // walk's `if let Some(curve)` guard.
+                if layer.spectral_sensitivity.is_some() {
+                    for i in 0..16 {
+                        let trans = trans_table[layer_index][i];
+                        let phi_t = phi[i] * trans;
+                        absorbed[i] = phi[i] - phi_t;
+                        phi[i] = phi_t;
+                    }
+                }
+            }
+            LayerKind::Support => {}
+        }
+
+        out.push(LayerAbsorption {
+            absorbed,
+            produces_latent,
+        });
+    }
+
+    phi
+}
+
+/// Table-consuming variant of [`absorb_stack_upward`] that reuses `out` as scratch.
+pub(crate) fn absorb_walk_upward_with_trans(
+    layers: &[EmulsionLayer],
+    incident_upward: &[f32; 16],
+    trans_table: &[[f32; 16]],
+    out: &mut Vec<LayerAbsorption>,
+) {
+    let mut phi = *incident_upward;
+    out.clear();
+    out.resize(
+        layers.len(),
+        LayerAbsorption {
+            absorbed: [0.0; 16],
+            produces_latent: false,
+        },
+    );
+
+    for (idx, layer) in layers.iter().enumerate().rev() {
+        let mut absorbed = [0.0f32; 16];
+        let produces_latent = layer.kind == LayerKind::Emulsion;
+
+        match layer.kind {
+            LayerKind::Emulsion => {
+                for i in 0..16 {
+                    let trans = trans_table[idx][i];
+                    let phi_t = phi[i] * trans;
+                    absorbed[i] = phi[i] - phi_t;
+                    phi[i] = phi_t;
+                }
+            }
+            LayerKind::Filter | LayerKind::Overcoat | LayerKind::Antihalation => {
+                if layer.spectral_sensitivity.is_some() {
+                    for i in 0..16 {
+                        let trans = trans_table[idx][i];
+                        let phi_t = phi[i] * trans;
+                        absorbed[i] = phi[i] - phi_t;
+                        phi[i] = phi_t;
+                    }
+                }
+            }
+            LayerKind::Support => {}
+        }
+
+        out[idx] = LayerAbsorption {
+            absorbed,
+            produces_latent,
+        };
+    }
+}
+
 /// Mean spectral absorbed fluence for an emulsion layer over visible spectrum (400–700 nm, photons/µm² proxy).
 ///
 /// Computes the trapezoidal integral `∫ Φ_abs(λ) dλ` over the MVP grid

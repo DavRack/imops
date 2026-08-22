@@ -194,6 +194,12 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
         };
         scan(&stock, &dyes, mode, pitch)
     };
+    if params.output == FilmOutput::PositiveLinear {
+        image
+            .metadata
+            .extensions
+            .insert(crate::image::ExposureGain(1.0));
+    }
     image.metadata.color_space = Some(ColorSpaceTag::AcesCg);
     Ok(())
 }

@@ -461,12 +461,10 @@ impl FilmGpuWorkspace {
     }
 }
 
-static WORKSPACE: SyncWorkspace = SyncWorkspace(Mutex::new(FilmGpuWorkspace::new()));
-
-/// wgpu::Buffer is !Send on wasm; match GpuContext's unsafe Sync/Send.
-struct SyncWorkspace(Mutex<FilmGpuWorkspace>);
-unsafe impl Sync for SyncWorkspace {}
-unsafe impl Send for SyncWorkspace {}
+static WORKSPACE: Mutex<crate::gpu::GpuSend<FilmGpuWorkspace>> =
+    Mutex::new(crate::gpu::GpuSend::new(FilmGpuWorkspace::new()));
+// wgpu::Buffer is !Send on wasm; GpuSend documents the single-threaded GPU
+// access invariant this static relies on.
 
 /// Leased film GPU resources. Restored to the global workspace on drop.
 pub struct FilmGpuLease {
@@ -493,7 +491,8 @@ impl Drop for FilmGpuLease {
         if scratch.is_none() && consts.is_none() {
             return;
         }
-        let mut ws = WORKSPACE.0.lock().unwrap();
+        let mut guard = WORKSPACE.lock().unwrap();
+        let ws = guard.get_mut();
         if let Some(scratch) = scratch {
             ws.restore_scratch(scratch, self.generation);
         }
@@ -528,7 +527,8 @@ impl Drop for FilmRoiLease {
         if roi_scratch.is_none() && consts.is_none() {
             return;
         }
-        let mut ws = WORKSPACE.0.lock().unwrap();
+        let mut guard = WORKSPACE.lock().unwrap();
+        let ws = guard.get_mut();
         if let Some(roi_scratch) = roi_scratch {
             ws.restore_roi_scratch(roi_scratch, self.generation);
         }
@@ -548,7 +548,8 @@ pub fn acquire_film_resources(
     height: usize,
     num_emul: usize,
 ) -> FilmGpuLease {
-    let mut ws = WORKSPACE.0.lock().unwrap();
+    let mut guard = WORKSPACE.lock().unwrap();
+    let ws = guard.get_mut();
     let scratch = ws.take_scratch(ctx, width, height, num_emul);
     let (consts_key, consts) = ws.take_consts(ctx, stock, params, meta, width);
     FilmGpuLease {
@@ -570,7 +571,8 @@ pub(super) fn acquire_film_roi_resources(
     img_height: usize,
     num_emul: usize,
 ) -> Result<FilmRoiLease, crate::film::FilmError> {
-    let mut ws = WORKSPACE.0.lock().unwrap();
+    let mut guard = WORKSPACE.lock().unwrap();
+    let ws = guard.get_mut();
     let roi_scratch =
         ws.take_roi_scratch(ctx, roi_width, roi_height, img_width, img_height, num_emul)?;
     let (consts_key, consts) = ws.take_consts(ctx, stock, params, meta, img_width);
@@ -591,7 +593,8 @@ pub fn acquire_film_consts(
     meta: &crate::image::ImageMetadata,
     width: usize,
 ) -> FilmGpuLease {
-    let mut ws = WORKSPACE.0.lock().unwrap();
+    let mut guard = WORKSPACE.lock().unwrap();
+    let ws = guard.get_mut();
     let (consts_key, consts) = ws.take_consts(ctx, stock, params, meta, width);
     FilmGpuLease {
         scratch: None,

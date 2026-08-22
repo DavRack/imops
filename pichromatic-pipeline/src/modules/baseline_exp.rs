@@ -34,7 +34,13 @@ fn exposure_ev(metadata: &pichromatic::image::ImageMetadata) -> f32 {
 
 impl PipelineModule for Module<BaselineExposureCompensation> {
     fn process_cpu(&self, image: &mut Image) {
-        image.exp(exposure_ev(&image.metadata));
+        let ev = exposure_ev(&image.metadata);
+        let gain = 2.0_f32.powf(ev);
+        image
+            .metadata
+            .extensions
+            .insert(pichromatic::image::ExposureGain(gain));
+        image.exp(ev);
     }
 
     fn process_gpu(
@@ -43,7 +49,11 @@ impl PipelineModule for Module<BaselineExposureCompensation> {
         gpu_buf: &pichromatic::gpu::GpuImageBuffer,
         meta: &mut pichromatic::image::ImageMetadata,
     ) {
-        pichromatic::exp::exp_gpu(ctx, gpu_buf, exposure_ev(meta));
+        let ev = exposure_ev(meta);
+        let gain = 2.0_f32.powf(ev);
+        meta.extensions
+            .insert(pichromatic::image::ExposureGain(gain));
+        pichromatic::exp::exp_gpu(ctx, gpu_buf, ev);
     }
 
     fn schema(&self) -> ModuleSchema {

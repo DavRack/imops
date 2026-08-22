@@ -146,6 +146,11 @@ impl Image {
         self
     }
 
+    pub fn sigmoid_tone_map_with_gain(&mut self, gain: f32) -> &mut Image {
+        crate::tone_map::sigmoid_with_gain(&mut self.rgb_data, gain);
+        self
+    }
+
     /// Power-law display encode (`γ` = 2.2 ≈ sRGB, 2.4 = BT.1886).
     pub fn gamma(&mut self, gamma: SubPixel) -> &mut Image {
         gamma_encode(&mut self.rgb_data, gamma);

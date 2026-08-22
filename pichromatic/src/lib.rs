@@ -16,7 +16,7 @@ pub mod bm3d;
 pub mod vignette;
 pub mod rotation;
 pub mod gpu;
+pub mod extensions;
 
 pub use color::ColorSpaceTag;
-
-
+pub use extensions::Extensions;

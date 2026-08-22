@@ -27,14 +27,15 @@ pub fn gaussian_blur_separable(buf: &mut [f32], width: usize, height: usize, sig
     buf.par_chunks_mut(width)
         .enumerate()
         .for_each(|(y, out_row)| {
-            for x in 0..width {
-                let mut acc = 0.0f32;
-                for (k, &w) in kernel.iter().enumerate() {
-                    let yy = reflect_index(y as isize + k as isize - radius as isize, height);
-                    acc += tmp[yy * width + x] * w;
+            let mut acc = vec![0.0f32; width];
+            for (k, &w) in kernel.iter().enumerate() {
+                let yy = reflect_index(y as isize + k as isize - radius as isize, height);
+                let src = &tmp[yy * width..yy * width + width];
+                for x in 0..width {
+                    acc[x] += src[x] * w;
                 }
-                out_row[x] = acc;
             }
+            out_row.copy_from_slice(&acc);
         });
 }
 
@@ -116,7 +117,27 @@ pub(crate) fn gaussian_kernel_l2_sq(sigma: f32) -> f32 {
 fn convolve_1d_reflect(input: &[f32], output: &mut [f32], kernel: &[f32]) {
     let n = input.len();
     let radius = kernel.len() / 2;
-    for x in 0..n {
+    let left_end = radius.min(n);
+    let right_start = n.saturating_sub(radius).max(left_end);
+    for x in 0..left_end {
+        let mut acc = 0.0f32;
+        for (k, &w) in kernel.iter().enumerate() {
+            let xx = reflect_index(x as isize + k as isize - radius as isize, n);
+            acc += input[xx] * w;
+        }
+        output[x] = acc;
+    }
+    // Interior samples: every tap lands inside [0, n), so the reflect lookup
+    // resolves to `base + k` and can be skipped without changing any value.
+    for x in left_end..right_start {
+        let base = x - radius;
+        let mut acc = 0.0f32;
+        for (k, &w) in kernel.iter().enumerate() {
+            acc += input[base + k] * w;
+        }
+        output[x] = acc;
+    }
+    for x in right_start..n {
         let mut acc = 0.0f32;
         for (k, &w) in kernel.iter().enumerate() {
             let xx = reflect_index(x as isize + k as isize - radius as isize, n);

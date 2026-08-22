@@ -269,6 +269,10 @@ impl PipelineModule for Module<Film> {
 
         pollster::block_on(pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params))
             .expect("GPU film process failed");
+        if params.output == FilmOutput::PositiveLinear {
+            meta.extensions
+                .insert(pichromatic::image::ExposureGain(1.0));
+        }
     }
 
     fn process_gpu_async<'a>(
@@ -296,6 +300,11 @@ impl PipelineModule for Module<Film> {
             pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params)
                 .await
                 .expect("GPU film process failed");
+
+            if params.output == FilmOutput::PositiveLinear {
+                meta.extensions
+                    .insert(pichromatic::image::ExposureGain(1.0));
+            }
 
             // Ensure Film's queue submits are visible before Sigmoid/CST/present.
             // Without this, wasm can tone-map the pre-Film absolute-luminance

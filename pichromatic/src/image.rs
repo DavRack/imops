@@ -1,8 +1,31 @@
 use crate::color::ColorSpaceTag;
+use crate::extensions::Extensions;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::{cfa::CFA, demosaic::Rect, pixel::SubPixel};
+
+/// Absolute radiance gain applied to convert camera raw values to physical radiance (cd/m²).
+///
+/// Baseline exposure compensation multiplies raw values by this gain. Downstream display tone mapping
+/// can normalize by dividing by `gain.0` to recover the original scene-relative 18.5% middle gray level.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ExposureGain(pub f32);
+
+impl ExposureGain {
+    pub const UNITY: Self = Self(1.0);
+
+    #[inline]
+    pub fn gain(&self) -> f32 {
+        self.0
+    }
+}
+
+impl Default for ExposureGain {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
 
 /// EXIF/DNG orientation as a pure clockwise rotation (flips map to [`Normal`] for now).
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -56,6 +79,9 @@ pub struct ImageMetadata {
     pub orientation: ImageOrientation,
     pub height: usize,
     pub width: usize,
+    /// Dynamic typed extensions / pass-through metadata container.
+    #[serde(default, skip)]
+    pub extensions: Extensions,
 }
 
 fn hash_debug<T: Debug, H: Hasher>(value: &T, hasher: &mut H) {
@@ -200,6 +226,7 @@ impl Hash for ImageMetadata {
         hash_debug(&self.orientation, hasher);
         self.height.hash(hasher);
         self.width.hash(hasher);
+        hash_debug(&self.extensions, hasher);
     }
 }
 
@@ -254,6 +281,7 @@ impl ImageMetadata {
             && self.orientation == other.orientation
             && self.height == other.height
             && self.width == other.width
+            && self.extensions == other.extensions
     }
 
     pub fn hash(&self) -> u64 {

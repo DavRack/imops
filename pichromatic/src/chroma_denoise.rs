@@ -1,6 +1,6 @@
 use rayon::prelude::*;
 
-use crate::gpu::{GpuContext, GpuImageBuffer};
+use crate::gpu::{GpuContext, GpuImageBuffer, GpuSend};
 use crate::pixel::{R_RELATIVE_LUMINANCE, G_RELATIVE_LUMINANCE, B_RELATIVE_LUMINANCE};
 
 /// Luma-guided chroma denoising via the guided filter (He et al. 2013).
@@ -286,7 +286,8 @@ impl ChromaDenoiseScratch {
     }
 }
 
-static CHROMA_SCRATCH: std::sync::Mutex<Option<(u64, ChromaDenoiseScratch)>> = std::sync::Mutex::new(None);
+static CHROMA_SCRATCH: std::sync::Mutex<Option<(u64, GpuSend<ChromaDenoiseScratch>)>> =
+    std::sync::Mutex::new(None);
 
 const EXTRACT_SHADER: &str = r#"
     struct Params {
@@ -580,15 +581,16 @@ pub fn chroma_denoise_gpu(
     let scratch = {
         let mut guard = CHROMA_SCRATCH.lock().unwrap();
         if let Some((gen, s)) = guard.take() {
-            if gen == ctx.generation && s.n >= n {
+            if gen == ctx.generation && s.get().n >= n {
                 s
             } else {
-                ChromaDenoiseScratch::allocate(ctx, n)
+                GpuSend::new(ChromaDenoiseScratch::allocate(ctx, n))
             }
         } else {
-            ChromaDenoiseScratch::allocate(ctx, n)
+            GpuSend::new(ChromaDenoiseScratch::allocate(ctx, n))
         }
-    };
+    }
+    .into_inner();
 
     let mut encoder = ctx.create_command_encoder("chroma_denoise");
     let mut keep: Vec<(wgpu::BindGroup, Option<wgpu::Buffer>)> = Vec::with_capacity(32);
@@ -668,7 +670,7 @@ pub fn chroma_denoise_gpu(
 
     // Return scratch to pool
     let mut guard = CHROMA_SCRATCH.lock().unwrap();
-    *guard = Some((ctx.generation, scratch));
+    *guard = Some((ctx.generation, GpuSend::new(scratch)));
 }
 
 fn encode_box_filter_gpu(

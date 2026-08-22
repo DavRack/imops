@@ -514,6 +514,7 @@ pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
         lens_info: None,
         camera_serial_number: None,
         orientation,
+        extensions: Default::default(),
     };
 
     let mut image = Image{
@@ -545,6 +546,44 @@ pub extern "C" fn get_pixel_pipeline_c(
         let pipeline = config::parse_config(config_str.to_string());
         Box::into_raw(Box::new(pipeline))
     }).unwrap_or(std::ptr::null_mut())
+}
+
+/// Overwrite the capture-exposure metadata used by exposure-anchoring modules
+/// (BaselineExposureCompensation, Film capture scale).
+///
+/// Values are applied only when physically usable: shutter_seconds, f_number
+/// and iso must be finite and positive; `baseline_ev` is an EV offset and is
+/// accepted whenever finite (0.0 = neutral). Fields left invalid keep their
+/// previously parsed values. Returns true when the image pointer was valid.
+#[no_mangle]
+pub extern "C" fn set_capture_exposure_c(
+    image: *mut Image,
+    shutter_seconds: f64,
+    f_number: f32,
+    iso: f32,
+    baseline_ev: f32,
+) -> bool {
+    if image.is_null() {
+        return false;
+    }
+    let image_ptr_val = image as usize;
+    catch_panic(move || {
+        let image_obj = unsafe { &mut *(image_ptr_val as *mut Image) };
+        if shutter_seconds.is_finite() && shutter_seconds > 0.0 {
+            image_obj.metadata.shutter_seconds = Some(shutter_seconds as f32);
+        }
+        if f_number.is_finite() && f_number > 0.0 {
+            image_obj.metadata.f_number = Some(f_number);
+        }
+        if iso.is_finite() && iso > 0.0 {
+            image_obj.metadata.iso = Some(iso);
+        }
+        if baseline_ev.is_finite() {
+            image_obj.metadata.baseline_exposure = Some(baseline_ev);
+        }
+        true
+    })
+    .unwrap_or(false)
 }
 
 #[no_mangle]

@@ -5,28 +5,40 @@ use rayon::prelude::*;
 
 #[inline(always)]
 pub fn square_sigmoid(x: f32) -> f32 {
-    /// Constant multiplier to ensure 18% middle gray in maps to 18% gray out:
-    /// c = 1.0 / (1.0 - 0.18) = 1.219512
-    const C: f32 = 1.219512;
+    /// Constant multiplier to ensure 18.5% middle gray in maps to 18.5% gray out:
+    /// c = 1.0 / (1.0 - MIDDLE_GRAY) = 1.0 / (1.0 - 0.185) ≈ 1.2269939
+    const C: f32 = 1.0 / (1.0 - crate::pixel::MIDDLE_GRAY);
     if x <= 0.0 {
         return 0.0;
     }
     1.0 / (1.0 + (1.0 / (C * x)))
 }
-pub fn sigmoid(image_buffer: &mut ImageBuffer){
+
+pub fn sigmoid(image_buffer: &mut ImageBuffer) {
+    sigmoid_with_gain(image_buffer, 1.0);
+}
+
+pub fn sigmoid_with_gain(image_buffer: &mut ImageBuffer, gain: f32) {
+    let inv_gain = if gain > 0.0 && gain.is_finite() {
+        1.0 / gain
+    } else {
+        1.0
+    };
     let params = &RgcParams::default();
-    image_buffer.par_iter_mut().for_each(|pixel|{
-        let gamut_compressed_pixel = gamut_compress_pixel(*pixel, params);
-        // let s = square_sigmoid(m);
-        // let factor = s/m;
-        // println!("{} --- {}", s, m);
-        let [_, _ ,h] = AcesCg.convert(Oklch, gamut_compressed_pixel);
+    image_buffer.par_iter_mut().for_each(|pixel| {
+        let rel_pixel = [
+            pixel[0] * inv_gain,
+            pixel[1] * inv_gain,
+            pixel[2] * inv_gain,
+        ];
+        let gamut_compressed_pixel = gamut_compress_pixel(rel_pixel, params);
+        let [_, _, h] = AcesCg.convert(Oklch, gamut_compressed_pixel);
         let p = gamut_compressed_pixel.map(|subp| square_sigmoid(subp));
         let k = 5.0;
         let s = p.luminance();
-        let m = 1.0-s.powf(k);
+        let m = 1.0 - s.powf(k);
         let [l, c, _] = AcesCg.convert(Oklch, p);
-        *pixel = Oklch.convert(AcesCg, [l, c*m, h]);
+        *pixel = Oklch.convert(AcesCg, [l, c * m, h]);
     });
 }
 
@@ -438,14 +450,29 @@ mod tests {
 
     #[test]
     fn test_gray_preservation() {
-        let input = 0.18_f32;
+        let input = crate::pixel::MIDDLE_GRAY;
         let output = square_sigmoid(input);
         assert!(
             (output - input).abs() < 1e-5,
-            "18% gray shifted from {} to {}",
+            "18.5% gray shifted from {} to {}",
             input,
             output
         );
+    }
+
+    #[test]
+    fn test_sigmoid_with_gain() {
+        let gain = 800.0;
+        let mid = crate::pixel::MIDDLE_GRAY;
+        let mut buf = vec![[mid * gain, mid * gain, mid * gain]];
+        sigmoid_with_gain(&mut buf, gain);
+        for c in 0..3 {
+            assert!(
+                (buf[0][c] - mid).abs() < 1e-4,
+                "Absolute radiance midgray channel {c} should map back to MIDDLE_GRAY, got {}",
+                buf[0][c]
+            );
+        }
     }
 
     #[test]
