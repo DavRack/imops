@@ -248,7 +248,7 @@ fn main() {
             match scanner_calibration_acescg(&stock, *pitch, shutter) {
                 Ok(calib) => {
                     let mut buf2 = scan_to_acescg(&stock, &dyes, *pitch);
-                    invert_negative(&mut buf2, calib.mid, calib.dmin);
+                    invert_negative(&mut buf2, calib.mid, calib.dmin, calib.inv_gamma());
                     let n = buf2.len() as f64;
                     let mut mean = [0.0f64;3];
                     for px in &buf2 { for c in 0..3 { mean[c]+= px[c] as f64; } }
@@ -260,7 +260,7 @@ fn main() {
                     }
                     for a in 0..3 { for b in 0..3 { cov[a][b]/=n; } }
                     let stds = [cov[0][0].sqrt(), cov[1][1].sqrt(), cov[2][2].sqrt()];
-                    let exp = pichromatic::film::scan::invert::invert_constants(calib.mid, calib.dmin).exponent;
+                    let exp = pichromatic::film::scan::invert::invert_constants(calib.mid, calib.dmin, calib.inv_gamma()).exponent;
                     println!("   PositiveLinear calibration: dmin [{:.5} {:.5} {:.5}] mid [{:.5} {:.5} {:.5}] exponents [{:.4} {:.4} {:.4}]", calib.dmin[0], calib.dmin[1], calib.dmin[2], calib.mid[0], calib.mid[1], calib.mid[2], exp[0], exp[1], exp[2]);
                     println!("   PositiveLinear mean [{:.5} {:.5} {:.5}]", mean[0], mean[1], mean[2]);
                     println!("   PositiveLinear covariance:");

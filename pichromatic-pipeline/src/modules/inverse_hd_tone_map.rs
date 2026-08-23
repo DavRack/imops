@@ -39,6 +39,42 @@ impl PipelineModule for Module<InverseHdToneMap> {
         image.inverse_hd_tone_map_with_gain(self.config.strength.value, gain, ceiling);
     }
 
+    fn process_gpu(
+        &self,
+        ctx: &pichromatic::gpu::GpuContext,
+        gpu_buf: &pichromatic::gpu::GpuImageBuffer,
+        meta: &mut pichromatic::image::ImageMetadata,
+    ) {
+        let gain = meta
+            .extensions
+            .get::<ExposureGain>()
+            .map(|g| g.0)
+            .unwrap_or(1.0);
+        let ceiling = meta
+            .extensions
+            .get::<HighlightCeiling>()
+            .map(|c| c.0)
+            .unwrap_or(4.0);
+        pichromatic::tone_map::inverse_hd_tone_map_gpu_with_gain(
+            ctx,
+            gpu_buf,
+            self.config.strength.value,
+            gain,
+            ceiling,
+        );
+    }
+
+    fn process_gpu_async<'a>(
+        &'a self,
+        ctx: &'a pichromatic::gpu::GpuContext,
+        gpu_buf: &'a pichromatic::gpu::GpuImageBuffer,
+        meta: &'a mut pichromatic::image::ImageMetadata,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(async move {
+            self.process_gpu(ctx, gpu_buf, meta);
+        })
+    }
+
     fn schema(&self) -> ModuleSchema {
         ModuleSchema {
             name: "InverseHdToneMap".to_string(),
@@ -61,6 +97,12 @@ impl PipelineModule for Module<InverseHdToneMap> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::{Backend, PipelineImage};
+    use crate::modules::common::{
+        assert_images_equal_abs_tol, generate_test_image_512x512, test_pipeline_module_cpu_vs_gpu,
+        CPU_GPU_ABS_TOLERANCE,
+    };
+    use pichromatic::gpu::GpuContext;
     use pichromatic::pixel::PixelOps;
 
     #[test]
@@ -170,5 +212,38 @@ mod tests {
         let json_str = r#"{"strength": 1.5}"#;
         let config: InverseHdToneMap = serde_json::from_str(json_str).unwrap();
         assert_eq!(config.strength.value, 1.5);
+    }
+
+    #[test]
+    fn test_inverse_hd_module_cpu_vs_gpu() {
+        let inverse_hd_module = Module::<InverseHdToneMap>::default();
+        test_pipeline_module_cpu_vs_gpu(&inverse_hd_module, 888);
+    }
+
+    #[test]
+    fn test_inverse_hd_module_cpu_vs_gpu_with_gain_and_ceiling() {
+        let inverse_hd_module = Module::<InverseHdToneMap>::default();
+
+        let ctx = GpuContext::new_sync();
+        let mut seed_image = generate_test_image_512x512(888);
+        let gain = 400.0;
+        let ceiling = 3.5;
+        seed_image.metadata.extensions.insert(ExposureGain(gain));
+        seed_image.metadata.extensions.insert(HighlightCeiling(ceiling));
+        for p in &mut seed_image.rgb_data {
+            p[0] *= gain;
+            p[1] *= gain;
+            p[2] *= gain;
+        }
+
+        let mut cpu_pipeline_img = PipelineImage::Cpu(seed_image.clone());
+        inverse_hd_module.process(&Backend::Cpu, &mut cpu_pipeline_img);
+        let cpu_out = cpu_pipeline_img.to_cpu(None);
+
+        let mut gpu_pipeline_img = PipelineImage::new_gpu(&ctx, &seed_image);
+        inverse_hd_module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_pipeline_img);
+        let gpu_out = gpu_pipeline_img.to_cpu(Some(&ctx));
+
+        assert_images_equal_abs_tol(&cpu_out, &gpu_out, CPU_GPU_ABS_TOLERANCE, 0);
     }
 }

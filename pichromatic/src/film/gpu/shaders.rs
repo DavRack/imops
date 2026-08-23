@@ -1610,8 +1610,9 @@ pub const INVERT: &str = r#"
 struct InvertU {
     n: u32,
     mode: u32,
-    inv_gamma: f32,
     eps: f32,
+    _p0: u32,
+    inv_gamma: vec4<f32>,
     inv_dmin: vec4<f32>,
     exponent: vec4<f32>,
     gain: vec4<f32>,
@@ -1641,9 +1642,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let tr = max(r * u.inv_dmin.x, u.eps);
         let tg = max(g * u.inv_dmin.y, u.eps);
         let tb = max(b * u.inv_dmin.z, u.eps);
-        r = max(pow(tr, -u.inv_gamma) - 1.0, 0.0) * u.gain.x;
-        g = max(pow(tg, -u.inv_gamma) - 1.0, 0.0) * u.gain.y;
-        b = max(pow(tb, -u.inv_gamma) - 1.0, 0.0) * u.gain.z;
+        r = max(pow(tr, -u.inv_gamma.x) - 1.0, 0.0) * u.gain.x;
+        g = max(pow(tg, -u.inv_gamma.y) - 1.0, 0.0) * u.gain.y;
+        b = max(pow(tb, -u.inv_gamma.z) - 1.0, 0.0) * u.gain.z;
     }
 
     pixels[i] = vec4<f32>(r, g, b, 1.0);
@@ -1656,7 +1657,8 @@ struct InvertRoiU {
     core_x: u32, core_y: u32, core_w: u32, core_h: u32,
     core_n: u32, root_w: u32, root_off_x: u32, root_off_y: u32,
     root_n: u32, img_w: u32, r_base: u32, g_base: u32,
-    b_base: u32, mode: u32, inv_gamma: f32, eps: f32,
+    b_base: u32, mode: u32, eps: f32, _p0: u32,
+    inv_gamma: vec4<f32>,
     inv_dmin: vec4<f32>,
     exponent: vec4<f32>,
     gain: vec4<f32>,
@@ -1696,9 +1698,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let tr = max(r * u.inv_dmin.x, u.eps);
         let tg = max(g * u.inv_dmin.y, u.eps);
         let tb = max(b * u.inv_dmin.z, u.eps);
-        r = max(pow(tr, -u.inv_gamma) - 1.0, 0.0) * u.gain.x;
-        g = max(pow(tg, -u.inv_gamma) - 1.0, 0.0) * u.gain.y;
-        b = max(pow(tb, -u.inv_gamma) - 1.0, 0.0) * u.gain.z;
+        r = max(pow(tr, -u.inv_gamma.x) - 1.0, 0.0) * u.gain.x;
+        g = max(pow(tg, -u.inv_gamma.y) - 1.0, 0.0) * u.gain.y;
+        b = max(pow(tb, -u.inv_gamma.z) - 1.0, 0.0) * u.gain.z;
     }
 
     output[out_idx] = vec4<f32>(r, g, b, 1.0);

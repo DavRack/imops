@@ -339,8 +339,10 @@ struct ScanToAcescgRoiU {
 struct InvertU {
     n: u32,
     mode: u32,
-    inv_gamma: f32,
     eps: f32,
+    _p0: u32,
+    /// Per-channel inverse exponents (1/γ), xyz active; matches WGSL vec4<f32>.
+    inv_gamma: [f32; 4],
     inv_dmin: [f32; 4],
     exponent: [f32; 4],
     gain: [f32; 4],
@@ -363,8 +365,10 @@ struct InvertRoiU {
     g_base: u32,
     b_base: u32,
     mode: u32,
-    inv_gamma: f32,
     eps: f32,
+    _p0: u32,
+    /// Per-channel inverse exponents (1/γ), xyz active; matches WGSL vec4<f32>.
+    inv_gamma: [f32; 4],
     inv_dmin: [f32; 4],
     exponent: [f32; 4],
     gain: [f32; 4],
@@ -509,7 +513,7 @@ pub(crate) struct StockConsts {
     inv_dmin: [f32; 4],
     exponent: [f32; 4],
     gain: [f32; 4],
-    inv_gamma: f32,
+    inv_gamma: [f32; 4],
     eps: f32,
 }
 
@@ -886,19 +890,26 @@ pub(crate) fn bake_consts(
     let is_reversal = stock.layers.iter().any(|l| l.is_reversal);
     let (invert_mode, inv_dmin, exponent, gain, inv_gamma) =
         if is_reversal || params.output == FilmOutput::NegativeLinear {
-            (0u32, [1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0], 1.0 / 0.6)
+            (
+                0u32,
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0 / crate::film::scan::invert::GAMMA_EFF; 4],
+            )
         } else {
             let cal = scanner_calibration_acescg(stock, pitch, shutter).unwrap_or(
                 crate::film::scan::ScannerCalibration {
                     dmin: [1.0, 1.0, 1.0],
                     mid: [0.18, 0.18, 0.18],
+                    gamma_eff: [crate::film::scan::invert::GAMMA_EFF; 3],
                 },
             );
             match params.output {
                 #[allow(deprecated)]
                 FilmOutput::PositiveLinear | FilmOutput::PositiveInverseHd => {
                     let eps = 1e-6f32;
-                    let ig = 1.0 / crate::film::scan::invert::GAMMA_EFF;
+                    let ig = cal.inv_gamma();
                     let inv_d = [
                         1.0 / cal.dmin[0].max(eps),
                         1.0 / cal.dmin[1].max(eps),
@@ -907,7 +918,7 @@ pub(crate) fn bake_consts(
                     let mut g = [0.0f32; 3];
                     for c in 0..3 {
                         let t_mid = (cal.mid[c] * inv_d[c]).max(eps);
-                        let e_mid = (t_mid.powf(-ig) - 1.0).max(0.0);
+                        let e_mid = (t_mid.powf(-ig[c]) - 1.0).max(0.0);
                         g[c] = if e_mid > eps {
                             crate::pixel::MIDDLE_GRAY / e_mid
                         } else {
@@ -919,10 +930,16 @@ pub(crate) fn bake_consts(
                         [inv_d[0], inv_d[1], inv_d[2], 0.0],
                         [1.0, 1.0, 1.0, 1.0],
                         [g[0], g[1], g[2], 0.0],
-                        ig,
+                        [ig[0], ig[1], ig[2], 0.0],
                     )
                 }
-                FilmOutput::NegativeLinear => (0u32, [1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0], 1.0 / 0.6),
+                FilmOutput::NegativeLinear => (
+                    0u32,
+                    [1.0, 1.0, 1.0, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    [1.0 / crate::film::scan::invert::GAMMA_EFF; 4],
+                ),
             }
         };
 
@@ -1464,8 +1481,9 @@ async fn process_gpu_full_frame(
         let u = InvertU {
             n: n as u32,
             mode: consts.invert_mode,
-            inv_gamma: consts.inv_gamma,
             eps: consts.eps,
+            _p0: 0,
+            inv_gamma: consts.inv_gamma,
             inv_dmin: consts.inv_dmin,
             exponent: consts.exponent,
             gain: consts.gain,
@@ -1960,8 +1978,9 @@ async fn process_gpu_roi(
                 g_base,
                 b_base,
                 mode: consts.invert_mode,
-                inv_gamma: consts.inv_gamma,
                 eps: consts.eps,
+                _p0: 0,
+                inv_gamma: consts.inv_gamma,
                 inv_dmin: consts.inv_dmin,
                 exponent: consts.exponent,
                 gain: consts.gain,
@@ -2012,8 +2031,8 @@ mod roi_uniform_struct_tests {
         assert_eq!(std::mem::size_of::<ParticleFieldRoiU>(), 64);
         assert_eq!(std::mem::size_of::<MicroMixU>(), 32);
         assert_eq!(std::mem::size_of::<ScanRoiU>(), 64);
-        assert_eq!(std::mem::size_of::<InvertU>(), 64);
-        assert_eq!(std::mem::size_of::<InvertRoiU>(), 112);
+        assert_eq!(std::mem::size_of::<InvertU>(), 80);
+        assert_eq!(std::mem::size_of::<InvertRoiU>(), 128);
     }
 }
 

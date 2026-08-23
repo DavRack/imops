@@ -3,21 +3,32 @@
 //! Reconstructs scene exposure using the physical inverse-transmission formula:
 //! $$e = \left(\left(\frac{T}{D_{\min}}\right)^{-1/\gamma_{\text{eff}}} - 1.0\right)^+$$
 //! scaled per channel such that the calibration mid-gray scan maps exactly to [`MIDDLE_GRAY`].
+//!
+//! The per-channel exponents are measured from the forward model at calibration
+//! time (mid-gray and a +2-stop anchor); [`GAMMA_EFF`] is only the degenerate-case
+//! fallback when the anchors admit no solvable contrast.
 
 use crate::pixel::{ImageBuffer, MIDDLE_GRAY};
 use rayon::prelude::*;
 
+/// Fallback effective contrast exponent used by the invert when the measured
+/// anchor pair is degenerate (no crossing in the solver bracket).
 pub const GAMMA_EFF: f32 = 0.6;
 
 /// Reconstructs unbounded scene-linear exposure in ACEScg from scanned negative transmission:
 /// - $t_{\text{rel}} = \frac{T}{D_{\min}} \in (0, 1]$
-/// - $e_{\text{raw}} = (t_{\text{rel}}^{-1/\gamma_{\text{eff}}} - 1.0)^+$ where $\gamma_{\text{eff}} = \text{GAMMA\_EFF} = 0.6$
-/// - $g_c = \frac{\text{MIDDLE\_GRAY}}{e_{\text{mid}, c}}$ where $e_{\text{mid}, c} = \left(\left(\frac{\text{mid\_negative}[c]}{D_{\min}[c]}\right)^{-1/\gamma_{\text{eff}}} - 1.0\right)^+$
+/// - $e_{\text{raw}} = (t_{\text{rel}}^{-1/\gamma_c} - 1.0)^+$ with per-channel $\gamma_c$
+///   measured from the forward model (see [`crate::film::scan::densitometry`])
+/// - $g_c = \frac{\text{MIDDLE\_GRAY}}{e_{\text{mid}, c}}$ where $e_{\text{mid}, c} = \left(\left(\frac{\text{mid\_negative}[c]}{D_{\min}[c]}\right)^{-1/\gamma_c} - 1.0\right)^+$
 /// - $\text{px}[c] = e_{\text{raw}, c} \cdot g_c$
 /// - Result: Unexposed $T = D_{\min} \to 0.0$, Neutral Midtone $T = \text{mid} \to \text{MIDDLE\_GRAY} = 0.18$, Highlights $T \ll D_{\min} \to [0, \infty)$ in ACEScg.
-pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_negative: [f32; 3]) {
+pub fn invert_negative(
+    buffer: &mut ImageBuffer,
+    mid_negative: [f32; 3],
+    dmin_negative: [f32; 3],
+    inv_gamma: [f32; 3],
+) {
     let eps = 1e-6f32;
-    let inv_gamma = 1.0 / GAMMA_EFF;
     let inv_dmin = [
         1.0 / dmin_negative[0].max(eps),
         1.0 / dmin_negative[1].max(eps),
@@ -27,7 +38,7 @@ pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_ne
     let mut gain = [0.0f32; 3];
     for c in 0..3 {
         let t_mid = (mid_negative[c] * inv_dmin[c]).max(eps);
-        let e_mid = (t_mid.powf(-inv_gamma) - 1.0).max(0.0);
+        let e_mid = (t_mid.powf(-inv_gamma[c]) - 1.0).max(0.0);
         gain[c] = if e_mid > eps {
             MIDDLE_GRAY / e_mid
         } else {
@@ -37,9 +48,9 @@ pub fn invert_negative(buffer: &mut ImageBuffer, mid_negative: [f32; 3], dmin_ne
 
     buffer.par_iter_mut().for_each(|px| {
         *px = [
-            ((px[0] * inv_dmin[0]).max(eps).powf(-inv_gamma) - 1.0).max(0.0) * gain[0],
-            ((px[1] * inv_dmin[1]).max(eps).powf(-inv_gamma) - 1.0).max(0.0) * gain[1],
-            ((px[2] * inv_dmin[2]).max(eps).powf(-inv_gamma) - 1.0).max(0.0) * gain[2],
+            ((px[0] * inv_dmin[0]).max(eps).powf(-inv_gamma[0]) - 1.0).max(0.0) * gain[0],
+            ((px[1] * inv_dmin[1]).max(eps).powf(-inv_gamma[1]) - 1.0).max(0.0) * gain[1],
+            ((px[2] * inv_dmin[2]).max(eps).powf(-inv_gamma[2]) - 1.0).max(0.0) * gain[2],
         ];
     });
 }
@@ -50,8 +61,9 @@ pub fn invert_negative_inverse_hd(
     buffer: &mut ImageBuffer,
     mid_negative: [f32; 3],
     dmin_negative: [f32; 3],
+    inv_gamma: [f32; 3],
 ) {
-    invert_negative(buffer, mid_negative, dmin_negative);
+    invert_negative(buffer, mid_negative, dmin_negative, inv_gamma);
 }
 
 /// Shared CPU/GPU calibration for negative invert.
@@ -60,15 +72,18 @@ pub struct InvertConstants {
     pub dmin: [f32; 3],
     pub inv_dmin: [f32; 3],
     pub gain: [f32; 3],
-    pub gamma_eff: f32,
-    pub inv_gamma: f32,
+    pub gamma_eff: [f32; 3],
+    pub inv_gamma: [f32; 3],
     pub eps: f32,
     pub exponent: [f32; 3],
 }
 
-pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> InvertConstants {
+pub fn invert_constants(
+    mid_negative: [f32; 3],
+    dmin_negative: [f32; 3],
+    inv_gamma: [f32; 3],
+) -> InvertConstants {
     let eps = 1e-6f32;
-    let inv_gamma = 1.0 / GAMMA_EFF;
     let dmin = dmin_negative.map(|v| v.max(eps));
     let inv_dmin = dmin.map(|v| 1.0 / v);
     let mid_t = [
@@ -78,7 +93,7 @@ pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> Inve
     ];
     let mut gain = [0.0f32; 3];
     for c in 0..3 {
-        let e_mid = (mid_t[c].powf(-inv_gamma) - 1.0).max(0.0);
+        let e_mid = (mid_t[c].powf(-inv_gamma[c]) - 1.0).max(0.0);
         gain[c] = if e_mid > eps {
             MIDDLE_GRAY / e_mid
         } else {
@@ -94,7 +109,7 @@ pub fn invert_constants(mid_negative: [f32; 3], dmin_negative: [f32; 3]) -> Inve
         dmin,
         inv_dmin,
         gain,
-        gamma_eff: GAMMA_EFF,
+        gamma_eff: inv_gamma.map(|ig| 1.0 / ig),
         inv_gamma,
         eps,
         exponent,
@@ -121,12 +136,14 @@ pub fn mean_rgb(buffer: &ImageBuffer) -> [f32; 3] {
 mod tests {
     use super::*;
 
+    const TEST_INV_GAMMA: [f32; 3] = [1.0 / GAMMA_EFF; 3];
+
     #[test]
     fn dmin_maps_to_black_mid_to_middle_gray() {
         let dmin = [1.0f32, 0.45, 0.13];
         let mid = [0.23f32, 0.15, 0.10];
         let mut buf = vec![dmin, mid];
-        invert_negative(&mut buf, mid, dmin);
+        invert_negative(&mut buf, mid, dmin, TEST_INV_GAMMA);
         for c in 0..3 {
             assert!(
                 buf[0][c] < 1e-5,
@@ -148,8 +165,8 @@ mod tests {
         let mid = [0.23f32, 0.15, 0.10];
         let mut buf1 = vec![dmin, mid];
         let mut buf2 = vec![dmin, mid];
-        invert_negative(&mut buf1, mid, dmin);
-        invert_negative_inverse_hd(&mut buf2, mid, dmin);
+        invert_negative(&mut buf1, mid, dmin, TEST_INV_GAMMA);
+        invert_negative_inverse_hd(&mut buf2, mid, dmin, TEST_INV_GAMMA);
         assert_eq!(buf1, buf2);
     }
 
@@ -162,7 +179,7 @@ mod tests {
             .into_iter()
             .map(|t| [dmin[0] * t, dmin[1] * t, dmin[2] * t])
             .collect();
-        invert_negative(&mut buf, mid, dmin);
+        invert_negative(&mut buf, mid, dmin, TEST_INV_GAMMA);
 
         for px in &buf {
             assert!(
@@ -199,7 +216,7 @@ mod tests {
             let wave = ((i % 17) as f32 + 0.5) / 17.0 * 0.008;
             buf.push([dmin[0] - wave, dmin[1] - wave * 0.6, dmin[2] - wave * 0.3]);
         }
-        invert_negative(&mut buf, mid, dmin);
+        invert_negative(&mut buf, mid, dmin, TEST_INV_GAMMA);
         let zero_frac = buf
             .iter()
             .filter(|px| px[0] == 0.0 && px[1] == 0.0 && px[2] == 0.0)

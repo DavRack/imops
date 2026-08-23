@@ -183,6 +183,7 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
             FilmOutput::PositiveLinear | FilmOutput::PositiveInverseHd => ScanMode::PositiveLinear {
                 dmin: calibration.dmin,
                 mid: calibration.mid,
+                inv_gamma: calibration.inv_gamma(),
             },
             FilmOutput::NegativeLinear => ScanMode::NegativeLinear,
         };

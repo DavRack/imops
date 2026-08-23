@@ -144,6 +144,278 @@ pub fn inverse_hd_tone_map_with_gain(
     });
 }
 
+pub fn inverse_hd_tone_map_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, s_curve: f32) {
+    inverse_hd_tone_map_gpu_with_gain(ctx, storage_buffer, s_curve, 1.0, 4.0);
+}
+
+pub fn inverse_hd_tone_map_gpu_with_gain(
+    ctx: &GpuContext,
+    storage_buffer: &GpuImageBuffer,
+    s_curve: f32,
+    gain: f32,
+    ceiling: f32,
+) {
+    let inv_gain = if gain > 0.0 && gain.is_finite() {
+        1.0 / gain
+    } else {
+        1.0
+    };
+
+    let mid = crate::pixel::MIDDLE_GRAY as f64;
+    let gamma = s_curve;
+    let x_max = (ceiling as f64).max(mid + 1e-4);
+    let (k_gamma, scale) = if gamma > 0.0 {
+        let gamma_f64 = gamma as f64;
+        let mid_gamma = mid.powf(gamma_f64);
+        let x_max_gamma = x_max.powf(gamma_f64);
+        let k_denom = mid * x_max_gamma - mid_gamma;
+        if k_denom > 0.0 && k_denom.is_finite() {
+            let k = (mid_gamma * x_max_gamma * (1.0 - mid)) / k_denom;
+            let s = (x_max_gamma + k) / x_max_gamma;
+            (k as f32, s as f32)
+        } else {
+            ((mid_gamma * ((1.0 - mid) / mid)) as f32, 1.0f32)
+        }
+    } else {
+        (0.0f32, 1.0f32)
+    };
+
+    // Bake ACEScg ↔ LinearSrgb matrices (chromatically adapted).
+    let to0 = AcesCg.convert(ColorSpaceTag::LinearSrgb, [1.0, 0.0, 0.0]);
+    let to1 = AcesCg.convert(ColorSpaceTag::LinearSrgb, [0.0, 1.0, 0.0]);
+    let to2 = AcesCg.convert(ColorSpaceTag::LinearSrgb, [0.0, 0.0, 1.0]);
+    let from0 = ColorSpaceTag::LinearSrgb.convert(AcesCg, [1.0, 0.0, 0.0]);
+    let from1 = ColorSpaceTag::LinearSrgb.convert(AcesCg, [0.0, 1.0, 0.0]);
+    let from2 = ColorSpaceTag::LinearSrgb.convert(AcesCg, [0.0, 0.0, 1.0]);
+
+    #[repr(C)]
+    #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+    struct InverseHdParamsGpu {
+        to_lin_r: [f32; 4],
+        to_lin_g: [f32; 4],
+        to_lin_b: [f32; 4],
+        from_lin_r: [f32; 4],
+        from_lin_g: [f32; 4],
+        from_lin_b: [f32; 4],
+        gamma: f32,
+        k_gamma: f32,
+        scale: f32,
+        inv_gain: f32,
+        width: u32,
+        height: u32,
+        _pad0: u32,
+        _pad1: u32,
+    }
+
+    let params = InverseHdParamsGpu {
+        to_lin_r: [to0[0], to1[0], to2[0], 0.0],
+        to_lin_g: [to0[1], to1[1], to2[1], 0.0],
+        to_lin_b: [to0[2], to1[2], to2[2], 0.0],
+        from_lin_r: [from0[0], from1[0], from2[0], 0.0],
+        from_lin_g: [from0[1], from1[1], from2[1], 0.0],
+        from_lin_b: [from0[2], from1[2], from2[2], 0.0],
+        gamma,
+        k_gamma,
+        scale,
+        inv_gain,
+        width: storage_buffer.width as u32,
+        height: storage_buffer.height as u32,
+        _pad0: 0,
+        _pad1: 0,
+    };
+
+    let shader_source = r#"
+        struct Params {
+            to_lin_r: vec4<f32>,
+            to_lin_g: vec4<f32>,
+            to_lin_b: vec4<f32>,
+            from_lin_r: vec4<f32>,
+            from_lin_g: vec4<f32>,
+            from_lin_b: vec4<f32>,
+            gamma: f32,
+            k_gamma: f32,
+            scale: f32,
+            inv_gain: f32,
+            width: u32,
+            height: u32,
+            _pad0: u32,
+            _pad1: u32,
+        };
+
+        @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
+        @group(0) @binding(1) var<uniform> params: Params;
+
+        // ACEScg luminance (matches pichromatic::pixel)
+        const LUMA_R: f32 = 0.2722287168;
+        const LUMA_G: f32 = 0.6740817658;
+        const LUMA_B: f32 = 0.0536895174;
+
+        const POWER: f32 = 1.2;
+
+        fn cbrt_signed(x: f32) -> f32 {
+            return sign(x) * pow(abs(x), 1.0 / 3.0);
+        }
+
+        fn mat3_mul_rows(r0: vec3<f32>, r1: vec3<f32>, r2: vec3<f32>, v: vec3<f32>) -> vec3<f32> {
+            return vec3<f32>(dot(r0, v), dot(r1, v), dot(r2, v));
+        }
+
+        fn linear_srgb_to_oklab(rgb: vec3<f32>) -> vec3<f32> {
+            let lms = mat3_mul_rows(
+                vec3<f32>(0.41222147, 0.53633254, 0.051445993),
+                vec3<f32>(0.2119035, 0.68069955, 0.10739696),
+                vec3<f32>(0.08830246, 0.28171884, 0.6299787),
+                rgb
+            );
+            let lms_c = vec3<f32>(cbrt_signed(lms.x), cbrt_signed(lms.y), cbrt_signed(lms.z));
+            return mat3_mul_rows(
+                vec3<f32>(0.21045426, 0.7936178, -0.004072047),
+                vec3<f32>(1.9779985, -2.4285922, 0.4505937),
+                vec3<f32>(0.025904037, 0.78277177, -0.80867577),
+                lms_c
+            );
+        }
+
+        fn oklab_to_linear_srgb(lab: vec3<f32>) -> vec3<f32> {
+            let lms = mat3_mul_rows(
+                vec3<f32>(1.0, 0.39633778, 0.21580376),
+                vec3<f32>(1.0, -0.10556135, -0.06385417),
+                vec3<f32>(1.0, -0.08948418, -1.2914855),
+                lab
+            );
+            let lms3 = lms * lms * lms;
+            return mat3_mul_rows(
+                vec3<f32>(4.0767417, -3.3077116, 0.23096993),
+                vec3<f32>(-1.268438, 2.6097574, -0.3413194),
+                vec3<f32>(-0.0041960863, -0.7034186, 1.7076147),
+                lms3
+            );
+        }
+
+        fn oklab_to_oklch(lab: vec3<f32>) -> vec3<f32> {
+            var h = degrees(atan2(lab.z, lab.y));
+            if (h < 0.0) {
+                h = h + 360.0;
+            }
+            let c = length(lab.yz);
+            return vec3<f32>(lab.x, c, h);
+        }
+
+        fn oklch_to_oklab(lch: vec3<f32>) -> vec3<f32> {
+            let h_rad = radians(lch.z);
+            let a = lch.y * cos(h_rad);
+            let b = lch.y * sin(h_rad);
+            return vec3<f32>(lch.x, a, b);
+        }
+
+        fn acescg_to_oklch(aces: vec3<f32>) -> vec3<f32> {
+            let lin = mat3_mul_rows(
+                params.to_lin_r.xyz,
+                params.to_lin_g.xyz,
+                params.to_lin_b.xyz,
+                aces
+            );
+            return oklab_to_oklch(linear_srgb_to_oklab(lin));
+        }
+
+        fn oklch_to_acescg(lch: vec3<f32>) -> vec3<f32> {
+            let lin = oklab_to_linear_srgb(oklch_to_oklab(lch));
+            return mat3_mul_rows(
+                params.from_lin_r.xyz,
+                params.from_lin_g.xyz,
+                params.from_lin_b.xyz,
+                lin
+            );
+        }
+
+        fn compress_value(dist: f32, lim: f32, thr: f32) -> f32 {
+            if (dist < thr) {
+                return dist;
+            }
+            let base_inner = (1.0 - thr) / (lim - thr);
+            if (base_inner <= 0.0 || abs(lim - thr) < 1e-6) {
+                return dist;
+            }
+            let denom_inner = pow(base_inner, -POWER) - 1.0;
+            if (denom_inner <= 0.0) {
+                return dist;
+            }
+            let s = (lim - thr) / pow(denom_inner, 1.0 / POWER);
+            let dist_norm = (dist - thr) / s;
+            let denominator = pow(1.0 + pow(dist_norm, POWER), 1.0 / POWER);
+            return thr + s * dist_norm / denominator;
+        }
+
+        fn gamut_compress(rgb: vec3<f32>) -> vec3<f32> {
+            let THR = vec3<f32>(0.815, 0.803, 0.88);
+            let LIM = vec3<f32>(1.147, 1.264, 1.312);
+            let ach = max(rgb.r, max(rgb.g, rgb.b));
+            if (ach == 0.0) {
+                return vec3<f32>(0.0);
+            }
+            let abs_ach = abs(ach);
+            let dist = (vec3<f32>(ach) - rgb) / abs_ach;
+            let cdist = vec3<f32>(
+                compress_value(dist.x, LIM.x, THR.x),
+                compress_value(dist.y, LIM.y, THR.y),
+                compress_value(dist.z, LIM.z, THR.z)
+            );
+            return vec3<f32>(ach) - cdist * abs_ach;
+        }
+
+        fn luminance(rgb: vec3<f32>) -> f32 {
+            return LUMA_R * rgb.r + LUMA_G * rgb.g + LUMA_B * rgb.b;
+        }
+
+        fn rational_scurve(x: f32) -> f32 {
+            if (x <= 0.0) {
+                return 0.0;
+            }
+            if (params.gamma <= 0.0) {
+                return x;
+            }
+            let x_gamma = pow(x, params.gamma);
+            let denom = x_gamma + params.k_gamma;
+            if (denom > 0.0) {
+                let val = (x_gamma / denom) * params.scale;
+                return min(val, 1.0);
+            }
+            return 0.0;
+        }
+
+        @compute @workgroup_size(16, 16)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+            let x = global_id.x;
+            let y = global_id.y;
+            if (x >= params.width || y >= params.height) {
+                return;
+            }
+            let index = y * params.width + x;
+            let alpha = pixels[index].a;
+            let rel_pixel = pixels[index].rgb * params.inv_gain;
+            let gc = gamut_compress(rel_pixel);
+            let h = acescg_to_oklch(gc).z;
+            let p = vec3<f32>(
+                rational_scurve(gc.r),
+                rational_scurve(gc.g),
+                rational_scurve(gc.b)
+            );
+            let s = luminance(p);
+            let m = max(1.0 - pow(clamp(s, 0.0, 1.0), 5.0), 0.0);
+            let lc = acescg_to_oklch(p);
+            let out_rgb = oklch_to_acescg(vec3<f32>(lc.x, lc.y * m, h));
+            pixels[index] = vec4<f32>(out_rgb, alpha);
+        }
+    "#;
+
+    ctx.dispatch_compute_shader_2d(
+        "inverse_hd_tone_map",
+        shader_source,
+        storage_buffer,
+        bytemuck::bytes_of(&params),
+    );
+}
+
 /// Native GPU sigmoid tone map matching CPU `sigmoid` (ACEScg assumed, no metadata check).
 pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
     sigmoid_gpu_with_gain(ctx, storage_buffer, 1.0);
@@ -728,5 +1000,57 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_inverse_hd_gpu_with_gain() {
+        let Some(ctx) = GpuContext::try_new_sync() else {
+            return;
+        };
+        let gain = 400.0;
+        let s_curve = 1.3;
+        let ceiling = 3.8;
+        let mid = crate::pixel::MIDDLE_GRAY;
+
+        let test_pixels = vec![
+            [0.0, 0.0, 0.0],
+            [mid * gain, mid * gain, mid * gain],
+            [ceiling * gain, ceiling * gain, ceiling * gain],
+            [0.1 * gain, 0.5 * gain, 1.2 * gain],
+            [2.0 * gain, 0.05 * gain, 0.8 * gain],
+            [5.0 * gain, 5.0 * gain, 5.0 * gain],
+            [10.0 * gain, 8.0 * gain, 12.0 * gain],
+            [0.001 * gain, 0.002 * gain, 0.0015 * gain],
+        ];
+
+        let width = test_pixels.len() as u32;
+        let height = 1;
+
+        let mut img = crate::pixel::Image {
+            rgb_data: test_pixels.clone(),
+            raw_data: vec![].into(),
+            metadata: crate::image::ImageMetadata {
+                width: width as usize,
+                height: height as usize,
+                ..Default::default()
+            },
+        };
+
+        let gpu_buf = ctx.upload_image(&img);
+        inverse_hd_tone_map_gpu_with_gain(&ctx, &gpu_buf, s_curve, gain, ceiling);
+        let gpu_img = ctx.download_image(&gpu_buf, &img.metadata);
+        inverse_hd_tone_map_with_gain(&mut img.rgb_data, s_curve, gain, ceiling);
+
+        for (i, (gpu_px, cpu_px)) in gpu_img.rgb_data.iter().zip(img.rgb_data.iter()).enumerate() {
+            for c in 0..3 {
+                assert!(
+                    (gpu_px[c] - cpu_px[c]).abs() < 1e-3,
+                    "GPU vs CPU mismatch at pixel {i}, channel {c}: GPU {}, CPU {}",
+                    gpu_px[c],
+                    cpu_px[c]
+                );
+            }
+        }
+    }
 }
+
 

@@ -19,15 +19,18 @@ pub use invert::invert_negative_inverse_hd;
 pub enum ScanMode {
     NegativeLinear,
     /// Invert with processed-film Dmin and a neutral mid-gray scan to unbounded linear HDR light.
+    /// `inv_gamma` is the per-channel measured inverse contrast from [`ScannerCalibration`].
     PositiveLinear {
         dmin: [f32; 3],
         mid: [f32; 3],
+        inv_gamma: [f32; 3],
     },
     /// Deprecated alias for PositiveLinear.
     #[deprecated(note = "Use PositiveLinear instead")]
     PositiveInverseHd {
         dmin: [f32; 3],
         mid: [f32; 3],
+        inv_gamma: [f32; 3],
     },
 }
 
@@ -41,8 +44,9 @@ pub fn scan(
     match mode {
         ScanMode::NegativeLinear => {}
         #[allow(deprecated)]
-        ScanMode::PositiveLinear { dmin, mid } | ScanMode::PositiveInverseHd { dmin, mid } => {
-            invert_negative(&mut buf, mid, dmin);
+        ScanMode::PositiveLinear { dmin, mid, inv_gamma }
+        | ScanMode::PositiveInverseHd { dmin, mid, inv_gamma } => {
+            invert_negative(&mut buf, mid, dmin, inv_gamma);
         }
     }
     buf

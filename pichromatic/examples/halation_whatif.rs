@@ -48,6 +48,7 @@ fn run_stock(
         ScanMode::PositiveLinear {
             dmin: calibration.dmin,
             mid: calibration.mid,
+            inv_gamma: calibration.inv_gamma(),
         },
         pitch,
     ))

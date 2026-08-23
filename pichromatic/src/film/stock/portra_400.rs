@@ -627,7 +627,7 @@ mod runtime_calibration_tests {
         assert!(mid.iter().all(|value| value.is_finite() && *value > 0.0));
 
         let mut positive = vec![mid];
-        invert_negative(&mut positive, mid, dmin);
+        invert_negative(&mut positive, mid, dmin, calibration.inv_gamma());
         for value in positive[0] {
             assert!(value.is_finite());
             assert!((value - crate::pixel::MIDDLE_GRAY).abs() < 1e-3);
