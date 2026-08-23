@@ -11,9 +11,9 @@ fn main() {
 
     // // Decode the file to extract the raw pixels and its associated metadata
     // let raw_image = RawImage::decode(&mut file).unwrap();
-    let raw_image = rawler::decode_file(input_path).unwrap();
+    let file_bytes = std::fs::read(input_path).unwrap();
     let t1 = Instant::now();
-    let mut image = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image);
+    let mut image = pichromatic_pipeline::extern_pipeline::get_raw_img_internal(&file_bytes);
 
     let config_data = &std::fs::read_to_string(config_path).unwrap();
     let mut pipeline = config::parse_config(config_data.to_string());

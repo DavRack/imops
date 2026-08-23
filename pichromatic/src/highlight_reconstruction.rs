@@ -1,16 +1,17 @@
 //! Highlight reconstruction (ISP algorithm #4): luma-preserving, hue-
-//! preserving desaturation knee applied to white-balanced camera-linear RGB.
+//! preserving desaturation applied ABOVE full well on white-balanced
+//! camera-linear RGB.
 //!
 //! Must run AFTER `CFACoeffs` (white balance): only in the post-WB signal is
-//! "sensor clipped" well defined — the loader scales raws so full well = 1.0,
-//! and WB gains push already-clipped channels above that. Channels clip one
-//! at a time, so blown regions otherwise keep a cast from whichever channel
-//! saturated last; real saturated emulsion/sensor response trends toward
-//! neutral instead. Above the knee the chroma of each pixel fades smoothly
-//! toward the neutral gray of its own luminance; below the knee pixels stay
-//! bitwise untouched. Known pointwise tradeoff: legitimately saturated colors
-//! within the knee lose part of their chroma — distinguishing them from
-//! clipped casts requires spatial reconstruction, which this stage has not.
+//! "sensor clipped" well defined — the loader normalizes raws so full well =
+//! 1.0, and WB gains push clipped channels above that. Every pixel whose
+//! hottest channel is at or below full well stays bitwise untouched. Above
+//! full well the chroma fades smoothly toward the neutral gray of the pixel's
+//! own luminance: channels clip one at a time, so overflow regions otherwise
+//! keep a cast from whichever channel saturated last, while real saturated
+//! sensor/emulsion response trends toward neutral. The fade ends at
+//! `CLIP * KNEE_HEADROOM`, chosen to span the practical post-WB overflow
+//! range (raw 1.0 times WB gains up to ~2.4x).
 
 use crate::gpu::{GpuContext, GpuImageBuffer};
 use crate::pixel::ImageBuffer;
@@ -20,14 +21,14 @@ use rayon::prelude::*;
 /// can carry clipped channels above it.
 const CLIP: f32 = 1.0;
 
-/// Knee onset as a fraction of clip. Conventional ISP highlight-knee
-/// placement: gradual saturation starts well below full-well, while normally
-/// exposed mid-grays (~18%) are never touched.
-const KNEE_START_FRACTION: f32 = 0.6;
+/// Knee end as a multiple of full well: desaturation starts at CLIP (zero
+/// effect exactly at the boundary) and completes here.
+const KNEE_HEADROOM: f32 = 2.25;
 
 pub fn highlight_reconstruction(image_buffer: &mut ImageBuffer) {
-    let threshold = KNEE_START_FRACTION * CLIP;
-    let inv_range = 1.0 / (CLIP - threshold);
+    let threshold = CLIP;
+    let end = CLIP * KNEE_HEADROOM;
+    let inv_range = 1.0 / (end - threshold);
     image_buffer.par_iter_mut().for_each(|pixel| {
         let [r, g, b] = *pixel;
         if !(r.is_finite() && g.is_finite() && b.is_finite()) {
@@ -68,8 +69,8 @@ pub fn highlight_reconstruction_gpu(
     storage_buffer: &GpuImageBuffer,
 ) {
     let params = HighlightReconstructionParamsGpu {
-        threshold: KNEE_START_FRACTION * CLIP,
-        inv_range: 1.0 / (CLIP - KNEE_START_FRACTION * CLIP),
+        threshold: CLIP,
+        inv_range: 1.0 / (CLIP * (KNEE_HEADROOM - 1.0)),
         width: storage_buffer.width as u32,
         height: storage_buffer.height as u32,
     };
@@ -138,33 +139,61 @@ mod tests {
     }
 
     #[test]
-    fn below_knee_is_bitwise_unchanged() {
-        // Hottest channel under the knee onset stays exact.
-        let mut pixels = vec![[0.5f32, 0.4, 0.55], [0.55, 0.55, 0.55], [0.59, 0.1, 0.3]];
+    fn at_or_below_full_well_is_bitwise_unchanged() {
+        // Everything under the overflow knee — including 0.999 of well and
+        // exactly full well — stays exact.
+        let mut pixels = vec![
+            [0.7f32, 0.4, 0.75],
+            [0.99, 0.99, 0.98],
+            [1.0, 0.5, 1.0],
+            [0.85, 0.2, 0.9],
+        ];
         let before = pixels.clone();
         highlight_reconstruction(&mut pixels);
         assert_eq!(pixels, before);
     }
 
     #[test]
-    fn clipped_single_channel_cast_fully_neutralizes() {
-        // The artifact this stage exists for: one channel blown hard while
-        // others lag. Max-channel keying must fully neutralize these.
-        let mut pixels = vec![[1.6f32, 0.2, 0.9], [0.3, 1.4, 0.4], [0.9, 0.8, 1.05]];
+    fn just_above_well_gets_mild_desaturation() {
+        // Barely overflowing: a small chroma reduction, far from neutral.
+        let mut px = vec![[1.02f32, 0.3, 0.3]];
+        let y = luma(px[0]);
+        let chroma_in = (px[0][0] - y).abs();
+        highlight_reconstruction(&mut px);
+        let chroma_out = (px[0][0] - luma(px[0])).abs();
+        assert!(chroma_out < chroma_in && chroma_out > 0.9 * chroma_in);
+    }
+
+    #[test]
+    fn deep_overflow_fully_neutralizes() {
+        // Hottest channel at/above the knee end: no recoverable chroma.
+        let mut pixels = vec![[2.2f32, 0.2, 0.9], [0.3, 2.4, 0.4], [1.8, 1.7, 2.1]];
         highlight_reconstruction(&mut pixels);
         for px in &pixels {
             assert!(
                 px.iter().all(|&v| (v - luma(*px)).abs() < 1e-4),
-                "clipped pixel {px:?} not neutral"
+                "overflowed pixel {px:?} not neutral"
             );
         }
     }
 
     #[test]
-    fn bright_neutral_stays_bright_neutral() {
-        let mut px = vec![[1.5f32, 1.45, 1.4]];
+    fn single_clipped_channel_cast_is_damped_not_erased_midrange() {
+        // The classic cast case sits mid-knee: heavily damped but not
+        // flattened, so the operation stays gradual.
+        let mut px = vec![[1.6f32, 0.2, 0.9]];
+        let y_in = luma(px[0]);
+        let chroma_in = ((px[0][0] - y_in).powi(2)
+            + (px[0][1] - y_in).powi(2)
+            + (px[0][2] - y_in).powi(2))
+        .sqrt();
         highlight_reconstruction(&mut px);
-        assert!(px[0].iter().all(|&v| (v - luma(px[0])).abs() < 1e-4));
+        let p = px[0];
+        let y_out = luma(p);
+        let chroma_out =
+            ((p[0] - y_out).powi(2) + (p[1] - y_out).powi(2) + (p[2] - y_out).powi(2)).sqrt();
+        assert!(chroma_out < chroma_in * 0.6, "cast must be strongly damped");
+        assert!(chroma_out > 0.05, "mid-knee must not fully erase chroma");
     }
 
     #[test]
@@ -190,8 +219,8 @@ mod tests {
     fn hue_direction_is_preserved_inside_the_knee() {
         // Chroma scales about the gray axis: offset ratios between channels
         // stay invariant for a pixel partially inside the knee.
-        let base = [0.85f32, 0.5, 0.35];
-        assert!(base[0] > 0.6 && base[0] < 1.0);
+        let base = [1.4f32, 0.9, 0.7];
+        assert!(base[0] > 1.0 && base[0] < 2.0);
         let y_base = luma(base);
         for k in [1.0f32, 0.95] {
             let mut px = vec![base.map(|c| c * k)];
@@ -227,9 +256,9 @@ mod tests {
                 ((p[0] - y_out).powi(2) + (p[1] - y_out).powi(2) + (p[2] - y_out).powi(2)).sqrt();
             chroma_out / chroma_in
         };
-        let mut prev = suppression_at(0.61);
-        for i in 1..20 {
-            let c = suppression_at(0.61 + i as f32 * 0.02);
+        let mut prev = suppression_at(1.01);
+        for i in 1..50 {
+            let c = suppression_at(1.01 + i as f32 * 0.02);
             assert!(c <= prev + 1e-5, "suppression ratio rose at step {i}: {prev} -> {c}");
             prev = c;
         }

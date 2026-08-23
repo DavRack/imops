@@ -22,14 +22,8 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "test_data/vale.dng".to_string());
 
-    // 1. Load the raw image and its bytes
+    // 1. Load the raw image bytes
     let file_bytes = std::fs::read(&raw_image_path).expect("Failed to read raw image file");
-    let decode_params = rawler::decoders::RawDecodeParams::default();
-    let mut raw_file = rawler::rawsource::RawSource::new_from_slice(&file_bytes);
-    let raw_image =
-        rawler::decode(&mut raw_file, &decode_params).expect("Failed to decode raw image");
-
-    let file_bytes_clone = file_bytes.clone();
 
     let pipeline1_label = "no halation";
     let pipeline2_label = "halation";
@@ -227,7 +221,7 @@ fn main() {
 
             println!("Processing pipeline 1 (CPU)...");
             let now = Instant::now();
-            let mut image1 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
+            let mut image1 = get_image_from_raw(&file_bytes);
             let mut config1 = pichromatic_pipeline::config::PipelineConfig {
                 pipeline_modules: pipeline1,
             };
@@ -236,7 +230,7 @@ fn main() {
 
             println!("Processing pipeline 2 (GPU)...");
             let now = Instant::now();
-            let mut image2 = get_image_from_raw(raw_image.clone(), &file_bytes_clone);
+            let mut image2 = get_image_from_raw(&file_bytes);
             let mut config2 = pichromatic_pipeline::config::PipelineConfig {
                 pipeline_modules: pipeline2,
             };
@@ -250,13 +244,8 @@ fn main() {
     println!("Visual tests finished.");
 }
 
-fn get_image_from_raw(raw_image: rawler::RawImage, file_bytes: &[u8]) -> Image {
-    let mut image = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image);
-    if let Some(parser) = pichromatic_pipeline::dng_metadata::DngMetadataParser::new(file_bytes) {
-        let dng_meta = parser.parse();
-        pichromatic_pipeline::extern_pipeline::consolidate_dng_metadata(&mut image, &dng_meta);
-    }
-    image
+fn get_image_from_raw(file_bytes: &[u8]) -> Image {
+    pichromatic_pipeline::extern_pipeline::get_raw_img_internal(file_bytes)
 }
 
 pub struct ViewerApp {

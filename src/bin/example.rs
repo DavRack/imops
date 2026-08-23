@@ -12,9 +12,9 @@ fn main() {
 
     // // Decode the file to extract the raw pixels and its associated metadata
     // let raw_image = RawImage::decode(&mut file).unwrap();
-    let raw_image = rawler::decode_file(input_path).unwrap();
+    let file_bytes = std::fs::read(input_path).unwrap();
     let t1 = Instant::now();
-    let image = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image);
+    let image = pichromatic_pipeline::extern_pipeline::get_raw_img_internal(&file_bytes);
     let wb_coeffs = image.metadata.wb_coeffs.unwrap();
     let calibration_matrix_d65 = image.metadata.calibration_matrix_d65.clone().unwrap();
 

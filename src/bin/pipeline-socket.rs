@@ -64,7 +64,7 @@ fn process_image(mut image: Image, pipeline: &mut PipelineConfig, output_path: S
 }
 
 
-fn get_raw_image(input_path: String) -> Image{
-    let raw_image = rawler::decode_file(input_path).unwrap();
-    pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image)
+fn get_raw_image(input_path: String) -> Image {
+    let file_bytes = std::fs::read(input_path).unwrap();
+    pichromatic_pipeline::extern_pipeline::get_raw_img_internal(&file_bytes)
 }

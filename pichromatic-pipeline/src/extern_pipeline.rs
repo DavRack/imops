@@ -418,6 +418,9 @@ pub fn consolidate_dng_metadata(image: &mut Image, dng_meta: &crate::dng_metadat
     }
 }
 
+/// Single entry point for loading a RAW file: decode -> parse_raw_image ->
+/// consolidate_dng_metadata. All loaders (FFI, wasm, bins, tests) must go
+/// through this so every path yields identical extraction.
 pub fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     // 1. Decode the RAW bytes using rawloader
     let decode_params = RawDecodeParams::default();
@@ -435,7 +438,7 @@ pub fn get_raw_img_internal(file_bytes: &[u8]) -> Image {
     
     image
 }
-pub fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
+pub(crate) fn parse_raw_image(mut raw_image: rawler::RawImage) -> Image {
     let orientation = match raw_image.orientation {
         rawler::Orientation::Rotate90 => pichromatic::image::ImageOrientation::Rotate90,
         rawler::Orientation::Rotate180 => pichromatic::image::ImageOrientation::Rotate180,

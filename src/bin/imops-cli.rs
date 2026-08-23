@@ -39,16 +39,7 @@ fn main() {
 
     let decode = Instant::now();
     let file_bytes = std::fs::read(path).expect("failed to read input file");
-    let decode_params = rawler::decoders::RawDecodeParams::default();
-    let mut raw_file = rawler::rawsource::RawSource::new_from_slice(&file_bytes);
-    let raw_image =
-        rawler::decode(&mut raw_file, &decode_params).expect("failed to decode raw image");
-    let mut image = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image);
-
-    if let Some(parser) = pichromatic_pipeline::dng_metadata::DngMetadataParser::new(&file_bytes) {
-        let dng_meta = parser.parse();
-        pichromatic_pipeline::extern_pipeline::consolidate_dng_metadata(&mut image, &dng_meta);
-    }
+    let mut image = pichromatic_pipeline::extern_pipeline::get_raw_img_internal(&file_bytes);
     println!("decode file: {:.2?}", decode.elapsed());
 
     let now = Instant::now();

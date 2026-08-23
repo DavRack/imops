@@ -11,9 +11,7 @@ fn main() {
     let raw_image_path = "test_data/plaza.dng";
     println!("Loading {raw_image_path}...");
     let file_bytes = std::fs::read(raw_image_path).expect("Failed to read raw image");
-    let decode_params = rawler::decoders::RawDecodeParams::default();
-    let mut raw_file = rawler::rawsource::RawSource::new_from_slice(&file_bytes);
-    let raw_image = rawler::decode(&mut raw_file, &decode_params).expect("Failed to decode");
+    let base_image = pichromatic_pipeline::extern_pipeline::get_raw_img_internal(&file_bytes);
 
     for ev_boost in [0.0f32, 3.0] {
         println!("\n=== Testing CineStill 50D with EV boost = {ev_boost} ===");
@@ -74,15 +72,7 @@ fn main() {
                 ]
             };
 
-        let mut img_on = pichromatic_pipeline::extern_pipeline::parse_raw_image(raw_image.clone());
-        if let Some(parser) =
-            pichromatic_pipeline::dng_metadata::DngMetadataParser::new(&file_bytes)
-        {
-            pichromatic_pipeline::extern_pipeline::consolidate_dng_metadata(
-                &mut img_on,
-                &parser.parse(),
-            );
-        }
+        let mut img_on = base_image.clone();
         let mut img_off = img_on.clone();
 
         let mut config_on = pichromatic_pipeline::config::PipelineConfig {
