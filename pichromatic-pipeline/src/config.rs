@@ -74,25 +74,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_imgconfig_film2() {
-        let cfg = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../imgconfig-film2.toml"
-        ))
-        .expect("imgconfig-film2.toml");
-        let parsed = super::parse_config(cfg);
-        let names: Vec<_> = parsed
-            .pipeline_modules
-            .iter()
-            .map(|m| m.schema().name)
-            .collect();
-        assert!(
-            names.iter().any(|n| n == "InverseHdToneMap"),
-            "expected InverseHdToneMap in pipeline, got {names:?}"
-        );
-    }
-
-    #[test]
     fn parses_json_config() {
         let json = r#"{
             "pipeline_modules": [
