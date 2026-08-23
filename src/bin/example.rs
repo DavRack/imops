@@ -23,7 +23,7 @@ fn main() {
     let mut demosaiced_image = image.demosaic(demosaic_algorithms::Markesteijn{});
     let image = demosaiced_image
         .cfa_coeffs(wb_coeffs)
-        .highlight_reconstruction(wb_coeffs)
+        .highlight_reconstruction()
         .camera_cst(wcs, &calibration_matrix_d65)
         .sigmoid_tone_map()
         .cst(ColorSpaceTag::Srgb);

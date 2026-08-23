@@ -181,8 +181,8 @@ impl Image {
         contrast(&mut self.rgb_data, value);
         return self
     }
-    pub fn highlight_reconstruction(&mut self, wb_coeffs: [SubPixel; 4]) -> &mut Image{
-        highlight_reconstruction(&mut self.rgb_data, wb_coeffs);
+    pub fn highlight_reconstruction(&mut self) -> &mut Image{
+        highlight_reconstruction(&mut self.rgb_data);
         return self
     }
 

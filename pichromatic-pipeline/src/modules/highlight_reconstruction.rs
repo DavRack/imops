@@ -8,28 +8,24 @@ pub struct HighlightReconstruction {
 
 impl PipelineModule for Module<HighlightReconstruction> {
     fn process_cpu(&self, image: &mut Image) {
-        if let Some(wb_coeffs) = image.metadata.wb_coeffs {
-            image.highlight_reconstruction(wb_coeffs);
-        }
+        // Must run after CFACoeffs: the knee keys on post-WB channel values
+        // against the normalized full-well clip of 1.0.
+        image.highlight_reconstruction();
     }
 
     fn process_gpu(
         &self,
         ctx: &pichromatic::gpu::GpuContext,
         gpu_buf: &pichromatic::gpu::GpuImageBuffer,
-        meta: &mut pichromatic::image::ImageMetadata,
+        _meta: &mut pichromatic::image::ImageMetadata,
     ) {
-        if let Some(wb_coeffs) = meta.wb_coeffs {
-            pichromatic::highlight_reconstruction::highlight_reconstruction_gpu(
-                ctx, gpu_buf, wb_coeffs,
-            );
-        }
+        pichromatic::highlight_reconstruction::highlight_reconstruction_gpu(ctx, gpu_buf);
     }
 
     fn schema(&self) -> ModuleSchema {
         ModuleSchema {
             name: "HighlightReconstruction".to_string(),
-            description: "Reconstruct clipped highlight details using white balance coefficients.".to_string(),
+            description: "Desaturate clipped highlights toward neutral (post-WB, keys on hottest channel vs full well).".to_string(),
             fields: vec![],
         }
     }
@@ -60,8 +56,7 @@ mod tests {
             config: HighlightReconstruction {},
         };
 
-        let mut seed_image = generate_test_image_512x512(333);
-        seed_image.metadata.wb_coeffs = Some([1.8, 1.0, 1.4, 1.0]);
+        let seed_image = generate_test_image_512x512(333);
 
         let ctx = GpuContext::new_sync();
         let mut cpu_img = PipelineImage::Cpu(seed_image.clone());

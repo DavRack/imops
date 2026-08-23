@@ -14,10 +14,11 @@ name = "Vignette"
 strength = 1.0
 
 [[pipeline_modules]]
-name = "HighlightReconstruction"
-
-[[pipeline_modules]]
 name = "CFACoeffs"
+
+# Highlight reconstruction keys on post-WB values, so it must stay AFTER CFACoeffs.
+# [[pipeline_modules]]
+# name = "HighlightReconstruction"
 
 [[pipeline_modules]]
 name = "LumaGuidedChromaDenoise"

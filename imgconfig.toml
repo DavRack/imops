@@ -9,10 +9,14 @@ name = "Vignette"
 strength = 1.0
 
 [[pipeline_modules]]
+name = "CFACoeffs"
+
+[[pipeline_modules]]
 name = "HighlightReconstruction"
 
 [[pipeline_modules]]
-name = "CFACoeffs"
+name = "Exp"
+ev = 0.0
 
 [[pipeline_modules]]
 name = "LumaGuidedChromaDenoise"
