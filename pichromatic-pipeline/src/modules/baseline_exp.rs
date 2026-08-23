@@ -40,6 +40,16 @@ impl PipelineModule for Module<BaselineExposureCompensation> {
             .metadata
             .extensions
             .insert(pichromatic::image::ExposureGain(gain));
+        let baseline_ev = image
+            .metadata
+            .baseline_exposure
+            .filter(|be| be.is_finite())
+            .unwrap_or(0.0);
+        let ceiling = 3.5 * 2.0_f32.powf(baseline_ev);
+        image
+            .metadata
+            .extensions
+            .insert(pichromatic::image::HighlightCeiling(ceiling));
         image.exp(ev);
     }
 
@@ -53,6 +63,13 @@ impl PipelineModule for Module<BaselineExposureCompensation> {
         let gain = 2.0_f32.powf(ev);
         meta.extensions
             .insert(pichromatic::image::ExposureGain(gain));
+        let baseline_ev = meta
+            .baseline_exposure
+            .filter(|be| be.is_finite())
+            .unwrap_or(0.0);
+        let ceiling = 3.5 * 2.0_f32.powf(baseline_ev);
+        meta.extensions
+            .insert(pichromatic::image::HighlightCeiling(ceiling));
         pichromatic::exp::exp_gpu(ctx, gpu_buf, ev);
     }
 

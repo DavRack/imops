@@ -27,7 +27,8 @@ target_color_space = "AcesCg"
 
 
 [[pipeline_modules]]
-name = "SigmoidToneMap"
+name = "InverseHdToneMap"
+strength = 1.5
 
 # EXR is linear display-referred sRGB. JPEG output is sRGB-OETF encoded by the writer.
 [[pipeline_modules]]

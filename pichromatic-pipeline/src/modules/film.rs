@@ -14,7 +14,6 @@ pub struct Film {
     pub enable_halation: Parameter<bool>,
     pub output: Parameter<String>,
     pub compensate_box_speed: Parameter<bool>,
-    pub scanner_s_curve: Parameter<f32>,
 }
 
 fn parse_stock(s: &str) -> Option<StockId> {
@@ -49,10 +48,10 @@ fn parse_film_format(s: &str) -> Option<FilmFormat> {
 fn parse_output(s: &str) -> Option<FilmOutput> {
     Some(match s {
         "NegativeLinear" => FilmOutput::NegativeLinear,
-        "PositiveLinear" => FilmOutput::PositiveLinear,
-        "PositiveInverseHd" | "PositiveInverseHD" | "PositiveSceneLinear" => {
-            FilmOutput::PositiveInverseHd
-        }
+        "PositiveLinear"
+        | "PositiveInverseHd"
+        | "PositiveInverseHD"
+        | "PositiveSceneLinear" => FilmOutput::PositiveLinear,
         _ => return None,
     })
 }
@@ -90,7 +89,6 @@ fn film_params_from_config(config: &Film) -> Option<FilmParams> {
         output,
         enable_halation: config.enable_halation.value,
         compensate_box_speed: config.compensate_box_speed.value,
-        scanner_s_curve: config.scanner_s_curve.value,
     })
 }
 
@@ -148,22 +146,15 @@ impl Default for Film {
             ),
             output: Parameter::new_with_choices(
                 "NegativeLinear".to_string(),
-                "NegativeLinear: densitometric scanned negative. PositiveLinear: bounded invert from processed Dmin + neutral mid-gray scan. PositiveInverseHd: scene-referred HDR inverse-H&D reconstruction.",
+                "NegativeLinear: densitometric scanned negative. PositiveLinear: unbounded linear HDR light reconstructed from processed Dmin and neutral mid-gray scan.",
                 vec![
                     "NegativeLinear".to_string(),
                     "PositiveLinear".to_string(),
-                    "PositiveInverseHd".to_string(),
                 ],
             ),
             compensate_box_speed: Parameter::new(
                 true,
                 "Normalize exposure across stocks to the capture ISO (scene-relative fluence, independent of stock box speed). Off keeps the raw box-speed difference: faster stocks look brighter for the same input.",
-            ),
-            scanner_s_curve: Parameter::new_ranged(
-                0.0,
-                0.0,
-                3.0,
-                "Scanner S-curve contrast tune factor (0.0 = linear HDR, 1.0 = standard scanner S-curve).",
             ),
         }
     }
@@ -253,6 +244,20 @@ impl PipelineModule for Module<Film> {
         };
 
         pichromatic::film::process(image, &params).expect("Film process failed");
+        #[allow(deprecated)]
+        if matches!(
+            params.output,
+            FilmOutput::PositiveLinear | FilmOutput::PositiveInverseHd
+        ) {
+            image
+                .metadata
+                .extensions
+                .insert(pichromatic::image::ExposureGain(1.0));
+            image
+                .metadata
+                .extensions
+                .insert(pichromatic::image::HighlightCeiling(3.8));
+        }
     }
 
     fn process_gpu(
@@ -269,9 +274,15 @@ impl PipelineModule for Module<Film> {
 
         pollster::block_on(pichromatic::film::process_gpu(ctx, gpu_buf, meta, &params))
             .expect("GPU film process failed");
-        if params.output == FilmOutput::PositiveLinear {
+        #[allow(deprecated)]
+        if matches!(
+            params.output,
+            FilmOutput::PositiveLinear | FilmOutput::PositiveInverseHd
+        ) {
             meta.extensions
                 .insert(pichromatic::image::ExposureGain(1.0));
+            meta.extensions
+                .insert(pichromatic::image::HighlightCeiling(3.8));
         }
     }
 
@@ -301,9 +312,15 @@ impl PipelineModule for Module<Film> {
                 .await
                 .expect("GPU film process failed");
 
-            if params.output == FilmOutput::PositiveLinear {
+            #[allow(deprecated)]
+            if matches!(
+                params.output,
+                FilmOutput::PositiveLinear | FilmOutput::PositiveInverseHd
+            ) {
                 meta.extensions
                     .insert(pichromatic::image::ExposureGain(1.0));
+                meta.extensions
+                    .insert(pichromatic::image::HighlightCeiling(3.8));
             }
 
             // Ensure Film's queue submits are visible before Sigmoid/CST/present.
@@ -322,7 +339,7 @@ impl PipelineModule for Module<Film> {
     fn schema(&self) -> ModuleSchema {
         ModuleSchema {
             name: "Film".to_string(),
-            description: "Physically-based analog film simulation. NegativeLinear exports the densitometric scan; PositiveLinear applies a bounded technical invert from processed Dmin and a neutral mid-gray scan.".to_string(),
+            description: "Physically-based analog film simulation. NegativeLinear exports the densitometric scan; PositiveLinear applies an unbounded linear HDR invert from processed Dmin and a neutral mid-gray scan.".to_string(),
             fields: fields_from_config(&self.config),
         }
     }
@@ -432,12 +449,16 @@ mod tests {
         .unwrap();
         assert_eq!(default.render_width_mm.value, None);
 
-        for alias in ["PositiveInverseHd", "PositiveInverseHD", "PositiveSceneLinear"] {
-            let json = format!(r#"{{"output": "{alias}", "scanner_s_curve": 1.5}}"#);
+        for alias in [
+            "PositiveLinear",
+            "PositiveInverseHd",
+            "PositiveInverseHD",
+            "PositiveSceneLinear",
+        ] {
+            let json = format!(r#"{{"output": "{alias}"}}"#);
             let film: Film = serde_json::from_str(&json).unwrap();
             let params = film_params_from_config(&film).unwrap();
-            assert_eq!(params.output, FilmOutput::PositiveInverseHd);
-            assert_eq!(params.scanner_s_curve, 1.5);
+            assert_eq!(params.output, FilmOutput::PositiveLinear);
         }
 
         for (name, expected) in [
@@ -453,5 +474,54 @@ mod tests {
             let params = film_params_from_config(&film).unwrap();
             assert_eq!(params.film_format, expected);
         }
+    }
+
+    #[test]
+    fn test_film_module_cpu_exposure_gain() {
+        let mut film_config = Film::default();
+        film_config.output.value = "PositiveLinear".to_string();
+        let film_module = Module::<Film> {
+            name: "Film".to_string(),
+            cache: None,
+            config: film_config,
+        };
+
+        let gain = 350.0f32;
+        let mut image_with_gain = generate_test_image_512x512(123);
+        image_with_gain.cst(ColorSpaceTag::AcesCg);
+        image_with_gain
+            .metadata
+            .extensions
+            .insert(pichromatic::image::ExposureGain(gain));
+
+        let mut image_unity = generate_test_image_512x512(123);
+        image_unity.cst(ColorSpaceTag::AcesCg);
+
+        let mut cpu_img_gain = PipelineImage::Cpu(image_with_gain);
+        film_module.process(&Backend::Cpu, &mut cpu_img_gain);
+        let out_gain = cpu_img_gain.to_cpu(None);
+
+        let mut cpu_img_unity = PipelineImage::Cpu(image_unity);
+        film_module.process(&Backend::Cpu, &mut cpu_img_unity);
+        let out_unity = cpu_img_unity.to_cpu(None);
+
+        assert_eq!(
+            out_gain
+                .metadata
+                .extensions
+                .get::<pichromatic::image::ExposureGain>()
+                .map(|g| g.0),
+            Some(1.0)
+        );
+        assert_eq!(
+            out_unity
+                .metadata
+                .extensions
+                .get::<pichromatic::image::ExposureGain>()
+                .map(|g| g.0),
+            Some(1.0)
+        );
+
+        assert_eq!(out_gain.rgb_data, out_unity.rgb_data);
     }
 }

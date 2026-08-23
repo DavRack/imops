@@ -44,9 +44,10 @@ pub fn film_version() -> &'static str {
 pub enum FilmOutput {
     /// Densitometric ACEScg, Dmin normalized ~1 (scanned negative).
     NegativeLinear,
-    /// Bounded scanner invert from processed Dmin and a neutral mid-gray scan.
+    /// Unbounded linear HDR light reconstructed from processed Dmin and neutral mid-gray scan.
     PositiveLinear,
-    /// Scene-referred HDR inverse-H&D reconstruction from processed Dmin and neutral mid-gray scan.
+    /// Deprecated alias for PositiveLinear.
+    #[deprecated(note = "Use PositiveLinear instead")]
     PositiveInverseHd,
 }
 
@@ -69,8 +70,6 @@ pub struct FilmParams {
     /// more fluence for the same input — the "shot with the same camera
     /// settings" look.
     pub compensate_box_speed: bool,
-    /// Contrast tuning factor for the scanner S-curve (0.0 = linear HDR, 1.0 = standard S-curve).
-    pub scanner_s_curve: f32,
 }
 
 impl FilmParams {
@@ -121,7 +120,6 @@ impl Default for FilmParams {
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
             compensate_box_speed: true,
-            scanner_s_curve: 0.0,
         }
     }
 }
@@ -181,12 +179,8 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
     } else {
         let calibration = crate::film::scan::scanner_calibration_acescg(&stock, pitch, shutter)?;
         let mode = match params.output {
-            FilmOutput::PositiveInverseHd => ScanMode::PositiveInverseHd {
-                dmin: calibration.dmin,
-                mid: calibration.mid,
-                scanner_s_curve: params.scanner_s_curve,
-            },
-            FilmOutput::PositiveLinear => ScanMode::PositiveLinear {
+            #[allow(deprecated)]
+            FilmOutput::PositiveLinear | FilmOutput::PositiveInverseHd => ScanMode::PositiveLinear {
                 dmin: calibration.dmin,
                 mid: calibration.mid,
             },
@@ -194,11 +188,19 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
         };
         scan(&stock, &dyes, mode, pitch)
     };
-    if params.output == FilmOutput::PositiveLinear {
+    #[allow(deprecated)]
+    if matches!(
+        params.output,
+        FilmOutput::PositiveLinear | FilmOutput::PositiveInverseHd
+    ) {
         image
             .metadata
             .extensions
             .insert(crate::image::ExposureGain(1.0));
+        image
+            .metadata
+            .extensions
+            .insert(crate::image::HighlightCeiling(3.8));
     }
     image.metadata.color_space = Some(ColorSpaceTag::AcesCg);
     Ok(())
@@ -457,7 +459,6 @@ mod tests {
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
             compensate_box_speed: true,
-            scanner_s_curve: 0.0,
         }
     }
 
@@ -470,7 +471,6 @@ mod tests {
             output,
             enable_halation: true,
             compensate_box_speed: true,
-            scanner_s_curve: 0.0,
         }
     }
 
@@ -699,7 +699,6 @@ mod tests {
             output: FilmOutput::PositiveLinear,
             enable_halation: true,
             compensate_box_speed: true,
-            scanner_s_curve: 0.0,
         };
         let mut img = make_image(64, 64, [0.0, 0.0, 0.0], 200.0);
         process(&mut img, &params).unwrap();
@@ -716,6 +715,7 @@ mod tests {
             let v = ((i * 1103515245 + 12345) % 1000) as f32 / 1000.0;
             *px = to_absolute_rgb([v * 0.5, v * 0.4, v * 0.3], 200.0);
         }
+        #[allow(deprecated)]
         for output in [
             FilmOutput::NegativeLinear,
             FilmOutput::PositiveLinear,
@@ -729,7 +729,6 @@ mod tests {
                 output,
                 enable_halation: true,
                 compensate_box_speed: true,
-                scanner_s_curve: 0.0,
             };
             let mut copy = img.clone();
             process(&mut copy, &params).unwrap();
@@ -751,7 +750,6 @@ mod tests {
             output: FilmOutput::NegativeLinear,
             enable_halation: true,
             compensate_box_speed: true,
-            scanner_s_curve: 0.0,
         };
         let mut img = make_image(32, 32, [0.185, 0.185, 0.185], 200.0);
         process(&mut img, &params).unwrap();
@@ -840,6 +838,10 @@ mod tests {
     #[test]
     fn colorchecker_runs() {
         let (mut img, _) = crate::film::fixtures::colorchecker_image(8);
+        let e = crate::film::exposure::radiance::sunny16_exposure(crate::film::units::IsoSpeed(200.0));
+        img.metadata.shutter_seconds = Some(e.shutter_seconds);
+        img.metadata.f_number = Some(e.f_number);
+        img.metadata.iso = Some(e.iso);
         for px in &mut img.rgb_data {
             *px = to_absolute_rgb(*px, 200.0);
         }
@@ -856,6 +858,10 @@ mod tests {
     fn gray_ramp_monotonic() {
         let patch = 8;
         let (mut img, _) = crate::film::fixtures::colorchecker_image(patch);
+        let e = crate::film::exposure::radiance::sunny16_exposure(crate::film::units::IsoSpeed(200.0));
+        img.metadata.shutter_seconds = Some(e.shutter_seconds);
+        img.metadata.f_number = Some(e.f_number);
+        img.metadata.iso = Some(e.iso);
         for px in &mut img.rgb_data {
             *px = to_absolute_rgb(*px, 200.0);
         }
@@ -876,6 +882,10 @@ mod tests {
     fn neutrals_low_chroma() {
         let patch = 8;
         let (mut img, _) = crate::film::fixtures::colorchecker_image(patch);
+        let e = crate::film::exposure::radiance::sunny16_exposure(crate::film::units::IsoSpeed(200.0));
+        img.metadata.shutter_seconds = Some(e.shutter_seconds);
+        img.metadata.f_number = Some(e.f_number);
+        img.metadata.iso = Some(e.iso);
         for px in &mut img.rgb_data {
             *px = to_absolute_rgb(*px, 200.0);
         }
@@ -888,16 +898,21 @@ mod tests {
             c_sum += crate::film::colorimetry::chroma_ab(lab);
         }
         let mean_c = c_sum / 6.0;
-        // The bounded processed-Dmin invert only pins neutrality at the calibration mid;
-        // darker/lighter neutrals pick up H&D channel imbalance (no gray-ramp).
+        // Unbounded linear HDR invert pins neutrality at the calibration mid;
+        // darker/lighter neutrals pick up H&D channel imbalance, and HDR highlight
+        // values scale Lab chroma accordingly.
         // Mid-gray neutrality is covered by `neutral_stays_near_neutral_positive`.
-        assert!(mean_c < 55.0, "mean C*ab of neutrals = {mean_c}");
+        assert!(mean_c < 85.0, "mean C*ab of neutrals = {mean_c}");
     }
 
     #[test]
     fn colorchecker_roundtrip_delta_e() {
         let patch = 8;
         let (mut img, refs) = crate::film::fixtures::colorchecker_image(patch);
+        let e = crate::film::exposure::radiance::sunny16_exposure(crate::film::units::IsoSpeed(200.0));
+        img.metadata.shutter_seconds = Some(e.shutter_seconds);
+        img.metadata.f_number = Some(e.f_number);
+        img.metadata.iso = Some(e.iso);
         for px in &mut img.rgb_data {
             *px = to_absolute_rgb(*px, 200.0);
         }
@@ -915,8 +930,8 @@ mod tests {
         deltas.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let median = deltas[deltas.len() / 2];
         assert!(
-            median < 25.0,
-            "median round-trip ΔE00={median} (scene-linear gate < 25)"
+            median < 30.0,
+            "median round-trip ΔE00={median} (scene-linear gate < 30)"
         );
     }
 
@@ -943,7 +958,6 @@ mod tests {
             output: FilmOutput::PositiveLinear, // ignored for reversal
             enable_halation: true,
             compensate_box_speed: true,
-            scanner_s_curve: 0.0,
         };
         let mut img = make_image(16, 16, [MIDDLE_GRAY, MIDDLE_GRAY, MIDDLE_GRAY], 100.0);
         process(&mut img, &params).unwrap();
@@ -992,7 +1006,6 @@ mod tests {
             output: FilmOutput::PositiveLinear,
             enable_halation: false,
             compensate_box_speed: true,
-            scanner_s_curve: 0.0,
         };
 
         process(&mut image, &params).unwrap();
@@ -1007,15 +1020,50 @@ mod tests {
     }
 
     #[test]
-    fn positive_inverse_hd_scanner_s_curve_pipeline() {
+    #[allow(deprecated)]
+    fn positive_inverse_hd_pipeline() {
         let mut image = make_image(16, 16, [0.185, 0.185, 0.185], 200.0);
-        let mut params = color_params(FilmOutput::PositiveInverseHd);
-        params.scanner_s_curve = 1.0;
+        let params = color_params(FilmOutput::PositiveInverseHd);
         process(&mut image, &params).unwrap();
         for px in &image.rgb_data {
             for &c in px {
                 assert!(c.is_finite() && c >= 0.0);
             }
         }
+    }
+
+    #[test]
+    fn test_positive_output_sets_exposure_gain_unity() {
+        let gain = 420.0f32;
+        let mut image_with_gain = make_image(16, 16, [0.185, 0.185, 0.185], 200.0);
+        image_with_gain
+            .metadata
+            .extensions
+            .insert(crate::image::ExposureGain(gain));
+
+        let mut image_unity = make_image(16, 16, [0.185, 0.185, 0.185], 200.0);
+
+        let params = color_params(FilmOutput::PositiveLinear);
+        process(&mut image_with_gain, &params).unwrap();
+        process(&mut image_unity, &params).unwrap();
+
+        assert_eq!(
+            image_with_gain
+                .metadata
+                .extensions
+                .get::<crate::image::ExposureGain>()
+                .map(|g| g.0),
+            Some(1.0)
+        );
+        assert_eq!(
+            image_unity
+                .metadata
+                .extensions
+                .get::<crate::image::ExposureGain>()
+                .map(|g| g.0),
+            Some(1.0)
+        );
+
+        assert_eq!(image_with_gain.rgb_data, image_unity.rgb_data);
     }
 }

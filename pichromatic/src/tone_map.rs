@@ -42,8 +42,120 @@ pub fn sigmoid_with_gain(image_buffer: &mut ImageBuffer, gain: f32) {
     });
 }
 
+#[inline(always)]
+pub fn rational_scurve(x: f32, s_curve: f32, ceiling: f32) -> f32 {
+    if x <= 0.0 || x.is_nan() {
+        return 0.0;
+    }
+    if s_curve <= 0.0 {
+        return x;
+    }
+    let gamma = s_curve as f64;
+    let mid = crate::pixel::MIDDLE_GRAY as f64;
+    let x_max = (ceiling as f64).max(mid + 1e-4);
+    let mid_gamma = mid.powf(gamma);
+    let x_max_gamma = x_max.powf(gamma);
+    let k_denom = mid * x_max_gamma - mid_gamma;
+    let (k_gamma, scale) = if k_denom > 0.0 && k_denom.is_finite() {
+        let k = (mid_gamma * x_max_gamma * (1.0 - mid)) / k_denom;
+        let s = (x_max_gamma + k) / x_max_gamma;
+        (k, s)
+    } else {
+        (mid_gamma * ((1.0 - mid) / mid), 1.0)
+    };
+    let x_gamma = (x as f64).powf(gamma);
+    let denom = x_gamma + k_gamma;
+    if denom > 0.0 && denom.is_finite() {
+        let val = (x_gamma / denom) * scale;
+        val.min(1.0) as f32
+    } else if x_gamma.is_infinite() {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+pub fn inverse_hd_tone_map(image_buffer: &mut ImageBuffer, s_curve: f32) {
+    inverse_hd_tone_map_with_gain(image_buffer, s_curve, 1.0, 4.0);
+}
+
+pub fn inverse_hd_tone_map_with_gain(
+    image_buffer: &mut ImageBuffer,
+    s_curve: f32,
+    gain: f32,
+    ceiling: f32,
+) {
+    let inv_gain = if gain > 0.0 && gain.is_finite() {
+        1.0 / gain
+    } else {
+        1.0
+    };
+    let params = &RgcParams::default();
+    let mid = crate::pixel::MIDDLE_GRAY as f64;
+    let gamma = s_curve;
+    let x_max = (ceiling as f64).max(mid + 1e-4);
+    let (k_gamma, scale) = if gamma > 0.0 {
+        let gamma_f64 = gamma as f64;
+        let mid_gamma = mid.powf(gamma_f64);
+        let x_max_gamma = x_max.powf(gamma_f64);
+        let k_denom = mid * x_max_gamma - mid_gamma;
+        if k_denom > 0.0 && k_denom.is_finite() {
+            let k = (mid_gamma * x_max_gamma * (1.0 - mid)) / k_denom;
+            let s = (x_max_gamma + k) / x_max_gamma;
+            (k, s)
+        } else {
+            (mid_gamma * ((1.0 - mid) / mid), 1.0)
+        }
+    } else {
+        (0.0, 1.0)
+    };
+
+    image_buffer.par_iter_mut().for_each(|pixel| {
+        let rel_pixel = [
+            pixel[0] * inv_gain,
+            pixel[1] * inv_gain,
+            pixel[2] * inv_gain,
+        ];
+        let gamut_compressed_pixel = gamut_compress_pixel(rel_pixel, params);
+        let [_, _, h] = AcesCg.convert(Oklch, gamut_compressed_pixel);
+        let p = gamut_compressed_pixel.map(|subp| {
+            if subp <= 0.0 || subp.is_nan() {
+                0.0
+            } else if gamma <= 0.0 {
+                subp
+            } else {
+                let x_gamma = (subp as f64).powf(gamma as f64);
+                let denom = x_gamma + k_gamma;
+                if denom > 0.0 && denom.is_finite() {
+                    let val = (x_gamma / denom) * scale;
+                    val.min(1.0) as f32
+                } else if x_gamma.is_infinite() {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        });
+        let k = 5.0;
+        let s = p.luminance().clamp(0.0, 1.0);
+        let m = (1.0 - s.powf(k)).max(0.0);
+        let [l, c, _] = AcesCg.convert(Oklch, p);
+        *pixel = Oklch.convert(AcesCg, [l, c * m, h]);
+    });
+}
+
 /// Native GPU sigmoid tone map matching CPU `sigmoid` (ACEScg assumed, no metadata check).
 pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
+    sigmoid_gpu_with_gain(ctx, storage_buffer, 1.0);
+}
+
+pub fn sigmoid_gpu_with_gain(ctx: &GpuContext, storage_buffer: &GpuImageBuffer, gain: f32) {
+    let inv_gain = if gain > 0.0 && gain.is_finite() {
+        1.0 / gain
+    } else {
+        1.0
+    };
+
     // Bake ACEScg ↔ LinearSrgb matrices (chromatically adapted).
     let to0 = AcesCg.convert(ColorSpaceTag::LinearSrgb, [1.0, 0.0, 0.0]);
     let to1 = AcesCg.convert(ColorSpaceTag::LinearSrgb, [0.0, 1.0, 0.0]);
@@ -63,7 +175,8 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         from_lin_b: [f32; 4],
         width: u32,
         height: u32,
-        _pad: [u32; 2],
+        inv_gain: f32,
+        _pad: u32,
     }
 
     let params = SigmoidParamsGpu {
@@ -75,7 +188,8 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         from_lin_b: [from0[2], from1[2], from2[2], 0.0],
         width: storage_buffer.width as u32,
         height: storage_buffer.height as u32,
-        _pad: [0; 2],
+        inv_gain,
+        _pad: 0,
     };
 
     let shader_source = r#"
@@ -88,8 +202,8 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
             from_lin_b: vec4<f32>,
             width: u32,
             height: u32,
+            inv_gain: f32,
             _pad0: u32,
-            _pad1: u32,
         };
 
         @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
@@ -101,7 +215,7 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
         const LUMA_B: f32 = 0.0536895174;
 
         const POWER: f32 = 1.2;
-        const SIGMOID_C: f32 = 1.219512;
+        const SIGMOID_C: f32 = 1.2269939;
         const CHROMA_K: f32 = 5.0;
 
         fn cbrt_signed(x: f32) -> f32 {
@@ -235,7 +349,8 @@ pub fn sigmoid_gpu(ctx: &GpuContext, storage_buffer: &GpuImageBuffer) {
             }
             let index = y * params.width + x;
             let alpha = pixels[index].a;
-            let gc = gamut_compress(pixels[index].rgb);
+            let rel_pixel = pixels[index].rgb * params.inv_gain;
+            let gc = gamut_compress(rel_pixel);
             let h = acescg_to_oklch(gc).z;
             let p = vec3<f32>(
                 square_sigmoid(gc.r),
@@ -482,6 +597,136 @@ mod tests {
         let e = buf[0][0];
         let back = e.powf(2.2);
         assert!((back - 0.18).abs() < 1e-5, "γ2.2 roundtrip {back}");
+    }
+
+    #[test]
+    fn test_sigmoid_gpu_with_gain() {
+        let Some(ctx) = GpuContext::try_new_sync() else {
+            return;
+        };
+        let gain = 400.0;
+        let mid = crate::pixel::MIDDLE_GRAY;
+        let mut img = crate::pixel::Image {
+            rgb_data: vec![[mid * gain, mid * gain, mid * gain]],
+            raw_data: vec![].into(),
+            metadata: crate::image::ImageMetadata {
+                width: 1,
+                height: 1,
+                ..Default::default()
+            },
+        };
+        let gpu_buf = ctx.upload_image(&img);
+        sigmoid_gpu_with_gain(&ctx, &gpu_buf, gain);
+        let gpu_img = ctx.download_image(&gpu_buf, &img.metadata);
+        sigmoid_with_gain(&mut img.rgb_data, gain);
+        for c in 0..3 {
+            assert!(
+                (gpu_img.rgb_data[0][c] - img.rgb_data[0][c]).abs() < 1e-4,
+                "GPU vs CPU mismatch at channel {c}: GPU {}, CPU {}",
+                gpu_img.rgb_data[0][c],
+                img.rgb_data[0][c]
+            );
+        }
+    }
+
+    #[test]
+    fn test_rational_scurve_midgray() {
+        let mid = crate::pixel::MIDDLE_GRAY;
+        for s in [0.2, 0.5, 1.0, 1.5, 2.0, 3.0] {
+            let out = rational_scurve(mid, s, 4.0);
+            assert!(
+                (out - mid).abs() < 1e-5,
+                "rational_scurve with s={s} shifted midgray from {mid} to {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rational_scurve_three_point_calibration() {
+        let gammas = [1.0, 1.2, 1.5, 2.0];
+        let ceilings = [3.0, 3.5, 4.0, 8.0];
+        let mid = crate::pixel::MIDDLE_GRAY;
+
+        for &gamma in &gammas {
+            for &ceiling in &ceilings {
+                // 1. 0.0 -> 0.0
+                let out_zero = rational_scurve(0.0, gamma, ceiling);
+                assert_eq!(
+                    out_zero, 0.0,
+                    "0.0 must map to 0.0 for gamma={gamma}, ceiling={ceiling}"
+                );
+
+                // 2. 0.185 -> 0.185 exactly (within 1e-6)
+                let out_mid = rational_scurve(mid, gamma, ceiling);
+                assert!(
+                    (out_mid - mid).abs() < 1e-6,
+                    "Midgray 0.185 shifted to {out_mid} (delta {}) for gamma={gamma}, ceiling={ceiling}",
+                    (out_mid - mid).abs()
+                );
+
+                // 3. x_max (ceiling) -> 1.0 exactly (within 1e-6)
+                let out_max = rational_scurve(ceiling, gamma, ceiling);
+                assert!(
+                    (out_max - 1.0).abs() < 1e-6,
+                    "Ceiling {ceiling} shifted to {out_max} (delta {}) for gamma={gamma}",
+                    (out_max - 1.0).abs()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_inverse_hd_gray_preservation() {
+        let mid = crate::pixel::MIDDLE_GRAY;
+        for s_curve in [0.5, 1.0, 1.5, 2.0, 3.0] {
+            let mut buf = vec![[mid, mid, mid]];
+            inverse_hd_tone_map(&mut buf, s_curve);
+            for c in 0..3 {
+                assert!(
+                    (buf[0][c] - mid).abs() < 1e-4,
+                    "s_curve={s_curve}: 18.5% gray channel {c} shifted from {mid} to {}",
+                    buf[0][c]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_inverse_hd_tone_map_with_gain() {
+        let gain = 800.0;
+        let mid = crate::pixel::MIDDLE_GRAY;
+        let mut buf = vec![[mid * gain, mid * gain, mid * gain]];
+        inverse_hd_tone_map_with_gain(&mut buf, 1.2, gain, 4.0);
+        for c in 0..3 {
+            assert!(
+                (buf[0][c] - mid).abs() < 1e-4,
+                "Absolute radiance midgray channel {c} with gain {gain} should map back to MIDDLE_GRAY, got {}",
+                buf[0][c]
+            );
+        }
+    }
+
+    #[test]
+    fn test_inverse_hd_finite_non_negative() {
+        let inputs = [-1.0, 0.0, 0.001, 0.185, 0.5, 1.0, 5.0, 50.0, 1000.0];
+        let mut buf: Vec<[f32; 3]> = inputs.iter().map(|&v| [v, v * 0.8, v * 1.2]).collect();
+        inverse_hd_tone_map(&mut buf, 1.5);
+        for (i, px) in buf.iter().enumerate() {
+            for c in 0..3 {
+                assert!(
+                    px[c].is_finite(),
+                    "Input {} channel {c} produced non-finite output {}",
+                    inputs[i],
+                    px[c]
+                );
+                assert!(
+                    px[c] >= 0.0,
+                    "Input {} channel {c} produced negative output {}",
+                    inputs[i],
+                    px[c]
+                );
+            }
+        }
     }
 }
 

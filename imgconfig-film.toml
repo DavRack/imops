@@ -1,7 +1,7 @@
 #### Pixel Pipeline — physically-based film (PositiveLinear) ####
 # Usage: ./run <raw.dng> imgconfig-film.toml
 #
-# PositiveLinear is the bounded processed-Dmin scanner inversion used for display output.
+# PositiveLinear is the unbounded linear HDR scanner inversion used for display output.
 # NegativeLinear is the densitometric scan of the developed negative and is
 # appropriate for inspecting film grain/cloud structure.
 

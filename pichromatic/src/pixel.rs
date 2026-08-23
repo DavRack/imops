@@ -11,7 +11,7 @@ use crate::{
     highlight_reconstruction::highlight_reconstruction,
     image::ImageMetadata,
     lch::lch,
-    tone_map::{gamma_encode, sigmoid},
+    tone_map::{gamma_encode, inverse_hd_tone_map, inverse_hd_tone_map_with_gain, sigmoid},
 };
 
 pub const CHANNELS_PER_PIXEL: usize = 3;
@@ -148,6 +148,21 @@ impl Image {
 
     pub fn sigmoid_tone_map_with_gain(&mut self, gain: f32) -> &mut Image {
         crate::tone_map::sigmoid_with_gain(&mut self.rgb_data, gain);
+        self
+    }
+
+    pub fn inverse_hd_tone_map(&mut self, s_curve: f32) -> &mut Image {
+        inverse_hd_tone_map(&mut self.rgb_data, s_curve);
+        self
+    }
+
+    pub fn inverse_hd_tone_map_with_gain(
+        &mut self,
+        s_curve: f32,
+        gain: f32,
+        ceiling: f32,
+    ) -> &mut Image {
+        inverse_hd_tone_map_with_gain(&mut self.rgb_data, s_curve, gain, ceiling);
         self
     }
 

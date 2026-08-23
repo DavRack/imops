@@ -65,7 +65,6 @@ fn main() {
         output: FilmOutput::PositiveLinear,
         enable_halation: true,
         compensate_box_speed: true,
-        scanner_s_curve: 0.0,
     })
     .unwrap();
     let means = sample_patch_means(&img, patch);
@@ -94,7 +93,6 @@ fn main() {
         output: FilmOutput::NegativeLinear,
         enable_halation: true,
         compensate_box_speed: true,
-        scanner_s_curve: 0.0,
     })
     .unwrap();
     let means_n = sample_patch_means(&img_n, patch);

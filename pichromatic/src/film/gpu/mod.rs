@@ -32,7 +32,6 @@ use crate::film::exposure::upsample::{
 use crate::film::scan::densitometry::{
     dmin_reference_acescg, scanner_aperture_sigma_px, scanner_calibration_acescg,
 };
-use crate::film::scan::invert::invert_constants;
 use crate::film::stock::{EmulsionLayer, FilmStock, LayerKind};
 use crate::film::{FilmError, FilmOutput, FilmParams};
 use crate::gpu::{ComputePassDesc, GpuContext, GpuImageBuffer};
@@ -341,11 +340,7 @@ struct InvertU {
     n: u32,
     mode: u32,
     inv_gamma: f32,
-    scanner_s_curve: f32,
     eps: f32,
-    _p0: u32,
-    _p1: u32,
-    _p2: u32,
     inv_dmin: [f32; 4],
     exponent: [f32; 4],
     gain: [f32; 4],
@@ -369,11 +364,7 @@ struct InvertRoiU {
     b_base: u32,
     mode: u32,
     inv_gamma: f32,
-    scanner_s_curve: f32,
     eps: f32,
-    _p0: u32,
-    _p1: u32,
-    _p2: u32,
     inv_dmin: [f32; 4],
     exponent: [f32; 4],
     gain: [f32; 4],
@@ -519,7 +510,6 @@ pub(crate) struct StockConsts {
     exponent: [f32; 4],
     gain: [f32; 4],
     inv_gamma: f32,
-    scanner_s_curve: f32,
     eps: f32,
 }
 
@@ -905,17 +895,8 @@ pub(crate) fn bake_consts(
                 },
             );
             match params.output {
-                FilmOutput::PositiveLinear => {
-                    let inv_c = invert_constants(cal.mid, cal.dmin);
-                    (
-                        1u32,
-                        [inv_c.inv_dmin[0], inv_c.inv_dmin[1], inv_c.inv_dmin[2], 0.0],
-                        [inv_c.exponent[0], inv_c.exponent[1], inv_c.exponent[2], 0.0],
-                        [1.0, 1.0, 1.0, 1.0],
-                        1.0 / 0.6,
-                    )
-                }
-                FilmOutput::PositiveInverseHd => {
+                #[allow(deprecated)]
+                FilmOutput::PositiveLinear | FilmOutput::PositiveInverseHd => {
                     let eps = 1e-6f32;
                     let ig = 1.0 / crate::film::scan::invert::GAMMA_EFF;
                     let inv_d = [
@@ -972,7 +953,6 @@ pub(crate) fn bake_consts(
         exponent,
         gain,
         inv_gamma,
-        scanner_s_curve: params.scanner_s_curve,
         eps: 1e-6,
     }
 }
@@ -1485,11 +1465,7 @@ async fn process_gpu_full_frame(
             n: n as u32,
             mode: consts.invert_mode,
             inv_gamma: consts.inv_gamma,
-            scanner_s_curve: consts.scanner_s_curve,
             eps: consts.eps,
-            _p0: 0,
-            _p1: 0,
-            _p2: 0,
             inv_dmin: consts.inv_dmin,
             exponent: consts.exponent,
             gain: consts.gain,
@@ -1985,11 +1961,7 @@ async fn process_gpu_roi(
                 b_base,
                 mode: consts.invert_mode,
                 inv_gamma: consts.inv_gamma,
-                scanner_s_curve: consts.scanner_s_curve,
                 eps: consts.eps,
-                _p0: 0,
-                _p1: 0,
-                _p2: 0,
                 inv_dmin: consts.inv_dmin,
                 exponent: consts.exponent,
                 gain: consts.gain,
@@ -2040,6 +2012,8 @@ mod roi_uniform_struct_tests {
         assert_eq!(std::mem::size_of::<ParticleFieldRoiU>(), 64);
         assert_eq!(std::mem::size_of::<MicroMixU>(), 32);
         assert_eq!(std::mem::size_of::<ScanRoiU>(), 64);
+        assert_eq!(std::mem::size_of::<InvertU>(), 64);
+        assert_eq!(std::mem::size_of::<InvertRoiU>(), 112);
     }
 }
 
@@ -2104,7 +2078,6 @@ mod tests {
             output: crate::film::FilmOutput::NegativeLinear,
             enable_halation: false,
             compensate_box_speed: true,
-            scanner_s_curve: 0.0,
         };
 
         let result = pollster::block_on(process_gpu(&ctx, &gpu_buf, &meta, &params));
@@ -2200,7 +2173,6 @@ mod tests {
                 output,
                 enable_halation: true,
                 compensate_box_speed: true,
-                scanner_s_curve: 0.0,
             };
 
             let gpu_buf_ff = ctx.create_output_buffer(width, height);
@@ -2297,7 +2269,6 @@ mod tests {
                 output,
                 enable_halation: true,
                 compensate_box_speed: true,
-                scanner_s_curve: 0.0,
             };
 
             let mut cpu_image = crate::pixel::Image {

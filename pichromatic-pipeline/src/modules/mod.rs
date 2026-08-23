@@ -9,6 +9,7 @@ pub mod gamma;
 pub mod contrast;
 pub mod lch;
 pub mod sigmoid;
+pub mod inverse_hd_tone_map;
 pub mod vignette;
 pub mod cst;
 pub mod baseline_exp;
@@ -26,6 +27,7 @@ pub use gamma::Gamma;
 pub use contrast::Contrast;
 pub use lch::LCH;
 pub use sigmoid::SigmoidToneMap;
+pub use inverse_hd_tone_map::InverseHdToneMap;
 pub use vignette::Vignette;
 pub use cst::CST;
 pub use baseline_exp::BaselineExposureCompensation;
@@ -419,6 +421,7 @@ pub fn get_default_modules() -> Vec<Box<dyn PipelineModule>> {
         Box::new(Module::<Film>::default()),
         Box::new(Module::<LCH>::default()),
         Box::new(Module::<SigmoidToneMap>::default()),
+        Box::new(Module::<InverseHdToneMap>::default()),
         Box::new(Module::<Gamma>::default()),
         Box::new(Module::<Rotation>::default()),
         Box::new(Module::<BM3D>::default()),

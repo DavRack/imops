@@ -30,7 +30,11 @@ pub fn parse_config(config: String) -> PipelineConfig {
             .find(|m| {
                 let schema_name = m.schema().name.to_lowercase();
                 let requested_name = name.to_lowercase();
-                schema_name == requested_name || (requested_name == "tonemap" && schema_name == "sigmoidtonemap")
+                schema_name == requested_name
+                    || (requested_name == "tonemap" && schema_name == "sigmoidtonemap")
+                    || (requested_name == "inversehd" && schema_name == "inversehdtonemap")
+                    || (requested_name == "inverse_hd" && schema_name == "inversehdtonemap")
+                    || (requested_name == "inverse_hd_tone_map" && schema_name == "inversehdtonemap")
             })
             .unwrap_or_else(|| panic!("wrong pipeline module name '{}'", name));
         let pipeline_module = template.create(module);
@@ -70,6 +74,25 @@ mod tests {
     }
 
     #[test]
+    fn parses_imgconfig_film2() {
+        let cfg = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../imgconfig-film2.toml"
+        ))
+        .expect("imgconfig-film2.toml");
+        let parsed = super::parse_config(cfg);
+        let names: Vec<_> = parsed
+            .pipeline_modules
+            .iter()
+            .map(|m| m.schema().name)
+            .collect();
+        assert!(
+            names.iter().any(|n| n == "InverseHdToneMap"),
+            "expected InverseHdToneMap in pipeline, got {names:?}"
+        );
+    }
+
+    #[test]
     fn parses_json_config() {
         let json = r#"{
             "pipeline_modules": [
@@ -101,5 +124,19 @@ mod tests {
 
         let json_gamma = r#"{"pipeline_modules": [{"name": "Gamma", "gamma": 2.2}]}"#;
         let _ = super::parse_config(json_gamma.to_string());
+
+        let json_inv_hd = r#"{"pipeline_modules": [{"name": "InverseHdToneMap", "strength": 1.2}]}"#;
+        let parsed_inv_hd = super::parse_config(json_inv_hd.to_string());
+        assert_eq!(parsed_inv_hd.pipeline_modules.len(), 1);
+        assert_eq!(parsed_inv_hd.pipeline_modules[0].schema().name, "InverseHdToneMap");
+
+        let toml_inv_hd = r#"
+            [[pipeline_modules]]
+            name = "InverseHdToneMap"
+            strength = 1.5
+        "#;
+        let parsed_toml = super::parse_config(toml_inv_hd.to_string());
+        assert_eq!(parsed_toml.pipeline_modules.len(), 1);
+        assert_eq!(parsed_toml.pipeline_modules[0].schema().name, "InverseHdToneMap");
     }
 }

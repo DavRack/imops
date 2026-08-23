@@ -1611,11 +1611,7 @@ struct InvertU {
     n: u32,
     mode: u32,
     inv_gamma: f32,
-    scanner_s_curve: f32,
     eps: f32,
-    p0: u32,
-    p1: u32,
-    p2: u32,
     inv_dmin: vec4<f32>,
     exponent: vec4<f32>,
     gain: vec4<f32>,
@@ -1625,24 +1621,6 @@ struct InvertU {
 @group(0) @binding(2) var<storage, read> scan_g: array<f32>;
 @group(0) @binding(3) var<storage, read> scan_b: array<f32>;
 @group(0) @binding(4) var<uniform> u: InvertU;
-
-fn apply_scanner_scurve(x: f32, s: f32) -> f32 {
-    if (s <= 0.0) { return x; }
-    let BASE_GAMMA: f32 = 2.38;
-    let K: f32 = 0.218;
-    let Y_MAX: f32 = 0.940;
-    var gamma = BASE_GAMMA;
-    if (s > 1.0) { gamma = BASE_GAMMA * s; }
-    let k_gamma = pow(K, gamma);
-    let x_pos = max(x, 0.0);
-    let x_gamma = pow(x_pos, gamma);
-    let f_x = Y_MAX * x_gamma / (x_gamma + k_gamma);
-    if (s <= 1.0) {
-        return (1.0 - s) * x + s * f_x;
-    } else {
-        return f_x;
-    }
-}
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -1663,15 +1641,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let tr = max(r * u.inv_dmin.x, u.eps);
         let tg = max(g * u.inv_dmin.y, u.eps);
         let tb = max(b * u.inv_dmin.z, u.eps);
-        var er = max(pow(tr, -u.inv_gamma) - 1.0, 0.0) * u.gain.x;
-        var eg = max(pow(tg, -u.inv_gamma) - 1.0, 0.0) * u.gain.y;
-        var eb = max(pow(tb, -u.inv_gamma) - 1.0, 0.0) * u.gain.z;
-        if (u.scanner_s_curve > 0.0) {
-            er = apply_scanner_scurve(er, u.scanner_s_curve);
-            eg = apply_scanner_scurve(eg, u.scanner_s_curve);
-            eb = apply_scanner_scurve(eb, u.scanner_s_curve);
-        }
-        r = er; g = eg; b = eb;
+        r = max(pow(tr, -u.inv_gamma) - 1.0, 0.0) * u.gain.x;
+        g = max(pow(tg, -u.inv_gamma) - 1.0, 0.0) * u.gain.y;
+        b = max(pow(tb, -u.inv_gamma) - 1.0, 0.0) * u.gain.z;
     }
 
     pixels[i] = vec4<f32>(r, g, b, 1.0);
@@ -1684,8 +1656,7 @@ struct InvertRoiU {
     core_x: u32, core_y: u32, core_w: u32, core_h: u32,
     core_n: u32, root_w: u32, root_off_x: u32, root_off_y: u32,
     root_n: u32, img_w: u32, r_base: u32, g_base: u32,
-    b_base: u32, mode: u32, inv_gamma: f32, scanner_s_curve: f32,
-    eps: f32, p0: u32, p1: u32, p2: u32,
+    b_base: u32, mode: u32, inv_gamma: f32, eps: f32,
     inv_dmin: vec4<f32>,
     exponent: vec4<f32>,
     gain: vec4<f32>,
@@ -1693,24 +1664,6 @@ struct InvertRoiU {
 @group(0) @binding(0) var<storage, read_write> output: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> arena: array<f32>;
 @group(0) @binding(2) var<uniform> u: InvertRoiU;
-
-fn apply_scanner_scurve(x: f32, s: f32) -> f32 {
-    if (s <= 0.0) { return x; }
-    let BASE_GAMMA: f32 = 2.38;
-    let K: f32 = 0.218;
-    let Y_MAX: f32 = 0.940;
-    var gamma = BASE_GAMMA;
-    if (s > 1.0) { gamma = BASE_GAMMA * s; }
-    let k_gamma = pow(K, gamma);
-    let x_pos = max(x, 0.0);
-    let x_gamma = pow(x_pos, gamma);
-    let f_x = Y_MAX * x_gamma / (x_gamma + k_gamma);
-    if (s <= 1.0) {
-        return (1.0 - s) * x + s * f_x;
-    } else {
-        return f_x;
-    }
-}
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -1743,15 +1696,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let tr = max(r * u.inv_dmin.x, u.eps);
         let tg = max(g * u.inv_dmin.y, u.eps);
         let tb = max(b * u.inv_dmin.z, u.eps);
-        var er = max(pow(tr, -u.inv_gamma) - 1.0, 0.0) * u.gain.x;
-        var eg = max(pow(tg, -u.inv_gamma) - 1.0, 0.0) * u.gain.y;
-        var eb = max(pow(tb, -u.inv_gamma) - 1.0, 0.0) * u.gain.z;
-        if (u.scanner_s_curve > 0.0) {
-            er = apply_scanner_scurve(er, u.scanner_s_curve);
-            eg = apply_scanner_scurve(eg, u.scanner_s_curve);
-            eb = apply_scanner_scurve(eb, u.scanner_s_curve);
-        }
-        r = er; g = eg; b = eb;
+        r = max(pow(tr, -u.inv_gamma) - 1.0, 0.0) * u.gain.x;
+        g = max(pow(tg, -u.inv_gamma) - 1.0, 0.0) * u.gain.y;
+        b = max(pow(tb, -u.inv_gamma) - 1.0, 0.0) * u.gain.z;
     }
 
     output[out_idx] = vec4<f32>(r, g, b, 1.0);

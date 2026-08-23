@@ -21,9 +21,14 @@ impl PipelineModule for Module<SigmoidToneMap> {
         &self,
         ctx: &pichromatic::gpu::GpuContext,
         gpu_buf: &pichromatic::gpu::GpuImageBuffer,
-        _meta: &mut pichromatic::image::ImageMetadata,
+        meta: &mut pichromatic::image::ImageMetadata,
     ) {
-        pichromatic::tone_map::sigmoid_gpu(ctx, gpu_buf);
+        let gain = meta
+            .extensions
+            .get::<ExposureGain>()
+            .map(|g| g.0)
+            .unwrap_or(1.0);
+        pichromatic::tone_map::sigmoid_gpu_with_gain(ctx, gpu_buf, gain);
     }
 
     fn schema(&self) -> ModuleSchema {
@@ -46,7 +51,12 @@ impl PipelineModule for Module<SigmoidToneMap> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::common::test_pipeline_module_cpu_vs_gpu;
+    use crate::backend::{Backend, PipelineImage};
+    use crate::modules::common::{
+        assert_images_equal_abs_tol, generate_test_image_512x512, test_pipeline_module_cpu_vs_gpu,
+        CPU_GPU_ABS_TOLERANCE,
+    };
+    use pichromatic::gpu::GpuContext;
 
     #[test]
     fn test_sigmoid_module_cpu_exposure_gain() {
@@ -69,7 +79,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "GPU sigmoid sync pending CPU approval (CPU calibrated C to 1/(1 - MIDDLE_GRAY))"]
     fn test_sigmoid_module_cpu_vs_gpu() {
         let sigmoid_module = Module::<SigmoidToneMap> {
             name: "SigmoidToneMap".to_string(),
@@ -78,5 +87,34 @@ mod tests {
         };
 
         test_pipeline_module_cpu_vs_gpu(&sigmoid_module, 888);
+    }
+
+    #[test]
+    fn test_sigmoid_module_cpu_vs_gpu_with_exposure_gain() {
+        let sigmoid_module = Module::<SigmoidToneMap> {
+            name: "SigmoidToneMap".to_string(),
+            cache: None,
+            config: SigmoidToneMap {},
+        };
+
+        let ctx = GpuContext::new_sync();
+        let mut seed_image = generate_test_image_512x512(888);
+        let gain = 400.0;
+        seed_image.metadata.extensions.insert(ExposureGain(gain));
+        for p in &mut seed_image.rgb_data {
+            p[0] *= gain;
+            p[1] *= gain;
+            p[2] *= gain;
+        }
+
+        let mut cpu_pipeline_img = PipelineImage::Cpu(seed_image.clone());
+        sigmoid_module.process(&Backend::Cpu, &mut cpu_pipeline_img);
+        let cpu_out = cpu_pipeline_img.to_cpu(None);
+
+        let mut gpu_pipeline_img = PipelineImage::new_gpu(&ctx, &seed_image);
+        sigmoid_module.process(&Backend::Wgpu(ctx.clone()), &mut gpu_pipeline_img);
+        let gpu_out = gpu_pipeline_img.to_cpu(Some(&ctx));
+
+        assert_images_equal_abs_tol(&cpu_out, &gpu_out, CPU_GPU_ABS_TOLERANCE, 0);
     }
 }

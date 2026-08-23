@@ -12,20 +12,22 @@ pub use densitometry::{
     apply_scanner_aperture_mtf, normalized_dmin_acescg, processed_dmin_acescg,
     scanner_aperture_sigma_px, scanner_calibration_acescg, ScannerCalibration,
 };
-pub use invert::{apply_scanner_scurve, invert_negative, invert_negative_inverse_hd, mean_rgb};
+pub use invert::{invert_negative, mean_rgb};
+#[allow(deprecated)]
+pub use invert::invert_negative_inverse_hd;
 
 pub enum ScanMode {
     NegativeLinear,
-    /// Invert with processed-film Dmin and a neutral mid-gray scan.
+    /// Invert with processed-film Dmin and a neutral mid-gray scan to unbounded linear HDR light.
     PositiveLinear {
         dmin: [f32; 3],
         mid: [f32; 3],
     },
-    /// Scene-referred HDR inverse-H&D invert with processed-film Dmin and a neutral mid-gray scan.
+    /// Deprecated alias for PositiveLinear.
+    #[deprecated(note = "Use PositiveLinear instead")]
     PositiveInverseHd {
         dmin: [f32; 3],
         mid: [f32; 3],
-        scanner_s_curve: f32,
     },
 }
 
@@ -38,15 +40,9 @@ pub fn scan(
     let mut buf = scan_to_acescg(stock, dyes, pixel_pitch_um);
     match mode {
         ScanMode::NegativeLinear => {}
-        ScanMode::PositiveLinear { dmin, mid } => {
+        #[allow(deprecated)]
+        ScanMode::PositiveLinear { dmin, mid } | ScanMode::PositiveInverseHd { dmin, mid } => {
             invert_negative(&mut buf, mid, dmin);
-        }
-        ScanMode::PositiveInverseHd {
-            dmin,
-            mid,
-            scanner_s_curve,
-        } => {
-            invert_negative_inverse_hd(&mut buf, mid, dmin, scanner_s_curve);
         }
     }
     buf

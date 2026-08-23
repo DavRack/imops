@@ -27,6 +27,28 @@ impl Default for ExposureGain {
     }
 }
 
+/// Highlight ceiling headroom in normalized scene-relative units (where 0.185 is middle gray).
+///
+/// Dynamic highlight ceiling used by tone mapping curves (e.g. rational S-curve) to anchor
+/// maximum scene luminance mapping to peak display white (1.0).
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct HighlightCeiling(pub f32);
+
+impl HighlightCeiling {
+    pub const DEFAULT: Self = Self(4.0);
+
+    #[inline]
+    pub fn ceiling(&self) -> f32 {
+        self.0
+    }
+}
+
+impl Default for HighlightCeiling {
+    fn default() -> Self {
+        Self(4.0)
+    }
+}
+
 /// EXIF/DNG orientation as a pure clockwise rotation (flips map to [`Normal`] for now).
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
