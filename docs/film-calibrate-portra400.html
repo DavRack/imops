@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Film-calibrate CLI spec — Kodak Portra 400</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: Canvas;
+      --fg: CanvasText;
+      --muted: color-mix(in srgb, CanvasText 62%, Canvas);
+      --line: color-mix(in srgb, CanvasText 18%, Canvas);
+      --code-bg: color-mix(in srgb, CanvasText 8%, Canvas);
+      --accent: color-mix(in srgb, CanvasText 88%, Canvas);
+    }
+    body {
+      margin: 0 auto;
+      max-width: 52rem;
+      padding: 2rem 1.25rem 4rem;
+      font: 16px/1.5 system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    h1 { font-size: 1.65rem; line-height: 1.25; margin: 0 0 1rem; }
+    h2 { font-size: 1.2rem; margin: 2.25rem 0 0.75rem; }
+    p, li { max-width: 46rem; }
+    a { color: inherit; }
+    .lede { color: var(--muted); }
+    nav {
+      margin: 1.5rem 0 2rem;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--line);
+    }
+    nav ol { margin: 0.4rem 0 0; padding-left: 1.25rem; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.92rem; margin: 0.75rem 0 1.25rem; }
+    th, td { border: 1px solid var(--line); padding: 0.4rem 0.55rem; vertical-align: top; text-align: left; }
+    th { font-weight: 600; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
+    code { background: var(--code-bg); padding: 0.1em 0.28em; }
+    pre {
+      background: var(--code-bg);
+      padding: 0.9rem 1rem;
+      overflow-x: auto;
+      line-height: 1.4;
+    }
+    pre code { background: none; padding: 0; }
+    ol.steps { padding-left: 1.3rem; }
+    .note { border-left: 3px solid var(--accent); padding: 0.15rem 0 0.15rem 0.8rem; }
+    footer { margin-top: 3rem; color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Film-calibrate CLI spec — example: Kodak Portra 400</h1>
+  <p class="lede">Specification for a future <code>--release</code> Rust CLI. It is <strong>not</strong> implemented in the film engine, pipeline, or <code>stock/*.rs</code>. Do not paste fitted numbers into production stocks or drift pins from this document.</p>
+  <p><strong>Stock chosen:</strong> Kodak PROFESSIONAL PORTRA 400 (C-41 color negative).</p>
+  <p><strong>Why this one:</strong> In <code>../film-data</code> it is the sheet with the most <em>usable</em> data — vector plots (not a scan) of H&amp;D, log spectral sensitivity, spectral dye density, and MTF, plus construction text (ISO, T-Grain, acetate thickness, reciprocity, process). Ektar 100 (<code>e4046_*</code>) is the same Kodak layout and can reuse every step. CineStill / VISION3 50D is a worse first example: that motion sheet is <strong>not</strong> in <code>film-data</code>.</p>
+  <p>The CLI never invents a second renderer. It fits numbers into the existing <code>FilmStock</code> / scatter fields. Portra vs CineStill halo differences stay an emergent stack + <code>R</code> property, not a look slider.</p>
+
+  <nav>
+    <strong>Contents</strong>
+    <ol>
+      <li><a href="#s0">Inputs the CLI is allowed to read</a></li>
+      <li><a href="#s1">Parse the PDF</a></li>
+      <li><a href="#s2">Construction text</a></li>
+      <li><a href="#s3">Spectral sensitivity</a></li>
+      <li><a href="#s4">Spectral dye density</a></li>
+      <li><a href="#s5">H&amp;D</a></li>
+      <li><a href="#s6">MTF → scatter</a></li>
+      <li><a href="#s7">Bounce / halation</a></li>
+      <li><a href="#s8">Suggested parameter block</a></li>
+      <li><a href="#s9">Missing data</a></li>
+      <li><a href="#s10">Order of work</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="s0">0. Inputs the CLI is allowed to read</h2>
+  <table>
+    <thead><tr><th>Item</th><th>Path / value</th></tr></thead>
+    <tbody>
+      <tr><td>Datasheet PDF</td><td><code>../film-data/datasheets/kodak/e4050_portra_400-2016.pdf</code></td></tr>
+      <tr><td>Publication</td><td>Kodak Alaris E-4050, <strong>Revised February 2016</strong></td></tr>
+      <tr><td>Physics template</td><td>Current <code>Portra400</code> layer <em>topology</em> (overcoat, BF/BS, yellow filter, GF/GS, RF/RS, AH layer). The sheet does not describe that stack; the CLI must not invent a new one.</td></tr>
+      <tr><td>Output</td><td>A report + suggested parameter block on stdout / a sidecar file. <strong>No writes</strong> to <code>pichromatic/src/film/stock/portra_400.rs</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>Manifest (hand-authored, not inferred from the PDF):</p>
+  <pre><code>stock_name = "Portra400"
+citation = "Kodak Alaris E-4050, February 2016"
+pdf = "../film-data/datasheets/kodak/e4050_portra_400-2016.pdf"
+process = "C-41"
+has_ah_layer = true          # still color-neg construction; not measured OD
+base = "acetate"             # 135: 0.13 mm from the sheet
+t_grain = true               # sheet text; thickness still not on the sheet</code></pre>
+  <p>If a plot cannot be extracted as vectors, the CLI stops that fit and says so. It does not silently fall back to spektrafilm defaults without saying they are placeholders.</p>
+
+  <h2 id="s1">1. Parse the PDF (extract, do not OCR first)</h2>
+  <p>Kodak E-series sheets in this archive are <strong>vector</strong>. The curves page is one content stream that contains the titles:</p>
+  <ul>
+    <li><code>Characteristic Curves</code> — Status M, daylight, log exposure in lux-seconds</li>
+    <li><code>Spectral-Sensitivity Curves</code> — log S vs nm, density criterion <code>0.2 &gt; D-min</code></li>
+    <li><code>Spectral-Dye-Density Curves</code> — D-min and midscale-neutral vs nm</li>
+    <li><code>Modulation Transfer Function</code> — response % vs cycles/mm (ticks 1…200)</li>
+  </ul>
+  <p><strong>CLI steps:</strong></p>
+  <ol class="steps">
+    <li>Inflate Flate content streams.</li>
+    <li>Locate each plot by its title string and the axis tick strings (<code>LOG EXPOSURE</code>, <code>WAVELENGTH (nm)</code>, <code>SPATIAL FREQUENCY (cycles/mm)</code>, …).</li>
+    <li>Collect path operators (<code>m</code> / <code>l</code> / <code>c</code> / <code>v</code>) that fall inside that plot’s clip rectangle. E-4050 uses cubic Béziers for the dye-density and sensitivity traces (hundreds of <code>c</code>/<code>l</code> ops on the curves page).</li>
+    <li>Flatten each Bézier to a polyline in PDF user space.</li>
+    <li>Map user-space <code>(x, y)</code> to data coordinates using the <strong>printed tick positions</strong>, not guessed plot limits:
+      <ul>
+        <li>H&amp;D: x = log<sub>10</sub>(H / lux·s), y = Status M density</li>
+        <li>Sensitivity: x = λ (nm), y = log<sub>10</sub> S</li>
+        <li>Dye density: x = λ (nm), y = diffuse spectral density</li>
+        <li>MTF: x = log<sub>10</sub>(ν / (cycles/mm)), y = response (0–1, not percent)</li>
+      </ul>
+    </li>
+    <li>Write one CSV per plot, with the citation in a header comment.</li>
+  </ol>
+  <p>If Bézier extraction fails for a plot, rasterize <strong>that page only</strong> and require a human-digitized CSV (WebPlotDigitizer). Do not mix a guessed axis scale with vector paths.</p>
+  <p><strong>Channel identity on Kodak plots</strong> (Status M / forming layer, not RGB display):</p>
+  <table>
+    <thead><tr><th>Sheet label</th><th>Model emulsions</th></tr></thead>
+    <tbody>
+      <tr><td>Yellow-forming</td><td><code>blue_fast</code>, <code>blue_slow</code></td></tr>
+      <tr><td>Magenta-forming</td><td><code>green_fast</code>, <code>green_slow</code></td></tr>
+      <tr><td>Cyan-forming</td><td><code>red_fast</code>, <code>red_slow</code></td></tr>
+    </tbody>
+  </table>
+  <p>The sheet is <strong>three</strong> records (B/G/R composites). The runtime stock has <strong>six</strong> emulsions. After each fit, copy the channel result onto both fast and slow unless a later source splits them. Do not invent a fast/slow split from this PDF.</p>
+
+  <h2 id="s2">2. Construction text (no curve fit)</h2>
+  <p>Pull these from the same PDF’s text streams. They are already in E-4050:</p>
+  <table>
+    <thead><tr><th>Sheet fact</th><th>Model field</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>True ISO 400, daylight, no filter</td><td><code>box_iso = 400</code></td><td>Set</td></tr>
+      <tr><td>Tungsten 3200 K + 80A → EI 100</td><td>(metadata only)</td><td>Report; do not retune capture unless tungsten is a separate mode</td></tr>
+      <tr><td>Process C-41</td><td><code>is_reversal = false</code></td><td>Confirm</td></tr>
+      <tr><td>T-GRAIN emulsions</td><td><code>tabular_grain_thickness_um</code></td><td>Keep <code>Some(…)</code>, but <strong>do not</strong> invent plate thickness from this sentence. Sheet only asserts morphology. Published T-grain plates are ~0.1–0.2 µm; current stock uses <code>0.15</code> as that literature range, not E-4050.</td></tr>
+      <tr><td>135 base 0.13 mm (0.005 in) acetate</td><td>bounce geometry check</td><td>See §7. Not <code>R</code>.</td></tr>
+      <tr><td>Reciprocity: no filter or exposure compensation from 1/10 000 s to 1 s</td><td><code>reciprocity_p</code></td><td>In that shutter window the physical exponent is <strong>1.0</strong>. Current <code>portra_400.rs</code> uses ~0.85–0.93; the CLI should <em>report</em> that mismatch, not silently keep the old numbers.</td></tr>
+      <tr><td>Print Grain Index (e.g. 35 mm → 4×6: 37)</td><td>grain check only</td><td><strong>Cannot</strong> convert to RMS or to <code>LogNormalDist</code>. Kodak says so on the sheet.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="s3">3. Spectral sensitivity → <code>spectral_sensitivity</code></h2>
+  <p><strong>Sheet definition:</strong> log sensitivity = log<sub>10</sub>(1/H), H in erg/cm², for the exposure that produces Status M density <strong>0.2 above D-min</strong>, daylight, 1/50 s effective exposure, <code>Log H Ref: -1.44</code>.</p>
+  <p><strong>CLI steps:</strong></p>
+  <ol class="steps">
+    <li>Sample each extracted log-S curve onto the runtime grid <code>400, 420, …, 700 nm</code> (16 points). Linear interpolate in λ; <strong>do not</strong> extrapolate outside the plotted range (zero those samples, as CineStill already does for unplotted tails).</li>
+    <li>Convert log S → relative linear sensitivity <code>S = 10^(log S − log S_max_channel)</code> per curve so each channel peaks at 1. Keep the <strong>inter-channel</strong> peak ratio from the sheet (do not independently normalize B, G, and R to 1 if the plotted log-S peaks differ — those ratios are real).</li>
+    <li>Assign the same 16-vector to fast and slow of that color.</li>
+    <li>Report reconstruction RMS: interpolate the 16-grid back to the extracted polyline and print max/RMS error (same idea as <code>pichromatic/docs/portra400-calibration.md</code>).</li>
+  </ol>
+  <p>This replaces the current Gaussian stand-ins (<code>blue_sensitivity_curve</code> peak 400 nm, green 545 nm, red 645 nm).</p>
+
+  <h2 id="s4">4. Spectral dye density → coupler <code>epsilon</code> and mask</h2>
+  <p>The sheet plots <strong>diffuse spectral density</strong> of:</p>
+  <ul>
+    <li>Minimum density (orange mask + base + fog)</li>
+    <li>Midscale-neutral (image dyes + D-min)</li>
+  </ul>
+  <p><strong>CLI steps:</strong></p>
+  <ol class="steps">
+    <li><code>D_image(λ) = max(D_mid(λ) − D_min(λ), 0)</code>.</li>
+    <li>Split <code>D_image</code> into three dye spectra by the usual Y/M/C peaks (yellow ~440 nm, magenta ~540 nm, cyan ~680 nm on this family of sheets). If the plot is already three traces, use those traces; if it is a single midscale envelope, the CLI must say it cannot uniquely unmix and stop the dye fit.</li>
+    <li>Peak-normalize each dye → <code>DyeCoupler.epsilon</code> on the 16-λ grid.</li>
+    <li>Peak-normalize <code>D_min(λ)</code> → <code>mask_epsilon</code> (replace <code>orange_mask_epsilon()</code>).</li>
+    <li><strong>Do not</strong> set <code>d_max</code> from the midscale plot. Midscale is one exposure, not D-max. <code>d_max</code> comes from the H&amp;D shoulder in §5.</li>
+    <li>Do not change <code>MASK_DENSITY_FRACTION_OF_DMAX</code> (0.4) from this plot. That constant folds mask into <code>0.4 × d_max</code>; a real D-min spectrum is a different parameterization. The report should flag: <em>sheet D-min vs model <code>0.4·d_max·mask_epsilon</code></em>. Fitting a new mask fraction is a separate, explicit change — not part of the first CLI.</li>
+  </ol>
+
+  <h2 id="s5">5. H&amp;D → <code>gamma_contrast</code>, <code>d_max</code>, then <code>capture_k</code></h2>
+  <p>Sheet: daylight, Status M, three forming-layer curves, density vs log exposure (lux-seconds).</p>
+  <p><strong>CLI steps:</strong></p>
+  <ol class="steps">
+    <li>For each of Y/M/C:
+      <ul>
+        <li><code>D_min</code>: density of the toe plateau (or the leftmost plotted point if there is no plateau).</li>
+        <li>Straight-line γ: slope dD / d(log<sub>10</sub> H) on the mid-region the sheet actually draws as a line. This is <strong>Status M composite γ</strong>, not the model’s per-layer <code>gamma_contrast</code> until you check the mapping below.</li>
+        <li><code>D_max</code>: shoulder if the curve flattens; otherwise “not on plot” and keep the current stock <code>d_max</code> with a warning.</li>
+      </ul>
+    </li>
+    <li>Map γ into <code>gamma_contrast</code> <strong>only after</strong> stating the model law: <code>D_image = d_max · f_eff^(1/γ)</code> in <code>development/reduction.rs</code>. Datasheet γ is D vs log H of the <strong>processed stack</strong>. The CLI must run the <strong>forward expected model</strong> (no grain) on uniform patches:
+      <ul>
+        <li>Build fluence from the sheet’s log H (lux-seconds → photons/µm² using the same radiometric path as <code>expose</code>, or report that this unit conversion is a remaining gap — see missing data).</li>
+        <li><code>absorb_stack</code> → capture LUT → <code>reduce</code> expected density.</li>
+        <li>Compare Status M–like dye integrals to the extracted H&amp;D.</li>
+      </ul>
+    </li>
+    <li>Solve <strong><code>capture_k</code> per color</strong> (same k for fast/slow first; then optionally two k’s if the residual is clearly toe vs shoulder). Objective: mid-scale density error, not a painted curve. Toe/shoulder mismatch stays in the residual plot.</li>
+    <li>Split <code>d_max</code> across fast/slow with the <strong>existing</strong> 50/50 split unless a cited source says otherwise. E-4050 does not.</li>
+  </ol>
+  <p>Do not add a tone curve, lift, or second γ to hide a bad capture LUT.</p>
+
+  <h2 id="s6">6. MTF → scatter <code>(σ_core, λ_tail, w)</code> per B/G/R</h2>
+  <p>This is the turbidity fit. It must match <strong>the kernel the renderer uses</strong>, not a Frieser K that the CPU path does not run.</p>
+  <p>Runtime mix (<code>s = 1</code>):</p>
+  <pre><code>Φ' = (1 − w) · G(σ) * Φ  +  w · Exp(λ) * Φ</code></pre>
+  <p>MTF of that mix, with σ and λ in <strong>millimetres</strong>, ν in <strong>cycles/mm</strong>:</p>
+  <ul>
+    <li>Gaussian: <code>M_G(ν) = exp(−2 π² σ² ν²)</code></li>
+    <li>2D exponential <code>exp(−r/λ) / (2π λ²)</code>: <code>M_E(ν) = [1 + (2π λ ν)²]^(-3/2)</code></li>
+    <li>Mixture: <code>M(ν) = (1 − w) M_G(ν) + w M_E(ν)</code></li>
+  </ul>
+  <p><strong>CLI steps:</strong></p>
+  <ol class="steps">
+    <li>Extract MTF. If the sheet has <strong>one</strong> curve (typical for this Portra publication), fit <strong>one</strong> <code>(σ, λ, w)</code> and copy it to B, G, and R. Report that layer-resolved scatter is <strong>not</strong> in E-4050 — do <strong>not</strong> re-impose the spektrafilm red-core &gt; blue-core ordering.</li>
+    <li>If three curves exist, fit each and store as <code>SCATTER_*_BGR</code>.</li>
+    <li>Drop or down-weight points with <code>M &gt; 1</code> (adjacency / Eberhard). Those are <code>adjacency_beta</code> in development, not irradiation. Fitting them into <code>w</code> will make the emulsion look sharper than the gelatin is.</li>
+    <li>Least-squares in log ν, typically 10–80 cy/mm (where the tail actually moves). Print RMS and a plot of sheet vs model MTF.</li>
+    <li>Convert σ, λ from mm to µm for the constants (<code>× 1000</code>).</li>
+  </ol>
+  <p>Compare the fit to the current global placeholders (<code>SCATTER_CORE_UM_BGR = [1.6, 2.0, 2.2]</code>, tails <code>[9.1, 9.7, 9.3]</code>, weights <code>[0.67, 0.65, 0.78]</code>), which are spektrafilm defaults, <strong>not</strong> E-4050.</p>
+
+  <h2 id="s7">7. Bounce / halation — what the sheet can and cannot do</h2>
+  <p>E-4050 does <strong>not</strong> plot backing reflectance or an AH absorption spectrum.</p>
+  <p>What it <em>does</em> give:</p>
+  <ul>
+    <li>135 support: <strong>0.13 mm acetate</strong>. Order-of-magnitude check on <code>psf_halation_um</code> (current Portra: 70 µm). Spektrafilm’s still/acetate prior is ~65 µm for 120–140 µm triacetate. The CLI should print “base thickness 130 µm; current Gaussian bounce σ = 70 µm” and <strong>not</strong> set <code>R</code> from thickness.</li>
+    <li>Construction: this is a still color negative <strong>with</strong> antihalation (<code>has_ah_layer = true</code>). Keep the in-stack AH layer in the template. Do not delete it because CineStill has none.</li>
+  </ul>
+  <p><code>AntihalationModel.reflectance</code> (current peak <strong>0.06</strong> at 680 nm) stays a <strong>cited placeholder</strong> until measured. The CLI prints it as unfitted.</p>
+
+  <h2 id="s8">8. Suggested parameter block (CLI stdout only)</h2>
+  <p>Example shape — numbers below are <strong>format</strong>, not results:</p>
+  <pre><code># citation: Kodak Alaris E-4050, February 2016
+# pdf: ../film-data/datasheets/kodak/e4050_portra_400-2016.pdf
+
+box_iso = 400
+reciprocity_p_in_sheet_window = 1.0   # 1e-4 s .. 1 s
+tabular = true                        # thickness NOT from sheet
+
+# 16-sample 400–700/20 nm
+sensitivity_blue = [ ... ]
+sensitivity_green = [ ... ]
+sensitivity_red = [ ... ]
+epsilon_yellow = [ ... ]
+epsilon_magenta = [ ... ]
+epsilon_cyan = [ ... ]
+mask_epsilon = [ ... ]
+
+# H&amp;D fit (Status M)
+gamma_B, gamma_G, gamma_R = ...
+d_max_B_total, d_max_G_total, d_max_R_total = ...
+capture_k_B, capture_k_G, capture_k_R = ...
+hd_rms_B, hd_rms_G, hd_rms_R = ...
+
+# MTF → scatter (µm); copied to BGR if only one sheet curve
+scatter_core_um  = [s, s, s]
+scatter_tail_um  = [t, t, t]
+scatter_tail_w   = [w, w, w]
+mtf_rms = ...
+
+# NOT FITTED
+R_peak = 0.06          # placeholder
+psf_halation_um = 70   # order-of-magnitude vs 130 µm acetate only
+ah_od_spectrum = unset
+dir_matrix = unset
+crystal_csd = unset
+layer_thicknesses = unset</code></pre>
+  <p>Owner pastes after review. The CLI does not commit, does not retune <code>H_PIN</code> / <code>H_TOL</code>, and does not touch GPU.</p>
+
+  <h2 id="s9">9. Data that is missing, and where to get it</h2>
+  <table>
+    <thead><tr><th>Missing</th><th>Why the sheet lacks it</th><th>Where to look</th></tr></thead>
+    <tbody>
+      <tr><td>Interface <code>R(λ)</code></td><td>Kodak does not publish backing reflectance</td><td>Spectrophotometer: processed vs unprocessed base, or integrating-sphere film-base measurement. Literature on gelatin/acetate interfaces. <strong>Not</strong> spektrafilm <code>halation_strength = 0.015</code>. Keep 0.06 until measured.</td></tr>
+      <tr><td>AH layer OD(λ) and thickness</td><td>“Has AH” is construction, not a curve</td><td>Patents / cross-section micrographs of Portra; densitometry of the AH dye before processing. Do not copy CineStill’s “no AH” into this stock.</td></tr>
+      <tr><td>Per-layer thickness, packing, yellow-filter OD</td><td>Not a consumer-datasheet quantity</td><td>Patents, SEM cross-sections, photographic-engineering papers. Until then: keep the current stack millimetres as a <strong>structural template</strong>, flagged unmeasured.</td></tr>
+      <tr><td>Fast vs slow CSD (<code>mu_ln</code>, <code>sigma_ln</code>)</td><td>Print Grain Index ≠ RMS; Kodak forbids conversion</td><td>Older Kodak RMS plots (pre-PGI publications), crystal-size literature for 400-speed T-grain. Not E-4050.</td></tr>
+      <tr><td>DIR lengths and <code>dir_inhibition_matrix</code></td><td>Image-modifier chemistry is named, not quantified</td><td>DIR / DIR coupler papers; do not fit DIR from MTF (that double-counts adjacency).</td></tr>
+      <tr><td>Absolute QE / <code>capture_k</code> as physics</td><td><code>capture_k</code> is a model knob</td><td>Only from the H&amp;D forward fit (§5), never from the PDF as a printed number.</td></tr>
+      <tr><td>Lux-seconds → photons/µm²</td><td>Sheet H is photometric; the engine is spectral fluence</td><td>Need a stated illuminant SPD for the H&amp;D plot (sheet says “Daylight”) plus <code>RADIOMETRIC_SCALE</code> honesty. If the unit bridge is weak, fit <code>capture_k</code> in <strong>relative</strong> log H (shape only) and say absolute ISO landing is unverified.</td></tr>
+      <tr><td>Layer-resolved MTF</td><td>One (or unlabeled) MTF curve</td><td>Separate B/G/R MTF if a different Kodak publication has them. Otherwise one triple for all layers.</td></tr>
+      <tr><td>Bounce PSF as a measured halo</td><td>Not plotted</td><td>Measure a specular on Portra at known pitch; or optical model from 130 µm acetate + measured base turbidity. Thickness is only a sanity bound.</td></tr>
+      <tr><td>Scanner / Status M spectral weights</td><td>“Status M” is named, not a table</td><td>ISO 5-3 Status M filter definitions for the H&amp;D comparison integral.</td></tr>
+      <tr><td>D55 vs D50</td><td>Sheet daylight vs runtime <code>scanner_light = D50</code></td><td>Keep D50 for scan; do not silently swap. Optional: expose H&amp;D under a CIE D55 SPD if you add illuminant handling later.</td></tr>
+    </tbody>
+  </table>
+  <p class="note"><strong>Do not look at</strong> spektrafilm JSON as ground truth for these gaps (<code>plan.md</code>: local comparison only, not copied into the model).</p>
+
+  <h2 id="s10">10. Order of work for the actual CLI (when implemented)</h2>
+  <ol class="steps">
+    <li>Vector extract → CSV for the four E-4050 plots (Portra 400 2016).</li>
+    <li>MTF fit only (scatter). Smallest useful engine input.</li>
+    <li>Sensitivity resample onto the 16-λ grid.</li>
+    <li>Dye-density → epsilon / mask shape.</li>
+    <li>H&amp;D → γ / d_max / <code>capture_k</code> with a residual report.</li>
+    <li>Repeat the same binary on <code>e4046_ektar_100-2016.pdf</code> (same layout).</li>
+    <li>Add VISION3 50D / H-1-5203 to <code>film-data</code> before claiming CineStill MTF from Kodak.</li>
+  </ol>
+  <p>Until step 2 exists, CPU scatter stays the global spektrafilm BGR placeholders. Until <code>R</code> is measured, Portra’s weaker halo vs CineStill still comes from the AH layer + <code>R = 0.06</code> vs no AH + <code>R = 0.10</code>, not from this CLI.</p>
+
+  <footer>Spec only. Not production film code.</footer>
+</body>
+</html>
