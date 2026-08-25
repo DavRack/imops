@@ -49,6 +49,7 @@ fn run_stock(
             dmin: calibration.dmin,
             mid: calibration.mid,
             inv_gamma: calibration.inv_gamma(),
+            chroma_decode: calibration.chroma_decode,
         },
         pitch,
     ))

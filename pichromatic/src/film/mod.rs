@@ -184,6 +184,7 @@ pub fn process(image: &mut Image, params: &FilmParams) -> Result<(), FilmError> 
                 dmin: calibration.dmin,
                 mid: calibration.mid,
                 inv_gamma: calibration.inv_gamma(),
+                chroma_decode: calibration.chroma_decode,
             },
             FilmOutput::NegativeLinear => ScanMode::NegativeLinear,
         };

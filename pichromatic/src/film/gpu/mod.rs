@@ -340,12 +340,17 @@ struct InvertU {
     n: u32,
     mode: u32,
     eps: f32,
-    _p0: u32,
+    /// Chroma decode anchor (`crate::pixel::MIDDLE_GRAY`).
+    mid_gray: f32,
     /// Per-channel inverse exponents (1/γ), xyz active; matches WGSL vec4<f32>.
     inv_gamma: [f32; 4],
     inv_dmin: [f32; 4],
     exponent: [f32; 4],
     gain: [f32; 4],
+    /// Chroma decode matrix rows (row-major, xyz active); matches WGSL vec4<f32>.
+    chroma_r: [f32; 4],
+    chroma_g: [f32; 4],
+    chroma_b: [f32; 4],
 }
 
 #[repr(C)]
@@ -366,12 +371,27 @@ struct InvertRoiU {
     b_base: u32,
     mode: u32,
     eps: f32,
-    _p0: u32,
+    /// Chroma decode anchor (`crate::pixel::MIDDLE_GRAY`).
+    mid_gray: f32,
     /// Per-channel inverse exponents (1/γ), xyz active; matches WGSL vec4<f32>.
     inv_gamma: [f32; 4],
     inv_dmin: [f32; 4],
     exponent: [f32; 4],
     gain: [f32; 4],
+    /// Chroma decode matrix rows (row-major, xyz active); matches WGSL vec4<f32>.
+    chroma_r: [f32; 4],
+    chroma_g: [f32; 4],
+    chroma_b: [f32; 4],
+}
+
+/// Packs a row-major 3x3 chroma decode matrix into three vec4-aligned rows
+/// (w = 0) matching the WGSL `chroma_r/g/b` uniform members.
+fn chroma_rows(m: [[f32; 3]; 3]) -> ([f32; 4], [f32; 4], [f32; 4]) {
+    (
+        [m[0][0], m[0][1], m[0][2], 0.0],
+        [m[1][0], m[1][1], m[1][2], 0.0],
+        [m[2][0], m[2][1], m[2][2], 0.0],
+    )
 }
 
 #[repr(C)]
@@ -515,6 +535,10 @@ pub(crate) struct StockConsts {
     gain: [f32; 4],
     inv_gamma: [f32; 4],
     eps: f32,
+    /// Post-invert cross-channel chroma decode (row-major), from the same
+    /// `scanner_calibration_acescg` as the invert constants. Identity unless
+    /// PositiveLinear.
+    chroma_decode: [[f32; 3]; 3],
 }
 
 /// Multi-bounce backing-reflection count and decay (mirrors `halation.rs`).
@@ -888,7 +912,8 @@ pub(crate) fn bake_consts(
     };
 
     let is_reversal = stock.layers.iter().any(|l| l.is_reversal);
-    let (invert_mode, inv_dmin, exponent, gain, inv_gamma) =
+    let identity_decode = [[1.0f32, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    let (invert_mode, inv_dmin, exponent, gain, inv_gamma, chroma_decode) =
         if is_reversal || params.output == FilmOutput::NegativeLinear {
             (
                 0u32,
@@ -896,6 +921,7 @@ pub(crate) fn bake_consts(
                 [1.0, 1.0, 1.0, 1.0],
                 [1.0, 1.0, 1.0, 1.0],
                 [1.0 / crate::film::scan::invert::GAMMA_EFF; 4],
+                identity_decode,
             )
         } else {
             let cal = scanner_calibration_acescg(stock, pitch, shutter).unwrap_or(
@@ -903,6 +929,7 @@ pub(crate) fn bake_consts(
                     dmin: [1.0, 1.0, 1.0],
                     mid: [0.18, 0.18, 0.18],
                     gamma_eff: [crate::film::scan::invert::GAMMA_EFF; 3],
+                    chroma_decode: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
                 },
             );
             match params.output {
@@ -931,6 +958,7 @@ pub(crate) fn bake_consts(
                         [1.0, 1.0, 1.0, 1.0],
                         [g[0], g[1], g[2], 0.0],
                         [ig[0], ig[1], ig[2], 0.0],
+                        cal.chroma_decode,
                     )
                 }
                 FilmOutput::NegativeLinear => (
@@ -939,6 +967,7 @@ pub(crate) fn bake_consts(
                     [1.0, 1.0, 1.0, 1.0],
                     [1.0, 1.0, 1.0, 1.0],
                     [1.0 / crate::film::scan::invert::GAMMA_EFF; 4],
+                    identity_decode,
                 ),
             }
         };
@@ -971,6 +1000,7 @@ pub(crate) fn bake_consts(
         gain,
         inv_gamma,
         eps: 1e-6,
+        chroma_decode,
     }
 }
 
@@ -1478,15 +1508,19 @@ async fn process_gpu_full_frame(
 
     // 3. Technical Scanner Invert
     {
+        let (chroma_r, chroma_g, chroma_b) = chroma_rows(consts.chroma_decode);
         let u = InvertU {
             n: n as u32,
             mode: consts.invert_mode,
             eps: consts.eps,
-            _p0: 0,
+            mid_gray: crate::pixel::MIDDLE_GRAY,
             inv_gamma: consts.inv_gamma,
             inv_dmin: consts.inv_dmin,
             exponent: consts.exponent,
             gain: consts.gain,
+            chroma_r,
+            chroma_g,
+            chroma_b,
         };
         keep.push(ctx.encode_compute_shader_multi(
             &mut encoder,
@@ -1963,6 +1997,7 @@ async fn process_gpu_roi(
 
         // 3. Technical Scanner Invert -> writes directly into scratch.output
         {
+            let (chroma_r, chroma_g, chroma_b) = chroma_rows(consts.chroma_decode);
             let u = InvertRoiU {
                 core_x: plan.core.x as u32,
                 core_y: plan.core.y as u32,
@@ -1979,11 +2014,14 @@ async fn process_gpu_roi(
                 b_base,
                 mode: consts.invert_mode,
                 eps: consts.eps,
-                _p0: 0,
+                mid_gray: crate::pixel::MIDDLE_GRAY,
                 inv_gamma: consts.inv_gamma,
                 inv_dmin: consts.inv_dmin,
                 exponent: consts.exponent,
                 gain: consts.gain,
+                chroma_r,
+                chroma_g,
+                chroma_b,
             };
             keep.push(ctx.encode_compute_shader_multi(
                 &mut encoder,
@@ -2031,8 +2069,8 @@ mod roi_uniform_struct_tests {
         assert_eq!(std::mem::size_of::<ParticleFieldRoiU>(), 64);
         assert_eq!(std::mem::size_of::<MicroMixU>(), 32);
         assert_eq!(std::mem::size_of::<ScanRoiU>(), 64);
-        assert_eq!(std::mem::size_of::<InvertU>(), 80);
-        assert_eq!(std::mem::size_of::<InvertRoiU>(), 128);
+        assert_eq!(std::mem::size_of::<InvertU>(), 128);
+        assert_eq!(std::mem::size_of::<InvertRoiU>(), 176);
     }
 }
 
@@ -2352,5 +2390,160 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// CPU-vs-GPU parity through PositiveLinear with strongly chromatic content.
+    /// The uniform-gray parity test cannot catch a chroma-decode bug because a
+    /// decode matrix maps mid-gray to itself; saturated patches exercise every
+    /// cross-channel term of `chroma_decode`.
+    #[test]
+    fn cpu_vs_gpu_parity_positive_linear_chromatic() {
+        const CPU_GPU_ABS_TOLERANCE: f32 = 3e-4;
+
+        let ctx = match pollster::block_on(GpuContext::try_new()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let width = 64;
+        let height = 64;
+        let n = width * height;
+        let meta = crate::image::ImageMetadata {
+            width,
+            height,
+            color_space: Some(ColorSpaceTag::AcesCg),
+            ..Default::default()
+        };
+
+        // AP1 (ACEScg) primaries' luminance row, used only to normalize each
+        // patch's brightness to mid-gray so all blocks share exposure while
+        // keeping full chroma direction.
+        const AP1_LUMA: [f32; 3] = [0.2722, 0.6741, 0.0537];
+        let palette_srgb: [[f32; 3]; 8] = [
+            [1.0, 0.0, 0.0], // red
+            [0.0, 1.0, 0.0], // green
+            [0.0, 0.0, 1.0], // blue
+            [1.0, 1.0, 0.0], // yellow
+            [0.0, 1.0, 1.0], // cyan
+            [1.0, 0.0, 1.0], // magenta
+            [1.0, 1.0, 1.0], // white
+            [0.5, 0.5, 0.5], // gray
+        ];
+        let palette_acescg: Vec<[f32; 3]> = palette_srgb
+            .iter()
+            .map(|c| {
+                let lin = ColorSpaceTag::Srgb.convert(ColorSpaceTag::AcesCg, *c);
+                let y = AP1_LUMA[0] * lin[0] + AP1_LUMA[1] * lin[1] + AP1_LUMA[2] * lin[2];
+                let s = if y > 1e-6 {
+                    crate::pixel::MIDDLE_GRAY / y
+                } else {
+                    1.0
+                };
+                [lin[0] * s, lin[1] * s, lin[2] * s]
+            })
+            .collect();
+
+        // 8x8 pixel blocks cycling diagonally through the palette.
+        let cpu_pattern: Vec<[f32; 3]> = (0..n)
+            .map(|i| {
+                let bx = (i % width) / 8;
+                let by = (i / width) / 8;
+                palette_acescg[((bx + by) % 8) as usize]
+            })
+            .collect();
+        let gpu_pattern: Vec<[f32; 4]> =
+            cpu_pattern.iter().map(|p| [p[0], p[1], p[2], 1.0]).collect();
+
+        let params = FilmParams {
+            stock: StockId::Portra400,
+            film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
+            seed: 42,
+            output: FilmOutput::PositiveLinear,
+            enable_halation: true,
+            compensate_box_speed: true,
+        };
+
+        let mut cpu_image = crate::pixel::Image {
+            metadata: meta.clone(),
+            rgb_data: cpu_pattern,
+            raw_data: std::sync::Arc::from([]),
+        };
+        crate::film::process(&mut cpu_image, &params).unwrap();
+
+        let gpu_buf = ctx.create_output_buffer(width, height);
+        ctx.queue
+            .write_buffer(&gpu_buf.buffer, 0, bytemuck::cast_slice(&gpu_pattern));
+        pollster::block_on(process_gpu_full_frame(&ctx, &gpu_buf, &meta, &params)).unwrap();
+        let gpu_floats = ctx.download_f32(&gpu_buf.buffer, width * height * 4);
+
+        let mut max_diff = 0.0f32;
+        let mut max_at = (0usize, 0usize);
+        for (px, cpu_pixel) in cpu_image.rgb_data.iter().enumerate() {
+            let x = px % width;
+            let y = px / width;
+            for ch in 0..3 {
+                let gpu_value = gpu_floats[px * 4 + ch];
+                let diff = (cpu_pixel[ch] - gpu_value).abs();
+                let tol =
+                    CPU_GPU_ABS_TOLERANCE * cpu_pixel[ch].abs().max(gpu_value.abs()).max(1.0);
+                if diff > max_diff {
+                    max_diff = diff;
+                    max_at = (px, ch);
+                }
+                assert!(
+                    diff.is_finite() && diff <= tol,
+                    "CPU/GPU RGB mismatch (chromatic PositiveLinear) at ({x}, {y}) ch={ch}: CPU={} ({:#010x}), GPU={} ({:#010x}), diff={}, tolerance={}",
+                    cpu_pixel[ch],
+                    cpu_pixel[ch].to_bits(),
+                    gpu_value,
+                    gpu_value.to_bits(),
+                    diff,
+                    tol
+                );
+            }
+        }
+        eprintln!(
+            "chromatic parity max_diff={max_diff} at px=({},{}) ch={}",
+            max_at.0 % width,
+            max_at.0 / width,
+            max_at.1
+        );
+    }
+
+    /// The baked chroma decode shipped to the GPU must be exactly the one the
+    /// CPU calibration computes for the same stock/format/metadata.
+    #[test]
+    fn baked_chroma_decode_matches_scanner_calibration() {
+        let ctx = match pollster::block_on(GpuContext::try_new()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let width = 64usize;
+        let meta = crate::image::ImageMetadata {
+            width,
+            height: width,
+            color_space: Some(ColorSpaceTag::AcesCg),
+            ..Default::default()
+        };
+        let params = FilmParams {
+            stock: StockId::Portra400,
+            film_format: FilmFormat::Film35mm,
+            render_width_mm: None,
+            seed: 42,
+            output: FilmOutput::PositiveLinear,
+            enable_halation: true,
+            compensate_box_speed: true,
+        };
+        let stock = params.stock.load().unwrap();
+        let consts = bake_consts(&ctx, &stock, &params, &meta, width);
+
+        let pitch = params.film_format.pixel_pitch_um(width);
+        let shutter = meta.shutter_seconds.unwrap_or(1.0 / stock.box_iso.0);
+        let cal = scanner_calibration_acescg(&stock, pitch, shutter).unwrap();
+
+        eprintln!("baked chroma_decode = {:?}", consts.chroma_decode);
+        assert_eq!(consts.chroma_decode, cal.chroma_decode);
     }
 }

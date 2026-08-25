@@ -166,8 +166,8 @@ mod tests {
 
     #[test]
     fn deep_overflow_fully_neutralizes() {
-        // Hottest channel at/above the knee end: no recoverable chroma.
-        let mut pixels = vec![[2.2f32, 0.2, 0.9], [0.3, 2.4, 0.4], [1.8, 1.7, 2.1]];
+        // Hottest channel at/above the knee end (CLIP * KNEE_HEADROOM = 2.25): no recoverable chroma.
+        let mut pixels = vec![[2.4f32, 0.2, 0.9], [0.3, 2.6, 0.4], [1.8, 1.7, 2.4]];
         highlight_reconstruction(&mut pixels);
         for px in &pixels {
             assert!(

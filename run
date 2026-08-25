@@ -4,9 +4,9 @@
 #   ./run <raw.dng> imgconfig-film.toml  # film pipeline → result.png
 #   OUTPUT=result.exr ./run <raw.dng>    # EXR instead of PNG
 #   OUTPUT=result.jpg ./run <raw.dng>    # JPEG instead of PNG
-# CONFIG="imgconfig-film2.toml"
+CONFIG="imgconfig-film2.toml"
 # CONFIG="imgconfig-film.toml"
-CONFIG="imgconfig.toml"
+# CONFIG="imgconfig.toml"
 OUTPUT="${OUTPUT:-result.png}"
 cargo build --release --bin imops-cli &&
 /usr/bin/time -l ./target/release/imops-cli "$1" -o "$OUTPUT" -c "$CONFIG" $2 &&

@@ -12,7 +12,7 @@ pub use densitometry::{
     apply_scanner_aperture_mtf, normalized_dmin_acescg, processed_dmin_acescg,
     scanner_aperture_sigma_px, scanner_calibration_acescg, ScannerCalibration,
 };
-pub use invert::{invert_negative, mean_rgb};
+pub use invert::{apply_chroma_decode, invert_negative, mean_rgb};
 #[allow(deprecated)]
 pub use invert::invert_negative_inverse_hd;
 
@@ -20,10 +20,12 @@ pub enum ScanMode {
     NegativeLinear,
     /// Invert with processed-film Dmin and a neutral mid-gray scan to unbounded linear HDR light.
     /// `inv_gamma` is the per-channel measured inverse contrast from [`ScannerCalibration`].
+    /// `chroma_decode` is the post-invert cross-channel unmix from the same calibration.
     PositiveLinear {
         dmin: [f32; 3],
         mid: [f32; 3],
         inv_gamma: [f32; 3],
+        chroma_decode: [[f32; 3]; 3],
     },
     /// Deprecated alias for PositiveLinear.
     #[deprecated(note = "Use PositiveLinear instead")]
@@ -31,6 +33,7 @@ pub enum ScanMode {
         dmin: [f32; 3],
         mid: [f32; 3],
         inv_gamma: [f32; 3],
+        chroma_decode: [[f32; 3]; 3],
     },
 }
 
@@ -44,9 +47,10 @@ pub fn scan(
     match mode {
         ScanMode::NegativeLinear => {}
         #[allow(deprecated)]
-        ScanMode::PositiveLinear { dmin, mid, inv_gamma }
-        | ScanMode::PositiveInverseHd { dmin, mid, inv_gamma } => {
+        ScanMode::PositiveLinear { dmin, mid, inv_gamma, chroma_decode }
+        | ScanMode::PositiveInverseHd { dmin, mid, inv_gamma, chroma_decode } => {
             invert_negative(&mut buf, mid, dmin, inv_gamma);
+            apply_chroma_decode(&mut buf, chroma_decode);
         }
     }
     buf

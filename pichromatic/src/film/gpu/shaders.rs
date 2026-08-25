@@ -1611,11 +1611,14 @@ struct InvertU {
     n: u32,
     mode: u32,
     eps: f32,
-    _p0: u32,
+    mid_gray: f32,
     inv_gamma: vec4<f32>,
     inv_dmin: vec4<f32>,
     exponent: vec4<f32>,
     gain: vec4<f32>,
+    chroma_r: vec4<f32>,
+    chroma_g: vec4<f32>,
+    chroma_b: vec4<f32>,
 };
 @group(0) @binding(0) var<storage, read_write> pixels: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> scan_r: array<f32>;
@@ -1645,6 +1648,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         r = max(pow(tr, -u.inv_gamma.x) - 1.0, 0.0) * u.gain.x;
         g = max(pow(tg, -u.inv_gamma.y) - 1.0, 0.0) * u.gain.y;
         b = max(pow(tb, -u.inv_gamma.z) - 1.0, 0.0) * u.gain.z;
+        // chroma decode (matches CPU apply_chroma_decode)
+        let dr = r - u.mid_gray;
+        let dg = g - u.mid_gray;
+        let db = b - u.mid_gray;
+        r = u.mid_gray + u.chroma_r.x * dr + u.chroma_r.y * dg + u.chroma_r.z * db;
+        g = u.mid_gray + u.chroma_g.x * dr + u.chroma_g.y * dg + u.chroma_g.z * db;
+        b = u.mid_gray + u.chroma_b.x * dr + u.chroma_b.y * dg + u.chroma_b.z * db;
     }
 
     pixels[i] = vec4<f32>(r, g, b, 1.0);
@@ -1657,11 +1667,14 @@ struct InvertRoiU {
     core_x: u32, core_y: u32, core_w: u32, core_h: u32,
     core_n: u32, root_w: u32, root_off_x: u32, root_off_y: u32,
     root_n: u32, img_w: u32, r_base: u32, g_base: u32,
-    b_base: u32, mode: u32, eps: f32, _p0: u32,
+    b_base: u32, mode: u32, eps: f32, mid_gray: f32,
     inv_gamma: vec4<f32>,
     inv_dmin: vec4<f32>,
     exponent: vec4<f32>,
     gain: vec4<f32>,
+    chroma_r: vec4<f32>,
+    chroma_g: vec4<f32>,
+    chroma_b: vec4<f32>,
 };
 @group(0) @binding(0) var<storage, read_write> output: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> arena: array<f32>;
@@ -1701,6 +1714,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         r = max(pow(tr, -u.inv_gamma.x) - 1.0, 0.0) * u.gain.x;
         g = max(pow(tg, -u.inv_gamma.y) - 1.0, 0.0) * u.gain.y;
         b = max(pow(tb, -u.inv_gamma.z) - 1.0, 0.0) * u.gain.z;
+        // chroma decode (matches CPU apply_chroma_decode)
+        let dr = r - u.mid_gray;
+        let dg = g - u.mid_gray;
+        let db = b - u.mid_gray;
+        r = u.mid_gray + u.chroma_r.x * dr + u.chroma_r.y * dg + u.chroma_r.z * db;
+        g = u.mid_gray + u.chroma_g.x * dr + u.chroma_g.y * dg + u.chroma_g.z * db;
+        b = u.mid_gray + u.chroma_b.x * dr + u.chroma_b.y * dg + u.chroma_b.z * db;
     }
 
     output[out_idx] = vec4<f32>(r, g, b, 1.0);

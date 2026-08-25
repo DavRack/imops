@@ -55,6 +55,37 @@ pub fn invert_negative(
     });
 }
 
+/// Apply the post-invert cross-channel chroma decode
+/// `q = MIDDLE_GRAY + M * (p - MIDDLE_GRAY)` in place.
+///
+/// `M` comes from [`crate::film::scan::densitometry::ScannerCalibration`]:
+/// a linear unmix measured from the stock's own composite forward Jacobian,
+/// with the achromatic axis pinned to the neutral anchors. No-op when `m` is
+/// within 1e-6 of the identity (calibration fallback, B&W-style responses).
+pub fn apply_chroma_decode(buffer: &mut ImageBuffer, m: [[f32; 3]; 3]) {
+    const IDENTITY_TOL: f32 = 1e-6;
+    let near_identity = (m[0][0] - 1.0).abs() < IDENTITY_TOL
+        && m[0][1].abs() < IDENTITY_TOL
+        && m[0][2].abs() < IDENTITY_TOL
+        && m[1][0].abs() < IDENTITY_TOL
+        && (m[1][1] - 1.0).abs() < IDENTITY_TOL
+        && m[1][2].abs() < IDENTITY_TOL
+        && m[2][0].abs() < IDENTITY_TOL
+        && m[2][1].abs() < IDENTITY_TOL
+        && (m[2][2] - 1.0).abs() < IDENTITY_TOL;
+    if near_identity {
+        return;
+    }
+    buffer.par_iter_mut().for_each(|px| {
+        let d = [px[0] - MIDDLE_GRAY, px[1] - MIDDLE_GRAY, px[2] - MIDDLE_GRAY];
+        *px = [
+            MIDDLE_GRAY + m[0][0] * d[0] + m[0][1] * d[1] + m[0][2] * d[2],
+            MIDDLE_GRAY + m[1][0] * d[0] + m[1][1] * d[1] + m[1][2] * d[2],
+            MIDDLE_GRAY + m[2][0] * d[0] + m[2][1] * d[1] + m[2][2] * d[2],
+        ];
+    });
+}
+
 /// Deprecated alias for [`invert_negative`].
 #[deprecated(note = "Use invert_negative instead")]
 pub fn invert_negative_inverse_hd(
